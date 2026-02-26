@@ -1,0 +1,1 @@
+"""Inshrinkerator compression method."""

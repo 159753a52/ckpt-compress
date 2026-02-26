@@ -1,0 +1,1 @@
+"""ExCP compression method."""

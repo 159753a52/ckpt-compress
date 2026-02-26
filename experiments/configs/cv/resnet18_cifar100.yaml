@@ -1,0 +1,28 @@
+# ResNet18 on CIFAR-100 训练配置
+
+model:
+  name: resnet18
+  num_classes: 100
+
+dataset:
+  name: cifar100
+  data_dir: ./data
+  batch_size: 128
+  num_workers: 4
+
+training:
+  epochs: 200
+  optimizer: sgd
+  lr: 0.1
+  momentum: 0.9
+  weight_decay: 5e-4
+  lr_schedule: cosine
+  use_amp: false
+  gradient_accumulation_steps: 1
+
+checkpoint:
+  save_every: 10
+  checkpoint_dir: ./checkpoints/resnet18_cifar100
+  early_stopping: null
+
+device: cuda

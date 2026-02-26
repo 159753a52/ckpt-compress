@@ -1,0 +1,30 @@
+# GPT-2 Medium on WikiText-103 训练配置
+
+model:
+  name: gpt2-medium
+  pretrained: false
+
+dataset:
+  name: wikitext103
+  data_dir: null  # null 表示从 HuggingFace 下载
+  batch_size: 4  # 更小的批次以适应 GPT-2 Medium
+  seq_length: 512
+  max_samples: null  # null 表示使用全部数据
+  num_workers: 0
+
+training:
+  epochs: 10
+  optimizer: adamw
+  lr: 3e-5  # 更小的学习率
+  weight_decay: 0.01
+  lr_schedule: linear
+  warmup_steps: 1000
+  use_amp: true  # 必须使用混合精度训练
+  gradient_accumulation_steps: 8  # 更多的梯度累积
+
+checkpoint:
+  save_every: 1
+  checkpoint_dir: ./checkpoints/gpt2_medium_wikitext103
+  early_stopping: 3
+
+device: cuda
