@@ -1,0 +1,359 @@
+﻿\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+\usepackage{xurl}
+\urlstyle{same}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+\usepackage{flafter}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{etoolbox}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% Disable line numbers inside bibliography
+\apptocmd{\thebibliography}{\nolinenumbers}{}{}
+
+% Fix lineno line number misalignment in two-column mode
+% This patch ensures line numbers appear correctly on the left margin
+\makeatletter
+\let\oldcolumn@\@outputdblcol
+\def\@outputdblcol{%
+  \if@firstcolumn
+    \global\@firstcolumntrue
+  \fi
+  \oldcolumn@
+  \if@firstcolumn
+  \else
+    \global\@firstcolumnfalse
+  \fi
+}
+
+% Fix for switch option in two-column mode
+\def\linenumberdisplaymath{%
+  \ifx\@@par\@@@par
+    \ifnum\interlinepenalty>-\linenopenaltypar
+      \global\holdinginserts\thr@@
+      \advance\interlinepenalty \linenopenalty
+      \ifhmode
+        \advance\predisplaypenalty \linenopenalty
+      \fi
+    \fi
+  \fi
+  \ignorespaces
+}
+\makeatother
+
+% Reduce paragraph spacing
+\setlength{\parskip}{0pt plus 0.5pt}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Paper Title}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and... \and Author n \\
+% Address line \\... \\ Address line}
+% if the names do not fit well on one line use
+% Author 1 \\ {\bf Author 2} \\... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\... \\ Address line
+% \And... \And
+% Author n \\ Address line \\... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\... \\ Address line
+% \AND
+% Author 2 \\ Address line \\... \\ Address line \And
+% Author 3 \\ Address line \\... \\ Address line}
+
+\author{
+ Author Name \\
+ Affiliation \\
+ \texttt{email@domain} \\
+}
+
+%\author{
+% \textbf{First Author\textsuperscript{1}},
+% \textbf{Second Author\textsuperscript{1,2}},
+% \textbf{Third T. Author\textsuperscript{1}},
+% \textbf{Fourth Author\textsuperscript{1}},
+%\\
+% \textbf{Fifth Author\textsuperscript{1,2}},
+% \textbf{Sixth Author\textsuperscript{1}},
+% \textbf{Seventh Author\textsuperscript{1}},
+% \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+% \textbf{Ninth Author\textsuperscript{1}},
+% \textbf{Tenth Author\textsuperscript{1}},
+% \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+% \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+% \textbf{Thirteenth Author\textsuperscript{3}},
+% \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+% \textbf{Fifteenth Author\textsuperscript{1}},
+% \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+% \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+% \textbf{Eighteenth Author\textsuperscript{3,4}},
+% \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+% \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+% \textsuperscript{1}Affiliation 1,
+% \textsuperscript{2}Affiliation 2,
+% \textsuperscript{3}Affiliation 3,
+% \textsuperscript{4}Affiliation 4,
+% \textsuperscript{5}Affiliation 5
+%\\
+% \small{
+% \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+% }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Checkpointing is essential for fault-tolerant training of large language models, yet frequent checkpoints incur substantial storage overhead.
+Existing compression methods typically rely on magnitude-based pruning or fixed per-layer sparsity schedules, overlooking the heterogeneous sensitivity of different parameter groups to compression.
+We propose a distributional relaxation of global importance-based pruning that circumvents expensive cross-device sorting.
+Our approach derives a damage score from first- and second-order Taylor approximations to quantify per-parameter importance, models intra-layer score distributions parametrically, and formulates a distribution-aware global rate allocation problem that minimizes expected damage under a sparsity constraint.
+The resulting optimization admits a semi-analytic solution: the optimal layer-wise pruning rates are characterized by a single scalar threshold that equalizes marginal damage across all layers, efficiently computed via bisection on layer-wise CDFs fitted with Gamma distributions.
+Experiments on both NLP and CV workloads demonstrate that our method achieves superior compression--accuracy trade-offs compared to magnitude-based and uniform-rate baselines, while remaining fully compatible with distributed training pipelines.
+\end{abstract}
+
+\begin{figure}[t!]
+ \centering
+ \includegraphics[width=\columnwidth]{figs/fig1_actual_vs_predicted.png}
+ \caption{Actual vs.\ predicted loss change ($\Delta\mathcal{L}$) across checkpoint pairs from GPT-2 Medium fine-tuning on WikiText-103. The combined first- and second-order estimate tracks the actual loss change more closely than either approximation alone.}
+ \label{fig:loss-pred}
+\end{figure}
+
+\section{Introduction}
+
+Training large language models \citep{gpt3,palm,llama} on large-scale accelerator clusters is an increasingly prolonged and failure-prone endeavor \citep{l4}.
+Checkpointing is therefore essential for fault tolerance \citep{bloom-training}, yet it introduces a fundamental efficiency--reliability trade-off: frequent checkpoints minimize rollback costs but consume substantial time and storage \citep{zero}.
+While recent systems research has improved checkpointing I/O efficiency through asynchronous writes and parallelism-agnostic representations \citep{datastates,bytecheckpoint,universal-ckpt}, a complementary direction is to \emph{compress} checkpoint content itself via pruning \citep{inshrinkerator,excp}, drawing on techniques from model compression \citep{deep-compression,sparsegpt,wanda}.
+
+A central question in checkpoint pruning is \emph{how to measure per-parameter importance}.
+The simplest approach, magnitude-based pruning \citep{deep-compression}, removes parameters with the smallest absolute values.
+However, magnitude alone does not reflect a parameter's actual contribution to the training loss: a small-magnitude parameter may reside in a high-curvature region of the loss landscape, where its removal causes disproportionate damage \citep{obd}.
+To incorporate gradient information, first-order methods such as Inshrinkerator \citep{inshrinkerator} use the product $|g_i \cdot w_i|$ as an importance score, capturing the local linear effect of zeroing out a parameter.
+Yet first-order approximations can be inaccurate when the loss surface exhibits significant curvature, as they neglect the quadratic term that accounts for how the loss curves away from the current point \citep{obs}.
+Classical results in Optimal Brain Damage \citep{obd} and Optimal Brain Surgeon \citep{obs} show that incorporating second-order (Hessian) information yields substantially more faithful estimates of the loss change induced by pruning.
+Building on this insight, we derive a \textbf{damage score} that combines first- and second-order Taylor approximations to quantify per-parameter importance.
+As shown in Figure~\ref{fig:loss-pred}, this combined estimate tracks the actual loss change on GPT-2 Medium fine-tuned on WikiText-103 more closely than either approximation alone, confirming the benefit of incorporating curvature information.
+
+Given a reliable importance measure, the natural next step is \textbf{global importance-based pruning}: ranking all parameters by their damage scores and removing the lowest-scoring ones \citep{obd,obs}.
+However, this approach encounters two practical obstacles in large-scale distributed training.
+First, \textbf{global sorting is prohibitively expensive}: collecting and ranking billions of scores across devices incurs significant communication and synchronization overhead \citep{zero}.
+Second, \textbf{score distributions are highly heterogeneous across layers}: different parameter groups within Transformer blocks---such as Q/K/V projections, MLP layers, and LayerNorm---exhibit vastly different score scales and distributional shapes.
+A layer with heavy-tailed scores may contribute disproportionately many parameters to the pruning set under a single global threshold, while a layer with concentrated scores may be over-preserved, leading to suboptimal cross-layer allocation.
+Existing checkpoint compression methods sidestep this problem by applying uniform sparsity rates \citep{excp} or heuristic per-layer schedules \citep{inshrinkerator}, but neither approach provably minimizes the overall compression damage.
+
+We address these challenges through a \textbf{distributional relaxation} of the global pruning problem.
+Our key observation is that, rather than sorting all parameters globally, we can model the \emph{distribution} of damage scores within each layer and reduce cross-layer rate allocation to operations on layer-wise cumulative distribution functions (CDFs).
+Specifically, we model \textbf{intra-layer score distributions} parametrically and formulate a \textbf{distribution-aware global rate allocation} problem that minimizes expected damage subject to a global sparsity constraint.
+The resulting optimization admits a semi-analytic solution: the optimal layer-wise pruning rates are characterized by a \textbf{single scalar threshold} $c$ that equalizes marginal damage across all layers, determined by a one-dimensional monotone equation efficiently solvable via bisection.
+Crucially, this procedure requires only layer-local distributional summaries---not global sorting---making it fully compatible with distributed training pipelines.
+
+\textbf{Contributions.}
+(1)~We derive a \textbf{damage score} for checkpoint pruning based on first- and second-order Taylor approximations \citep{obd,obs}, providing a principled importance measure that unifies gradient and curvature information, in contrast to magnitude-based \citep{deep-compression} or purely first-order \citep{inshrinkerator} heuristics.
+(2)~We propose a \textbf{distributional relaxation} that models intra-layer score distributions, enabling efficient cross-layer rate allocation without global sorting or cross-device communication.
+(3)~We derive a \textbf{distribution-aware global rate allocation} algorithm that achieves marginal-damage equalization across layers via a single threshold, requiring only layer-local statistics.
+(4)~We conduct extensive experiments on both NLP and CV workloads, demonstrating improved compression--accuracy trade-offs compared to magnitude-based \citep{deep-compression} and uniform-rate baselines.
+
+\section{Related Work}
+
+\paragraph{Checkpoint Compression.}
+Recent work has explored lossy compression of checkpoint content to reduce storage overhead during training.
+Inshrinkerator \citep{inshrinkerator} combines dynamic non-uniform quantization with pruning, using a first-order Taylor sensitivity metric $|g \cdot w|$ to rank parameter importance.
+However, it relies solely on first-order information, which can be inaccurate in high-curvature regions of the loss landscape, and allocates pruning rates heuristically by layer type without theoretical optimality guarantees.
+ExCP \citep{excp} proposes weight-momentum joint shrinking, computing residuals between adjacent checkpoints $\Delta\mathcal{W}_t = \mathcal{W}_t - \mathcal{W}_{t-1}$ to exploit temporal sparsity.
+While effective on moderate-scale models, this approach requires storing the previous checkpoint for residual computation, which is impractical in large-scale distributed training where memory and bandwidth are already constrained.
+Moreover, ExCP determines layer-wise pruning thresholds via heuristic formulas without a principled cross-layer allocation mechanism.
+Both methods share two common limitations: (i)~their importance measures do not incorporate second-order curvature information, and (ii)~their cross-layer sparsity allocation lacks theoretical grounding.
+Our method addresses both gaps by deriving a damage score from first- and second-order Taylor approximations and formulating a distribution-aware global rate allocation with provable optimality.
+
+\paragraph{Importance-Based Pruning.}
+Our damage score builds on classical importance-based pruning methods that estimate the loss increase caused by removing individual parameters.
+Optimal Brain Damage \citep[OBD;][]{obd} pioneered this direction by approximating the loss change using diagonal Hessian elements, yielding the saliency score $s_i = \frac{1}{2} h_{ii} w_i^2$.
+Optimal Brain Surgeon \citep[OBS;][]{obs} extends this to the full Hessian inverse, enabling weight compensation after pruning, but incurs $O(n^3)$ complexity that is infeasible for large models.
+Magnitude-based pruning \citep{deep-compression} offers simplicity but ignores gradient and curvature information entirely, treating all parameters with equal magnitude as equally important regardless of their functional role.
+Our damage score inherits the second-order perspective of OBD while incorporating the first-order gradient term, and uses a diagonal Hessian approximation to remain computationally tractable at the scale of modern language models.
+
+\paragraph{LLM Pruning.}
+Recent methods adapt importance-based pruning to billion-parameter scales.
+SparseGPT \citep{sparsegpt} approximates OBS via efficient Hessian inverse updates, achieving one-shot pruning without retraining.
+Wanda \citep{wanda} combines weight magnitude with input activation norms for a simple yet effective pruning criterion.
+These methods target \emph{post-training} compression for inference deployment, where pruning is performed once and computational overhead is amortized over numerous inference calls.
+In contrast, checkpoint compression during training must be executed frequently---potentially at every checkpoint interval---imposing stringent efficiency constraints that preclude expensive operations such as calibration data forward passes or iterative weight updates.
+Furthermore, both SparseGPT and Wanda apply \emph{uniform sparsity} across layers, overlooking the heterogeneous sensitivity of different parameter groups.
+Our work differs in both setting and methodology: we operate in the training-time compression regime with strict efficiency requirements, and solve a distribution-aware global rate allocation problem that provably minimizes expected damage across layers.
+
+\section{Method}
+
+\subsection{Perturbation-Based Damage Scores}
+
+We study \textbf{checkpoint compression during training} via \textbf{unstructured pruning}, where a binary mask $m\in\{0,1\}^N$ is selected over model parameters $\theta\in\mathbb{R}^N$ to decide which coordinates are kept and which are set to zero. We model this compression as a parameter perturbation $\delta\theta$, producing compressed parameters $\theta'=\theta+\delta\theta$. Around the checkpoint, the loss variation admits the second-order Taylor approximation
+\begin{equation}
+\begin{aligned}
+\Delta\mathcal{L}
+&\triangleq
+\mathcal{L}(\theta+\delta\theta)-\mathcal{L}(\theta) \\
+&\approx
+g^\top \delta\theta
++ \frac{1}{2}\,\delta\theta^\top H\,\delta\theta,
+\end{aligned}
+\end{equation}
+where $g=\nabla\mathcal{L}(\theta)$ is the gradient and $H=\nabla^2\mathcal{L}(\theta)$ is the Hessian. Since forming the full Hessian is infeasible at scale, we employ a \textbf{diagonal approximation}, instantiated either by Hessian diagonals or by a diagonal Fisher proxy.
+
+If parameter $(\ell,i)$ in layer $\ell$ is pruned by setting it to zero, then $\delta\theta_{\ell,i}=-\theta_{\ell,i}$ and all other coordinates are unchanged. With $h_{\ell,i}$ denoting the corresponding diagonal Hessian element, the induced loss change is
+\begin{equation}
+\Delta\mathcal{L}_{\ell,i}
+\approx
+-g_{\ell,i}\theta_{\ell,i}
++
+\frac{1}{2}\,h_{\ell,i}\theta_{\ell,i}^2.
+\end{equation}
+We define the \textbf{damage score} as the magnitude of this approximation:
+\begin{equation}
+s_{\ell,i}
+\triangleq
+\left|
+-g_{\ell,i}\theta_{\ell,i}
++
+\frac{1}{2}\,h_{\ell,i}\theta_{\ell,i}^2
+\right|.
+\end{equation}
+
+\subsection{Distribution-Aware Global Rate Allocation}
+\label{sec:rate-allocation}
+
+\paragraph{Intra-layer distribution modeling.}
+Let layer $\ell$ contain $n_\ell$ parameters with scores $\{s_{\ell,i}\}_{i=1}^{n_\ell}$. We treat these scores as samples from a nonnegative random variable $S_\ell$ with CDF $F_\ell$. Score scales and shapes vary widely across layers and parameter groups in Transformers; by modeling scores with layer-specific distributions, we reduce cross-layer allocation to manipulating \textbf{layer-wise CDFs and quantiles}, which can be estimated locally with negligible communication.
+
+Given a pruning rate $p_\ell\in[0,1]$ for layer $\ell$, define the quantile threshold $\tau_\ell = F_\ell^{-1}(p_\ell)$. All parameters satisfying $s_{\ell,i}\le \tau_\ell$ are pruned. The expected damage from pruning in layer $\ell$ is:
+\begin{equation}
+\begin{aligned}
+D_\ell(p_\ell)
+&\triangleq
+\mathbb{E}\!\left[S_\ell\,\mathbf{1}_{\{S_\ell\le F_\ell^{-1}(p_\ell)\}}\right] \\
+&=\int_{0}^{F_\ell^{-1}(p_\ell)} x\,f_\ell(x)\,dx,
+\end{aligned}
+\end{equation}
+where $f_\ell$ is the density of $S_\ell$.
+
+\paragraph{Optimization formulation.}
+Given a global pruning rate $P$, we allocate layer-wise rates $\{p_\ell\}_{\ell=1}^L$ by minimizing expected total damage:
+\begin{equation}
+\begin{aligned}
+\min_{\{p_\ell\}}\quad &\sum_{\ell=1}^L n_\ell D_\ell(p_\ell) \\
+\text{s.t.}\quad &\sum_{\ell=1}^L n_\ell p_\ell
+= P\sum_{\ell=1}^L n_\ell, \quad
+0\le p_\ell\le 1.
+\end{aligned}
+\end{equation}
+
+\paragraph{Marginal-damage equalization.}
+A key identity connects marginal damage to the quantile function: since $F_\ell(F_\ell^{-1}(p))=p$, differentiating $D_\ell$ yields $\frac{dD_\ell}{dp}=F_\ell^{-1}(p)$. That is, the marginal cost of increasing $p_\ell$ equals the layer's score quantile. Forming the Lagrangian and applying first-order optimality yields the \textbf{marginal-equalization condition}:
+\begin{equation}
+F_\ell^{-1}(p_\ell) = c, \quad \forall\,\ell,
+\end{equation}
+where $c$ is a global constant. Consequently, $p_\ell = F_\ell(c)$ and $\tau_\ell = c$ for all layers. The scalar $c$ is uniquely determined by:
+\begin{equation}
+\sum_{\ell=1}^L n_\ell F_\ell(c)
+=
+P\sum_{\ell=1}^L n_\ell.
+\label{eq:threshold-eq}
+\end{equation}
+Since the left-hand side is monotonically nondecreasing in $c$, we solve Eq.~\eqref{eq:threshold-eq} via bisection. Although the solution is characterized by a single global threshold $c$, the procedure requires only layer-local CDF evaluations---not global sorting---making it fully compatible with distributed training.
+
+\subsection{Gamma Fitting and Complete Algorithm}
+
+\paragraph{Parametric instantiation.}
+The framework above requires evaluating $F_\ell(c)$ during bisection. While empirical CDFs are always applicable, parametric fitting offers compact storage and smooth, analytically tractable CDFs. We observe that damage scores within each layer are well approximated by a \textbf{Gamma distribution}, which naturally captures their nonnegative, right-skewed, and layer-dependent characteristics. Using method-of-moments estimation from the sample mean $\bar{s}_\ell$ and variance $\sigma_\ell^2$:
+\begin{equation}
+\hat{k}_\ell = \frac{\bar{s}_\ell^2}{\sigma_\ell^2}, \quad \hat{\theta}_\ell = \frac{\sigma_\ell^2}{\bar{s}_\ell},
+\end{equation}
+the layer-wise CDF becomes the regularized incomplete Gamma function:
+\begin{equation}
+F_\ell(c) = \frac{\gamma(\hat{k}_\ell,\, c/\hat{\theta}_\ell)}{\Gamma(\hat{k}_\ell)},
+\end{equation}
+where $\gamma(k, z) = \int_0^z t^{k-1} e^{-t}\,dt$. Substituting into Eq.~\eqref{eq:threshold-eq}, the global threshold $c$ is determined by:
+\begin{equation}
+\sum_{\ell=1}^L n_\ell \, \frac{\gamma(\hat{k}_\ell,\, c/\hat{\theta}_\ell)}{\Gamma(\hat{k}_\ell)} = P \sum_{\ell=1}^L n_\ell.
+\label{eq:gamma-threshold}
+\end{equation}
+After solving for $c$ via bisection, the optimal layer-wise pruning rate is:
+\begin{equation}
+p_\ell^* = \frac{\gamma(\hat{k}_\ell,\, c^*/\hat{\theta}_\ell)}{\Gamma(\hat{k}_\ell)},
+\label{eq:layer-rate}
+\end{equation}
+where $c^*$ is the solution to Eq.~\eqref{eq:gamma-threshold}. Each layer then prunes all parameters with $s_{\ell,i} \le c^*$.
+
+\paragraph{Complete algorithm.}
+Algorithm~\ref{alg:dac} summarizes the full procedure.
+
+\begin{algorithm}[t]
+\caption{Distribution-Aware Checkpoint Pruning}
+\label{alg:dac}
+\begin{algorithmic}[1]
+\REQUIRE Parameters $\theta$, gradient $g$, diagonal Hessian $h$, global pruning rate $P$, number of layers $L$
+\ENSURE Compressed checkpoint $\theta'$
+\FOR{each layer $\ell = 1, \ldots, L$}
+    \STATE Compute damage scores: $s_{\ell,i} \leftarrow |{-g_{\ell,i}\theta_{\ell,i} + \frac{1}{2}h_{\ell,i}\theta_{\ell,i}^2}|$
+    \STATE Compute sample mean $\bar{s}_\ell$ and variance $\sigma_\ell^2$
+    \STATE Estimate Gamma parameters: $\hat{k}_\ell \leftarrow \bar{s}_\ell^2 / \sigma_\ell^2$, $\hat{\theta}_\ell \leftarrow \sigma_\ell^2 / \bar{s}_\ell$
+\ENDFOR
+\STATE Solve for global threshold $c^*$ via bisection on Eq.~\eqref{eq:gamma-threshold}
+\FOR{each layer $\ell = 1, \ldots, L$}
+    \STATE Compute pruning rate: $p_\ell^* \leftarrow \gamma(\hat{k}_\ell, c^*/\hat{\theta}_\ell) / \Gamma(\hat{k}_\ell)$
+    \STATE Prune: $\theta'_{\ell,i} \leftarrow \theta_{\ell,i} \cdot \mathbf{1}_{\{s_{\ell,i} > c^*\}}$
+\ENDFOR
+\RETURN $\theta'$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experiments}
+
+\section{Conclusion}
+
+\nolinenumbers
+% \bibliographystyle{acl_natbib}  % Already defined in acl.sty
+\bibliography{references}
+
+\end{document}
