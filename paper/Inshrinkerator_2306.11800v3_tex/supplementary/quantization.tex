@@ -1,0 +1,120 @@
+
+\subsection{Additional Details for Approximate K-Means}\label{app:kmeans}
+
+\subsubsection{Proof for Error-bound Guarantees}
+
+
+We restate the notations and propositions here for clarity. Let $X= \{ x_1, \ldots, x_n\}$ and $\tX = \{ \tilde{x_1}, \ldots, \tilde{x_n}\}$ denote a set of $n$ points where $x_i, \tx_i \in [0,1]$ and for all $i$, $|x_i - \txi| \leq \alpha x_i$ for some $\alpha \in (0,1)$. Let $M = \{\mu_1, \ldots, \mu_k\}$ be the cluster centers of $X$ and the loss of $M$ over inputs $X$ is defined as $\loss(M) = \frac{1}{n}\sum_{x \in X} \min_{\mu \in M} |x - \mu|$. The cluster centers $\tM$ and loss $\qloss$ over $\tX$ are defined similarly. The optimal loss $\loss(\oM)$ is the loss of the optimal cluster centers $M^{*} = \argmin_{M} \loss(M)$. The optimal loss $\qloss(\otM)$ and cluster centers $\otM$ over $\tX$ are defined similarly. Let $\mu_{M}(i) = \argmin_{\mu} |\mu - x_i|$ denote the cluster center in $M$ that is closest to the ith input $x_i$ ($\tmu_{\tM}(i)$ is defined similarly for $\txi$).
+
+
+
+Note that the loss $\loss(\tM)$ over the original inputs $X$ with any clustering $\tM$ over $\tX$ is at most $\alpha$ greater than the loss $\qloss(\tM)$,
+
+\[   
+    \qloss(\tM) = \frac{1}{n} \sum_{i=1}^n |\tmu_{\tM}(i) - \txi|  \leq \frac{1}{n} \sum_{i=1}^n (|\tmu_{\tM}(i) - x_i| + \alpha x_i) 
+\]
+
+\[
+ = \loss(\tM) + \frac{\alpha}{n} \sum_{i=1}^n x_i \leq \loss(\tM) + \alpha
+\]
+
+where the first inequality follows from triangle inequality and the second follows from the fact that $\frac{1}{n}\sum_{i=1}^n x_i \leq 1$. Using similar arguments, one can verify that $\loss(\tM) \leq \qloss(\tM) + \alpha$.
+
+\begin{proposition}
+Given any two sets $X, \tX$ of $n$ points as defined above such that $|x_i - \txi| \leq \alpha x_i$ $\forall i$. For any $k \geq 1$, the difference between the optimal loss of clusterings over $X$ and $\tX$ are bounded as, 
+
+\begin{equation}
+    |\loss(\oM) - \qloss(\otM)| \leq \alpha
+\end{equation}
+\end{proposition}
+
+\begin{proof} We first show that $\qloss(\otM) \leq \loss(\oM) + \alpha$.
+   \[
+   \qloss(\otM) = \frac{1}{n} \sum_{i=1}^n |\tmui - \txi| \leq \frac{1}{n} \sum_{i=1}^n |\mui - \txi| 
+   \]
+   \begin{equation}\label{Eq:boundsize1}
+   \leq \frac{1}{n} \left ( \sum_{i=1}^n |\mui - x_i| + \alpha \sum_{i=1}^n x_i \right) \leq \loss(\oM) + \alpha
+   \end{equation}
+
+In \cref{Eq:boundsize1}, the first inequality follows from the fact that $\otM$ is the optimal clustering over $\tX$ and hence replacing the cluster centers $\tmui$ with $\mui$ leads to a quantity which is greater than equal to $\qloss(\otM)$. The next inequality follows from triangle inequality and uses the fact that $|x_i - \txi| \leq \alpha x_i$. Using similar arguments, one can verify that $\loss(\oM) \leq \qloss(\otM)  + \alpha$. Combining the two equations, we have that $|\loss(\oM) - \qloss(\otM)| \leq \alpha$ which is the main statement of the proposition.
+
+The proof for $\loss(\oM) \leq \qloss(\otM)  + \alpha$ follows similar arguments leading to the main statement of the result.
+
+
+\end{proof}
+
+\begin{remark} The results show that the difference between optimal loss of k-means clustering over inputs $X$ and its grouped counterpart $\tX$ is bounded by $\alpha$. Building upon this, we will show that when the clustering is performed with sample-weighted k-means++, the expected loss over $\tX$ is bounded by the optimal loss over $X$ and $\alpha^2$. 
+\end{remark}
+
+
+To keep notations close to \cite{kmeanspp}, we denote the loss over squared norm as $\phi(M) = \frac{1}{n}\sum_{x \in X} \min_{\mu \in M} |x - \mu|^2$. The loss $\phiq(M)$ is defined similarly over $\tX$: $\phiq(\tM) = \frac{1}{n}\sum_{\tx \in \tX} \min_{\tmu \in \tM} |\tx - \tmu|^2$. 
+
+\begin{proposition}\label{prop2}
+Given any two sets $X, \tX$ of $n$ points as defined above such that $|x_i - \txi| \leq \alpha x_i$ $\forall i$. For any $k \geq 1$, let $\wM$ be the clustering obtained by applying weighted kmeans++ (Algorithms \ref{algo:initialize} and \ref{algo:kmeans}) over the set $\tX$. Then,
+
+\begin{equation}
+    E[\phiq(\wM)] \leq 16 (\ln k + 2) (\phi(\oM) + \alpha^2)
+\end{equation}
+
+\end{proposition}
+\begin{proof}
+    We first upper bound the optimal loss $\phiq(\otM)$ with $\phi(\oM)$ and $\alpha$. See that
+
+ \[
+   \phiq(\otM) =  \frac{1}{n} \sum_{i=1}^n |\tmui - \txi|^2  \leq \frac{1}{n} \sum_{i=1}^n |\mui - \txi|^2
+   \]
+   \begin{equation}\label{Eq:squaredbound}
+   \leq 2 \left ( \frac{1}{n}\sum_{i=1}^n |\mui - x_i|^2 + \frac{\alpha^2}{n} \sum_{i=1}^n x_i^2 \right)  \leq 2(\phi(\oM) + \alpha^2)
+   \end{equation}
+
+   Applying weighted-kmeans++ (Algorithms \ref{algo:initialize} and \ref{algo:kmeans}) over the set $\tX$ produces $\wM$. Using Theorem 1.1 in \cite{kmeanspp}, we have that $E[\phiq(\wM)] \leq 8 (\ln k + 2) (\phiq(\otM))$ and using Eq. \ref{Eq:squaredbound} to replace $\phiq(\otM)$, we obtain the main statement of the proposition.
+
+\end{proof}
+
+\begin{remark} The result implies that \cref{algo:initialize,algo:kmeans} is $O(\ln k)$-competitive with $\phi(\oM) + \alpha^2$ while being orders of magnitude faster in comparison with the vanilla k-means++ which is $O(\ln k)$-competitive with $\phi(\oM)$.
+\end{remark}
+
+
+
+We now analyze certain conditions where the clustering memberships of every point in the two cases ($X$ and $\tX$) would be identical. Let $C = \{X_1, \ldots, X_k\}$ be a clustering (or partition) of $X \subseteq [0, 1]$ with centers $M = \{\mu_1, \ldots, \mu_k\}$. For all $x \in X_i$, and $i \neq j$, $|x - \mu_i| \leq |x - \mu_j|$. Let the minimum distance between any two points in two different clusters in $C$ be the split of the clustering denoted as $split_C(X)$. Let the maximum distance between any two points in the same cluster be the width of the clustering denoted as $width_C(X)$.
+
+\begin{definition}
+   \cite{ben2014clustering} A clustering $C = \{X_1, \ldots, X_k\}$ of $X \subseteq [0, 1]$ is $\sigsep$ for $\sigma \geq 1$ if  $split_C(X) > \sigma \cdot width_C(X)$.
+\end{definition}
+
+In other words, any clustering $C$ is $\sigsep$ if the minimum distance between any two points in separate clusters is greater than the maximum distance between two points in the same cluster. 
+
+We now show that if the optimal clustering over the set $X$ is $\sigsep$, then for small enough $\alpha$ depending on the value of $\sigma$, the optimal clustering over $X$ and $\tX$ will be the same. 
+
+First note that, if a $\sigsep$ clustering $C$ exists for a given set of inputs, then only one such paritioning of the inputs. 
+
+\begin{lemma}
+    \cite{ackerman2009clusterability} If there exists a k-clustering $C$ of $X$, for $k \geq 2$, such that $C$ is $\sigsep$, then there is only one such partitioning of $X$.
+\end{lemma}
+
+The proof of the above Lemma can be found in \cite{ackerman2009clusterability}. We now show that if $\alpha < \frac{split_C(X) - width_C(X)}{4}$, then the same paritioning over $\tX$ is also $\sigsep$ and hence the optimal clustering for both $X$ and $\tX$ are identical.
+
+Let $s_1$ and $s_2$ be the two points in $X$ such that the distance between them is minimum among all pairs of points in separate clusters ($|s_2 - s_1| = split_C(X)$). Let $w_l$ and $w_2$ be two points in $X$ such that the distance between them is maximum among all pairs of points in the same cluster.
+
+For the points in $X$ to have a $\sigsep$ clustering in $\tX$, the following condition should hold in the worst case,
+
+\[
+ s_2 (1-\alpha) - s_1 (1+\alpha) > w_2 (1+\alpha) - w_1 (1 -\alpha)
+\]
+\[
+\implies (s_2 - s_1) - \alpha (s_1 + s_2) > (w_2 - w_1) + \alpha (w_1 + w_2)
+\]
+
+\[
+\implies \alpha < \frac{(s_2 - s_1) - (w_2 - w_1)}{4} = \frac{split_C(X) - width_C(X)}{4}
+\]
+
+This implies that if the original clusters are $\sigsep$ and $\alpha$ is small enough then the optimal cluster memberships over $X$ and $\tX$ will be identical. 
+
+
+
+
+
+
+
+

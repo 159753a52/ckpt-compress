@@ -259,20 +259,31 @@ class MemoryEfficientEvaluator:
                 if i >= num_batches:
                     break
 
-                # 处理不同的输入格式
-                if 'input_ids' in batch:
-                    # HuggingFace 格式
+                x = batch.get("input_ids")
+                if x is None:
+                    x = batch.get("images")
+                if x is None:
+                    raise KeyError("Batch must contain 'input_ids' or 'images'")
+
+                labels = batch.get("labels")
+                attention_mask = batch.get("attention_mask")
+
+                # 优先走 HuggingFace 常用 kwargs；如果模型不接受这些 kwargs，则回退到更通用的调用方式。
+                try:
                     outputs = self.model(
-                        input_ids=batch['input_ids'],
-                        attention_mask=batch.get('attention_mask'),
-                        labels=batch.get('labels')
+                        input_ids=x,
+                        attention_mask=attention_mask,
+                        labels=labels,
                     )
-                else:
-                    # 简单格式
-                    outputs = self.model(
-                        batch['input_ids'],
-                        labels=batch.get('labels')
-                    )
+                except TypeError as e:
+                    msg = str(e)
+                    if "unexpected keyword argument" not in msg:
+                        raise
+                    # 最通用：positional + labels kw（SimpleModel / Transformers 都兼容）
+                    try:
+                        outputs = self.model(x, labels=labels)
+                    except TypeError:
+                        outputs = self.model(x, labels)
 
                 if hasattr(outputs, 'loss') and outputs.loss is not None:
                     losses.append(outputs.loss.item())

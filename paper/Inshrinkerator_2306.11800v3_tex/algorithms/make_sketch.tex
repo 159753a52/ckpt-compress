@@ -1,0 +1,14 @@
+\begin{algorithm}
+\caption{GetQuantileSketchHistogram}
+\begin{algorithmic}[1]
+\REQUIRE $X$ \COMMENT{Input list}
+\REQUIRE $\alpha$ \COMMENT{Relative Error Bound}
+\STATE $\gamma \leftarrow (1 + \alpha) / (1 - \alpha)$ \\
+\STATE Define $X_q$ as an empty array \\
+\FORALL{$x$ in $X$}
+    \STATE Append $\lceil \log_{\gamma}(x) \rceil$ to $X_q$
+\ENDFOR
+\STATE $(\texttt{bucket\_vals}, \texttt{bucket\_counts}) \leftarrow \texttt{unique}(X_q)$
+\RETURN $\texttt{bucket\_vals}, \texttt{bucket\_counts}$
+\end{algorithmic}\label{algo:quantile-sketch}
+\end{algorithm}

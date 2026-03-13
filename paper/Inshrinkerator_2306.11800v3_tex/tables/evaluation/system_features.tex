@@ -1,0 +1,24 @@
+\begin{table}[t]
+    \centering
+    \begin{tabular}{@{\hspace{4px}}l*{6}{@{\hspace{4px}}c}@{\hspace{4px}}}
+    \toprule
+     & \rot{CNR~[\citenum{checknrun}]} & \rot{QD~[\citenum{QD}]} & \rot{LC~[\citenum{lcCompression}]} & \rot{DDNN~[\citenum{deltadnn}]} & \rot{GOBO~[\citenum{gobo}]} & \rot{\sys} \\
+    \midrule
+    In-training & \greencheck & \greencheck & \greencheck & \greencheck & \redcross & \greencheck \\
+    Low Overhead & \greencheck & \greencheck & \greencheck & \greencheck & \redcross & \greencheck \\
+    Model Agnostic & \redcross & \greencheck & \greencheck & \greencheck & \greencheck & \greencheck \\
+    Scalable & \greencheck & \greencheck & \greencheck & \greencheck & \redcross & \greencheck \\
+    Algorithmically Transparent & \greencheck & \redcross & \greencheck & \greencheck & \greencheck & \greencheck \\
+    \midrule
+    Dynamic Configuration Management & \redcross & \redcross & \redcross & \greencheck & \redcross & \greencheck \\
+    Non-uniform Quantization & \redcross & \redcross & \greencheck & \redcross & \greencheck & \greencheck \\
+    Quantization-aware Delta Encoding & \redcross & \greencheck & \greencheck & \greencheck & \redcross & \greencheck \\
+    \bottomrule
+    \end{tabular}
+    \vspace{0.5em}
+    \caption{
+        \small Comparison of checkpoint compression systems.
+    }
+    \label{tab:system-featurs}
+    \end{table}
+    

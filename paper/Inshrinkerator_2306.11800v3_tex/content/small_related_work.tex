@@ -1,0 +1,34 @@
+\section{Related Work}
+\label{sec:related}
+
+Our work intersects with three main areas of research: model compression techniques, checkpoint compression systems, and checkpointing at scale. We discuss each of these below.
+
+\subsection{Model Compression Techniques} Model compression techniques aim to reduce the storage, memory, and computational requirements of deep learning models without compromising their performance. %
+
+\minihead{Quantization} Quantization has been widely studied, particularly for efficient model inference. Post-Training Quantization (PTQ) \cite{banner2019post, cai2020zeroq, fang2020post, lowBitQuantization, He2018ECCV} and Quantization-Aware Training (QAT) \cite{courbariaux2015binaryconnect, gysel2016hardware, NIPS2016d8330f85, lin2015neural, rastegari2016xnor, tailor2020degree} are two main approaches. While QAT incorporates quantization errors into the loss function during training, our proposed in-training checkpoint quantization operates on intermediate model states without affecting the training optimization function.
+
+Variable bit-width quantization assigns different bit-widths to model layers based on their importance \cite{faghri2020adaptive, kadambi2020comparing, choi2016towards, NEURIPS2020d77c7035, dong2019hawq, li2018optimization}. This approach enables better compression without compromising performance, although determining the optimal bit-width for each layer can be  time-consuming.
+
+\minihead{Pruning} Pruning is another popular model compression technique in which unimportant parameters are removed from the model. Magnitude-based pruning techniques remove parameters with the smallest absolute values \cite{han2015learning}, while sensitivity-based pruning methods consider the impact of parameter removal on the model's loss \cite{sen-5, sen-6, sen-7, sen-1}.
+
+Recent work on the Lottery Ticket Hypothesis with Rewinding \cite{lth} has shown that simple magnitude-based heuristics can identify extremely sparse subnetworks early in training that yield performance similar to the full network when trained in isolation. Our work leverages this insight for in-training pruning, applying it to checkpoints during training.
+
+\subsection{Checkpoint Compression Techniques}
+
+Several studies have explored compression techniques specifically for model checkpointing systems to minimize storage overhead \cite{QD,lcCompression,checknrun,deltadnn}. These systems typically employ a combination of model quantization and delta encoding, leveraging the high similarity between adjacent checkpoints.
+
+\minihead{Quantization in Checkpoint Compression} Recent checkpoint compression systems have employed various quantization techniques. LC-Checkpoint \cite{lcCompression} uses an exponent-based non-uniform quantization scheme, choosing the non-linear function heuristically. Delta-DNN \cite{deltadnn} proposes a uniform quantization approach with an exhaustive configuration search strategy. QD-Compressor \cite{QD} employs an entropy-based variable bit-width uniform quantization scheme, while Check-N-Run \cite{checknrun} applies an adaptive uniform quantization method \cite{adaptive-uniform-quant} for large deep recommendation models.
+
+
+\minihead{Delta Compression} Delta compression is a key technique in reducing storage overhead for model checkpoints. Each compressed checkpoint only stores the differences since the previous checkpoint, allowing for reconstruction of the final checkpoint by iteratively applying these deltas.
+
+While QD-Compressor \cite{QD} proposes a delta encoding algorithm, it doesn't account for changes in quantization bit widths induced by their variable bit-width technique. Check-N-Run \cite{checknrun} introduces a delta compression scheme specifically for recommendation models, but its applicability to traditional deep learning models is limited.
+
+\subsection{Checkpointing at Scale} As machine learning models grow in size and complexity, efficient checkpointing strategies become crucial.
+
+\minihead{Distributed Checkpointing} Distributed checkpointing systems \cite{distChkpt-1, checknrun} save partial model states across multiple nodes within a distributed system. This approach is especially useful when the model state cannot fit on a single device and reduces the overhead associated with storing and retrieving large checkpoints. Our proposed method is fully compatible with distributed checkpointing, enabling checkpoint compression even when the model state is distributed across different processes.
+
+\minihead{Frequent Checkpointing} Frequent checkpointing minimizes the risk of losing progress due to unexpected failures and allows for more granular control over the training process. CheckFreq \cite{checkfreq} facilitates frequent checkpointing through a two-phase process that overlaps computation with checkpointing operations. It dynamically determines checkpointing intervals to balance trade-offs between overhead and wasted work. %
+
+
+

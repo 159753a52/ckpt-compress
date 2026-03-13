@@ -1,0 +1,32 @@
+\begin{table}[t]
+\small
+\centering
+\begin{tabular}{lllll}%
+\toprule
+& System & Deg. \% & CR & Ovr. \%  \\
+\midrule
+ResNet-152 & \CNR & 0.36 & 5.71 & 0.61 \\
+(Base Acc: 77.41\% )& \QD & \textbf{-0.09} & 11.82 & \textbf{0.11} \\
+& \ours & 0.50 & \textbf{39.09} & 0.35 \\
+\midrule
+ViT L32 & \CNR & -0.21 & 7.82 & 0.96 \\
+(Base Acc: 71.36\%) & \QD & 0.12 & 16.31 & \textbf{0.18} \\
+& \ours & \textbf{-0.46} & \textbf{26.19} & 0.51 \\
+\midrule
+BERT Base & \CNR & 3.97 & 6.78 & 1.03 \\
+(Base Acc: 68.49\%)& \QD & \orangecross & \orangecross & \orangecross \\
+& \ours & \textbf{0.80} & \textbf{29.25} & \textbf{0.58} \\
+\midrule
+GPT-2 M & \CNR & \textbf{0.25} & 6.35 & 0.55 \\
+(Base Loss: 2.72) & \QD & 1.10 & 22.15 & \textbf{0.10} \\
+& \ours & 0.61 & \textbf{29.81} & 0.32 \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+\caption{\small 
+    Performance of checkpoint compression systems for failure-recovery. 
+    Deg. \% = Relative quality degradation, CR = Compression ratio, Overhead \% =  Runtime Overhead.
+}
+\label{tab:failure-recovery}
+\vspace{-1.5em}
+\end{table}

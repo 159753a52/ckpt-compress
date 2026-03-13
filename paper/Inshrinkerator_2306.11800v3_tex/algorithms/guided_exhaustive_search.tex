@@ -1,0 +1,23 @@
+\begin{algorithm}[t]
+\small
+\caption{Guided Exhaustive Search}
+\begin{algorithmic}[1]
+\REQUIRE Quality threshold $T$, Configuration cube $C_{\text{cube}}$, Compression Ratio $CR_{\text{max}}$
+\ENSURE Optimal configuration $C_{\text{opt}}$
+
+\STATE $C_{\text{opt}} \gets \text{Null}$
+\STATE $CR_{\text{max}} \gets 0$
+
+\STATE $Diagonal \gets \text{GetDiagonal}(C_{\text{cube}})$
+\STATE $C_{\text{opt}}, CR_{\text{max}} \gets \text{ParallelSearch}(Diagonal, T)$
+\STATE $SubCubes \gets \text{GetFeasibleSubCubes}(C_{\text{cube}}, C_{\text{opt}})$
+\FOR {each $SubCube$ in $SubCubes$}
+\STATE $C_{\text{temp}}, CR_{\text{temp}} \gets \text{GuidedExhaustiveSearch}(T, SubCube)$
+\IF{$CR_{\text{temp}} > CR_{\text{max}}$}
+\STATE $C_{\text{opt}} \gets C_{\text{temp}}$
+\STATE $CR_{\text{max}} \gets CR_{\text{temp}}$
+\ENDIF
+\ENDFOR
+\RETURN $C_{\text{opt}}$
+\end{algorithmic}\label{algo:guided-search}
+\end{algorithm}

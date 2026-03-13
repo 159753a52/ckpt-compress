@@ -1,0 +1,22 @@
+
+
+\begin{table}[htb]
+\centering
+\begin{tabular}{@{\hspace{0px}} l @{\hspace{0px}} l *{5}{@{\hspace{2px}}c} @{\hspace{0px}}}
+\toprule
+Model & Task & Metric & Base & Adap & Uni & \ours \\
+\midrule
+\multirow{3}{*}{BERT--L} & & CR & - & 4.57 & 4.00 & \textbf{11.32} \\
+& SST-2 & Acc & 93.2 & 92.9 & 93.0 & \textbf{93.3} \\
+&  MNLI & Acc & 85.9 & \textbf{86.0} & \textbf{86.0} & 85.9 \\
+& STS-B & PC & 86.1 & 87.6 & 87.8 & \textbf{88.3} \\
+\midrule
+\multirow{2}{*}{Pythia 1B} & & CR & - & 5.33 & 4.57 & \textbf{9.99} \\
+& Alpaca & CE & 0.894 & 0.910 & \textbf{0.906} & 0.919 \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+\caption{\small Performance comparison on the transfer learning task.  CR = Compression ratio, Acc = Accuracy, PC = Pearson correlation, CE = Cross-entropy Loss.}
+\vspace{-1em}
+\label{tab:transfer-learning}
+\end{table}

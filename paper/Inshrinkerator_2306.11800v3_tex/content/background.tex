@@ -1,0 +1,30 @@
+\section{Background and Use Cases}
+\label{sec:background}
+
+
+We start by introducing the notion of checkpointing in deep learning systems and highlight a variety of scenarios where model checkpoint compression is beneficial. Model checkpoints serve as snapshots of a deep learning model at a certain stage in its training process. They encompass the model's architecture, learned parameters, and optimizer state. One can think of checkpoints as analogous to code commits in version control systems, where each checkpoint represents a version of the model at a specific stage of its development. In the rest of this section, we describe several use cases for model checkpoint compression.
+
+
+
+\minihead{Failure Recovery In Training Workloads} 
+Large-scale deep-learning training workloads are highly susceptible to various hardware and software failures. 
+Any failure during this period prompts recovery from the most recent checkpoint. 
+Joen et al. \cite{philly} show that on average DL training workloads in a Microsoft cluster encounter a failure every 45 minutes (excluding early failures) due to various system and user errors. Zhang et al. \cite{opt2} also observe that the training of the OPT-2 
+model required 100+ restarts due to failures across the span
+of two months. As we move toward developing not only larger but also more complex models and distributed training systems, the likelihood of experiencing system failures is expected to rise. Simultaneously, constraints on bandwidth and storage capacity, especially in shared multi-tenant environments, limit the frequency of checkpoints. This creates tension between frequent checkpointing to minimize wasted work and managing the storage and network checkpointing overheads. Addressing this challenge calls for a compression mechanism that enables more frequent checkpoints with minimal overhead.
+
+
+
+\minihead{Iterative Model Development} In the development of deep learning models, checkpoints  are useful for multiple use cases including version control and continual learning. DL model development is an iterative process with bug fixes, hyperparameter tuning, and architectural adjustments. Given the substantial GPU hours invested in training, it is wasteful to discard progress just to make these adjustments. As a result, practitioners make these changes mid-way through training and resume the training from a stable checkpoint~\cite{opt-logbook}. This prompts the need for an effective git-like version control system for models, to manage their development cycle. Beyond the training phase, production environments often require continuous updates to models to accommodate new data and maintain performance. In such scenarios, model checkpoints are preserved for extended periods for reasons such as debugging, reliability, and provenance. Delta-encoded checkpoints, where only the changes between successive checkpoints are stored, can help minimize storage requirements and streamline recovery processes in these use cases.
+
+
+
+\minihead{Model Hubs \& Transfer Learning} Model hubs, such as Hugging Face~\cite{huggingface}, provide pre-trained models for a variety of tasks. These pre-trained models can be used for transfer learning, a  process in which a pre-trained model is fine-tuned for a new task or domain. With the growth of the number of models on such hubs, the bandwidth required to transfer model checkpoints becomes a significant concern. For example, the BERT Base \cite{bert} model alone was downloaded more than 41 million times from the HuggingFace model hub \cite{hf-bert} in a 30-day window as of August 2023. Model checkpoint compression can reduce the bandwidth required for transferring models between users and model hubs.
+
+
+
+
+
+
+
+

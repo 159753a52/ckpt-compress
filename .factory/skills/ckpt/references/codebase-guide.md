@@ -52,38 +52,63 @@ Key functions:
 
 ## Experiment Scripts: `experiments/scripts/`
 
-### Comparison Scripts
-- `compare_first_vs_second_order.py` — First-order vs combined importance
-- `compare_first_vs_second_order_direct.py` — Direct comparison variant
-- `compare_first_vs_second_order_checkpoint.py` — Checkpoint-based comparison
-- `compare_three_methods.py` — Three-way comparison (magnitude, first-order, second-order)
+Scripts are organized by function:
 
-### Adaptive Pruning Scripts
-- `gamma_adaptive_pruning.py` — Gamma-based adaptive pruning (second-order)
-- `gamma_adaptive_pruning_first_order.py` — Gamma-based adaptive pruning (first-order)
-- `gamma_adaptive_pruning_multi_ratio.py` — Multi-ratio second-order
-- `gamma_adaptive_pruning_first_order_multi_ratio.py` — Multi-ratio first-order
-
-### Analysis Scripts
-- `fine_grained_pruning_analysis.py` — GPT-2 fine-grained sub-layer analysis
-- `bert_fine_grained_pruning_analysis.py` — BERT fine-grained sub-layer analysis
-- `layer_pruning_analysis.py` — Layer-wise pruning rate analysis
-- `analyze_importance_distribution.py` — Score distribution visualization
-- `analyze_numerical_sensitivity.py` — Numerical sensitivity analysis
-
-### Training Scripts
+### `finetune/` — Training & Fine-tuning
 - `train_cv.py` — CV model training (ResNet on CIFAR)
 - `train_nlp.py` — NLP model training (GPT-2 on WikiText)
 - `finetune_gpt2_1000steps.py` — GPT-2 fine-tuning for checkpoint generation
 - `finetune_bert_large_sst2.py` / `finetune_bert_large_mnli.py` / `finetune_bert_large_stsb.py` — BERT fine-tuning
 
+### `compress/` — Checkpoint Compression
+- `compress_and_resume.py` — Compress and decompress checkpoints
+
+### `prune/` — Pruning
+- `gamma_adaptive_pruning.py` — Gamma-based adaptive pruning (second-order)
+- `gamma_adaptive_pruning_first_order.py` — Gamma-based adaptive pruning (first-order)
+
+### `analysis/` — Analysis & Visualization
+- `fine_grained_pruning_analysis.py` — GPT-2 fine-grained sub-layer analysis
+- `bert_fine_grained_pruning_analysis.py` — BERT fine-grained sub-layer analysis
+- `layer_pruning_analysis.py` — Layer-wise pruning rate analysis
+- `layer_pruning_analysis_high_sparsity.py` — High sparsity analysis
+- `visualize_model_structure.py` — Model structure visualization
+
+### `config/` — Configuration Tools
+- `generate_pruning_config.py` — Generate pruning configs
+- `generate_global_pruning_config.py` — Generate global pruning configs
+- `test_pruning_config.py` — Test pruning configs
+
+### `comparison/` — Comparison Experiments
+- `compare_first_vs_second_order.py` — First-order vs combined importance
+
+### Archived Scripts
+Exploratory and deprecated scripts are in `archive/scripts/`.
+
 ## Configuration: `experiments/configs/`
 
-YAML configs for reproducible experiments. Check `experiments/configs/` for available presets.
+```
+experiments/configs/
+├── cv/           — CV training configs (ResNet + CIFAR)
+├── nlp/          — NLP training configs (GPT-2 + WikiText)
+└── pruning/      — Pruning configs (per-layer rates)
+```
 
 ## Results Directory
 
-Results saved to `results/` with timestamp subdirectories. Each experiment typically outputs:
-- CSV files with per-layer metrics
-- JSON summary files
-- PNG figures (loss curves, distribution plots, comparison charts)
+```
+results/
+├── paper_results/    — Core results for the paper
+├── supplementary/    — Supplementary visualizations
+└── archive/          — Archived exploratory experiments
+```
+
+## Documentation: `docs/`
+
+```
+docs/
+├── guides/       — Usage guides (EXPERIMENTS, DATA_PREPARATION, BERT_USAGE, etc.)
+├── design/       — Design docs (ARCHITECTURE, EXPERIMENT_DESIGN, PLAN)
+├── reference/    — Reference docs (MAGNITUDE_IMPORTANCE)
+└── archive/      — Archived docs
+```

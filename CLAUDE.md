@@ -67,13 +67,13 @@ python scripts/download_models.py --model bert-large
 python scripts/download_models.py --model bert-base,bert-large
 ```
 
-详见 [docs/DATA_PREPARATION.md](docs/DATA_PREPARATION.md) 和 [docs/BERT_USAGE.md](docs/BERT_USAGE.md)
+详见 [docs/guides/DATA_PREPARATION.md](docs/guides/DATA_PREPARATION.md) 和 [docs/guides/BERT_USAGE.md](docs/guides/BERT_USAGE.md)
 
 ### 训练脚本
 
 ```bash
 # CV 训练（ResNet18 on CIFAR-10）
-python experiments/scripts/train_cv.py \
+python experiments/scripts/finetune/train_cv.py \
   --model resnet18 \
   --dataset cifar10 \
   --epochs 200 \
@@ -81,7 +81,7 @@ python experiments/scripts/train_cv.py \
   --lr 0.1
 
 # NLP 训练（GPT-2 Small on WikiText-2）
-python experiments/scripts/train_nlp.py \
+python experiments/scripts/finetune/train_nlp.py \
   --model gpt2-small \
   --dataset wikitext2 \
   --epochs 10 \
@@ -89,21 +89,21 @@ python experiments/scripts/train_nlp.py \
   --lr 5e-5
 
 # 使用配置文件训练
-python experiments/scripts/train_cv.py --config experiments/configs/cv/resnet18_cifar10.yaml
+python experiments/scripts/finetune/train_cv.py --config experiments/configs/cv/resnet18_cifar10.yaml
 ```
 
 ### 检查点压缩
 
 ```bash
 # 压缩检查点
-python experiments/scripts/compress_and_resume.py \
+python experiments/scripts/compress/compress_and_resume.py \
   --mode compress \
   --checkpoint checkpoints/model.pt \
   --method excp \
   --output compressed/model_excp.bin
 
 # 解压检查点
-python experiments/scripts/compress_and_resume.py \
+python experiments/scripts/compress/compress_and_resume.py \
   --mode decompress \
   --compressed compressed/model_excp.bin \
   --output checkpoints/model_restored.pt
@@ -125,7 +125,7 @@ python experiments/scripts/run_adaptive_pruning.py --max_samples 100
 python experiments/scripts/run_comparison.py
 ```
 
-更多实验脚本详见 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)
+更多实验脚本详见 [docs/guides/EXPERIMENTS.md](docs/guides/EXPERIMENTS.md)
 
 ## 核心架构
 
@@ -171,7 +171,7 @@ class BaseCompressor(ABC):
         """返回方法名称"""
 ```
 
-详细架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+详细架构说明见 [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md)
 
 ## 开发约定
 
@@ -239,9 +239,10 @@ python experiments/scripts/run_formula_comparison.py \
 
 ## 实验结果
 
-实验结果保存在 `results/` 目录，按时间戳命名：
-- `results/calibration_<timestamp>/`: 幂律校正实验
-- `results/formula_comparison_<timestamp>/`: 公式对比实验
+实验结果保存在 `results/` 目录，按类型组织：
+- `results/paper_results/`: 论文核心结果
+- `results/supplementary/`: 补充材料（可视化等）
+- `results/archive/`: 归档的探索性实验
 
 ## 已知问题
 
@@ -312,7 +313,43 @@ history = trainer.train(epochs=100, save_every=10)
 
 ## 更多文档
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - 详细架构设计
-- [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) - 实验指南
-- [docs/DATA_PREPARATION.md](docs/DATA_PREPARATION.md) - 数据准备指南
-- [docs/PLAN.md](docs/PLAN.md) - 开发计划
+- [docs/design/ARCHITECTURE.md](docs/design/ARCHITECTURE.md) - 详细架构设计
+- [docs/guides/EXPERIMENTS.md](docs/guides/EXPERIMENTS.md) - 实验指南
+- [docs/guides/DATA_PREPARATION.md](docs/guides/DATA_PREPARATION.md) - 数据准备指南
+- [docs/design/PLAN.md](docs/design/PLAN.md) - 开发计划
+
+## 项目目录结构
+
+```
+ckpt-compress/
+├── CLAUDE.md                        # 快速参考
+├── pyproject.toml                   # 项目配置
+├── paper/                           # 论文
+├── plan/                            # 规划文档
+├── src/ckpt_compress/               # 源代码
+├── tests/                           # 测试
+├── experiments/
+│   ├── configs/
+│   │   ├── cv/                      # CV 训练配置
+│   │   ├── nlp/                     # NLP 训练配置
+│   │   └── pruning/                 # 剪枝配置
+│   └── scripts/
+│       ├── finetune/                # 微调脚本
+│       ├── compress/                # 压缩脚本
+│       ├── prune/                   # 剪枝脚本
+│       ├── analysis/                # 分析脚本
+│       ├── config/                  # 配置工具
+│       └── comparison/              # 对比实验
+├── results/
+│   ├── paper_results/               # 论文核心结果
+│   ├── supplementary/               # 补充材料
+│   └── archive/                     # 归档实验
+├── docs/
+│   ├── guides/                      # 使用指南
+│   ├── design/                      # 设计文档
+│   ├── reference/                   # 参考文档
+│   └── archive/                     # 归档文档
+├── checkpoints/                     # 模型检查点
+├── data/                            # 数据集
+└── archive/                         # 历史归档
+```

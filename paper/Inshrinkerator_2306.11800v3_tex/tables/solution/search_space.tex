@@ -1,0 +1,65 @@
+\begin{table}[htpb]
+\centering
+\small
+\begin{tabular}{l l}\\
+\toprule
+Parameter & Values \\
+\midrule
+Number of bins & 4, 6, 8, 12, 16, 32 \\
+Number of bins (Embedding Layers) & 16, 32 \\
+Pruning Fraction & 0, 0.1, 0.2, 0.3, 0.4, 0.5 \\
+Pruning Metric & Magnitude, Sensitivity \\
+Protection Fraction & 0.0005, 0.005, 0.01 \\
+\bottomrule
+\end{tabular}
+\caption{Search space for \sys quantization configuration}
+\label{tab:search-space}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l l}\\
+\toprule
+Parameter & Values \\
+\midrule
+Minimum number of bins & 8, 16, 32, 64, 128, 256 \\
+Maximum number of bins & 8, 16, 32, 64, 128, 256 \\
+\bottomrule
+\end{tabular}
+\caption{Search space for QD quantization configuration}
+\label{tab:QDsearch-space}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{l l}\\
+\toprule
+Parameter & Values \\
+\midrule
+Number of bins & 8, 16, 32, 64, 128, 256 \\
+Number of step bins & 10, 25, 50, 100 \\
+Range & 0.1, 0.2, 0.3, 0.4, 0.5 \\
+\bottomrule
+\end{tabular}
+\caption{Search space for CNR quantization configuration}
+\label{tab:CNRsearch-space}
+\end{table}
+
+\begin{table}[htpb]
+\centering
+\small
+\begin{tabular}{l l}\\
+\toprule
+Parameter & Values \\
+\midrule
+Number of bins & 8, 16, 32, 64, 128, 256 \\
+Number of bins (Embedding Layers) & 16, 32 \\
+Outlier threshold & -4 \\
+Max Iteration & 1000 \\
+\bottomrule
+\end{tabular}
+\caption{Search space for GOBO quantization configuration}
+\label{tab:GOBOsearch-space}
+\end{table}

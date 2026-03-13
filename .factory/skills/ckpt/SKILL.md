@@ -17,6 +17,18 @@ description: >
 
 与用户对话时必须使用中文。代码注释和变量名可以用英文，但所有解释、分析、建议、总结都用中文。
 
+## 公式展示格式（给用户看）
+
+当需要把公式/推导**展示给用户阅读**时，统一用“纯文本逐步推导”的格式，不使用 LaTeX 块公式（例如 `\[...\]`、`$$...$$`）。
+
+推荐格式示例（按行写清楚每一步）：
+
+Hθ 的第 i 个分量：
+(Hθ)_i = Σ_j H_{ij} θ_j  ≈  H_{ii} θ_i
+
+因此：
+θ_i · (Hθ)_i  ≈  θ_i · (H_{ii} θ_i)  =  H_{ii} θ_i^2
+
 ## Skill 备份规则
 
 一旦修改这个 skill，在 `/lihongliang/fangzl/skill` 目录下备份一份，复制过去即可：
@@ -106,7 +118,22 @@ os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 
 ### 子代理委托
 
-对于复杂的、上下文占用大的、可以独立运行的任务（如微调模型、运行完整实验套件、生成所有图表），委托给子代理（Task 工具）执行，保持主对话上下文干净。
+对于复杂的、上下文占用大的、可以独立运行的任务（如微调模型、运行完整实验套件、生成所有图表），委托给 **worker** 子代理（Task 工具）执行，保持主对话上下文干净。
+
+使用方式：
+```python
+Task(
+    subagent_type="worker",
+    description="微调 GPT-2 模型",
+    prompt="详细的任务描述..."
+)
+```
+
+适合委托的任务：
+- 微调模型（耗时长，需要监控训练过程）
+- 运行完整实验套件（多个稀疏率、多个方法对比）
+- 生成所有论文图表（涉及多个结果文件）
+- 大规模数据分析（处理多个检查点）
 
 ### 内存管理
 
@@ -127,6 +154,7 @@ os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 ```
 /lihongliang/fangzl/ckpt-compress/
 ├── paper/EMNLP_26.tex              # 论文
+├── plan/                            # 规划文档
 ├── src/ckpt_compress/
 │   ├── methods/adam_prune/          # 核心剪枝实现
 │   │   ├── importance.py            # 重要性得分计算
@@ -136,10 +164,29 @@ os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 │   │   └── layer_pruning.py         # 逐层剪枝
 │   ├── models/                      # 模型封装（GPT-2, BERT, ResNet）
 │   └── utils/                       # 数据加载器、训练器、张量操作
-├── experiments/scripts/             # 实验脚本
+├── experiments/
+│   ├── configs/
+│   │   ├── cv/                      # CV 训练配置
+│   │   ├── nlp/                     # NLP 训练配置
+│   │   └── pruning/                 # 剪枝配置
+│   └── scripts/
+│       ├── finetune/                # 微调脚本
+│       ├── compress/                # 压缩脚本
+│       ├── prune/                   # 剪枝脚本
+│       ├── analysis/                # 分析脚本
+│       ├── config/                  # 配置工具
+│       └── comparison/              # 对比实验
+├── results/
+│   ├── paper_results/               # 论文核心结果
+│   ├── supplementary/               # 补充材料
+│   └── archive/                     # 归档实验
+├── docs/
+│   ├── guides/                      # 使用指南
+│   ├── design/                      # 设计文档
+│   └── reference/                   # 参考文档
 ├── checkpoints/                     # 保存的检查点
-├── results/                         # 实验结果
-└── data/                            # 数据集
+├── data/                            # 数据集
+└── archive/                         # 历史归档
 ```
 
 ## 让二阶胜出的调参技巧

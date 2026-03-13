@@ -1,0 +1,16 @@
+\begin{algorithm}
+\caption{Weighted K-Means++ Initialization}
+\begin{algorithmic}[1]
+\REQUIRE $X$ \COMMENT{Input data points}
+\REQUIRE $W$ \COMMENT{Input sample weights}
+\REQUIRE $k$ \COMMENT{Number of clusters}
+\STATE $C \leftarrow X[ \texttt{random\_choice}(W)]$ \COMMENT{Initialize the first centroid randomly according to weights}
+\FOR{$i$ in $2$ to $k$}
+    \STATE $D \leftarrow \texttt{min\_distance}(X, C)$ \COMMENT{Compute distance of each point to nearest centroid}
+    \STATE $D \leftarrow D \cdot W$ \COMMENT{Weight the distances}
+    \STATE $P \leftarrow D / \texttt{sum}(D)$ \COMMENT{Compute probabilities}
+    \STATE $C \leftarrow C \cup X[ \texttt{random\_choice}(P)]$ \COMMENT{Select new centroid}
+\ENDFOR
+\RETURN $C$
+\end{algorithmic}\label{algo:initialize}
+\end{algorithm}

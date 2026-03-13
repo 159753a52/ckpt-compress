@@ -1,0 +1,12 @@
+\begin{algorithm}
+\caption{Approximate K-Means Clustering}
+\begin{algorithmic}[1]
+\REQUIRE $X$ \COMMENT{Input data points}, $k$ \COMMENT{Number of clusters}
+\REQUIRE $\alpha$ \COMMENT{Relative error}, $\sigma$ \COMMENT{Linear combination factor}
+\STATE $X_q$, $C_q$ $\leftarrow$ \texttt{GetQuantileSketchHistogram}($X$, $\alpha$) \COMMENT{Obtain log sketch histogram \cref{algo:quantile-sketch} for coarse grain clustering. $X_q$ are the histogram bucket centers and $C_q$ are the corresponding frequencies.}
+\STATE  $\hat{X_q}$, $\hat{C_q}$ $\leftarrow$  \texttt{Normalize}($X_q$), \texttt{Normalize}($C_q$)
+\STATE $W = \sigma * \hat{C_q} + (1 - \sigma) * |\hat{X_q}|$  \COMMENT{Compute sample weight for histogram buckets according to frequency and magnitude} 
+\STATE $\texttt{centers}$ $\leftarrow$ \texttt{WeightedKMeans}($X_q$, $W$, $k$)  \COMMENT{Perform weighted k-means++ on histogram keys and values}  
+\RETURN $\texttt{centers}$
+\end{algorithmic}\label{algo:kmeans}
+\end{algorithm}

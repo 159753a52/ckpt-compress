@@ -1,0 +1,31 @@
+\begin{algorithm}[t]
+\caption{Rearranging parameters for efficient encoding}
+\begin{algorithmic}[1]
+\REQUIRE $\Delta$ (Delta values calculated from adjacent checkpoints)
+\REQUIRE $C^{i-1}_q$ (The quantized integer values of the last checkpoint)
+\ENSURE Delta groups (A dictionary containing delta values for each unique quantization bin)
+\STATE bins $\leftarrow$ unique\_bins($C^{i-1}_q$)
+\STATE delta\_groups $\leftarrow$ create\_empty\_dict(bins)
+\FOR{$j \in [0, \text{length}(C^{i-1}_q)]$}
+\STATE delta\_groups[$C^{i-1}_q[j]$].append($\Delta[j]$)
+\ENDFOR
+\RETURN delta\_groups
+\end{algorithmic}\label{algo:param-rearrangement}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{Reconstructing parameters after rearrangement}
+\begin{algorithmic}[1]
+\REQUIRE delta\_groups (Delta groups obtained from the rearranging step)
+\REQUIRE $C^{i-1}_q$ (The quantized integer values of the previous checkpoint)
+\ENSURE $C^i_q$ (The quantized integer values of the current checkpoint)
+\STATE $C^i_q$ $\leftarrow$ create\_zero\_array(length($C^{i-1}_q$))
+\FOR{$j \in [0, \text{length}(C^{i-1}_q)]$}
+\STATE bin $\leftarrow$ $C^{i-1}_q[j]$
+\IF{delta\_groups[bin] $\neq$ $\emptyset$}
+\STATE $C^i_q[j]$ $\leftarrow$ $C^{i-1}_q[j]$ + delta\_groups[bin].pop(0)
+\ENDIF
+\ENDFOR
+\RETURN $C^i_q$
+\end{algorithmic}\label{algo:param-reconstruction}
+\end{algorithm}
