@@ -1,0 +1,23 @@
+# 敏感性分析配置
+# 对应 run_sensitivity_analysis.py
+
+common:
+  num_steps: 100
+  hvp_batches: 8
+  alpha: 0.5
+
+models:
+  - name: gpt2-medium
+    dataset: wikitext103
+    batch_size: 4
+    seq_length: 512
+
+# 默认剪枝率（可用 --prune_ratio 覆盖）
+prune_ratio: 0.3
+
+# 各维度扫描范围（脚本已内置，此处仅做文档记录）
+dimensions:
+  K: [5, 10, 20, 50]
+  hvp_batch: [1, 4, 8, 16]
+  bisection_tol: [1.0e-3, 1.0e-6, 1.0e-9]
+  alpha: [0.0, 0.1, 0.3, 0.5, 0.7, 1.0]

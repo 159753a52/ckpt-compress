@@ -20,8 +20,10 @@ Usage:
 import gc
 import os
 os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
 import sys
+import random
 from pathlib import Path
 import argparse
 import torch
@@ -51,14 +53,15 @@ from dacp.quantization.int4 import INT4Quantizer
 
 METHODS = [
     'none',
+    'random+uniform',
     'magnitude+uniform',
+    'magnitude+weibull-adaptive',
     'ours-2d',
-    'ours-2d+kmeans16',
 ]
 
 
 def train_one_step(model, optimizer, batch, task_type, device):
-    """训练一步，返回 loss。"""
+    """Train one step, return loss."""
     model.train()
     criterion = nn.CrossEntropyLoss()
     
@@ -80,8 +83,7 @@ def train_one_step(model, optimizer, batch, task_type, device):
         logits = outputs.logits if hasattr(outputs, 'logits') else outputs
         loss = criterion(logits, labels)
     elif task_type == 'cv':
-        images = batch['images'].to(device)
-        labels = batch['labels'].to(device)
+        images, labels = batch[0].to(device), batch[1].to(device)
         outputs = model(images)
         logits = outputs.logits if hasattr(outputs, 'logits') else outputs
         loss = criterion(logits, labels)
@@ -93,7 +95,7 @@ def train_one_step(model, optimizer, batch, task_type, device):
 
 
 def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, task_type):
-    """在训练过程中收集梯度（用于 first-order importance scoring）。"""
+    """Collect gradients during training for first-order importance scoring."""
     criterion = nn.CrossEntropyLoss()
     accumulated_grads = defaultdict(lambda: 0)
     
@@ -127,8 +129,7 @@ def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, 
             logits = outputs.logits if hasattr(outputs, 'logits') else outputs
             loss = criterion(logits, labels)
         elif task_type == 'cv':
-            images = batch['images'].to(device)
-            labels = batch['labels'].to(device)
+            images, labels = batch[0].to(device), batch[1].to(device)
             outputs = model(images)
             logits = outputs.logits if hasattr(outputs, 'logits') else outputs
             loss = criterion(logits, labels)
@@ -146,6 +147,54 @@ def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, 
     
     weights = {name: p.detach().cpu() for name, p in model.named_parameters()}
     return weights, dict(accumulated_grads)
+
+
+def _is_residual_method(imp_name):
+    """Check if the importance method operates on weight residuals."""
+    return imp_name in ('excp-residual', 'ours-3d-residual')
+
+
+def apply_residual_pruning(model, scores, layer_ratios, prev_weights, device):
+    """Apply residual pruning: prune delta = w_current - w_prev, reconstruct.
+
+    This implements the ExCP-style residual checkpoint compression:
+      1. Compute delta = w_current - w_prev_reconstructed
+      2. Keep only the top-(1-ratio) delta elements by score
+      3. Reconstruct: w_new = w_prev_reconstructed + delta_pruned
+      4. Return updated prev_reconstructed for next recovery cycle
+    """
+    model_params = dict(model.named_parameters())
+    masks = {}
+    new_prev = {}
+
+    for name, score in scores.items():
+        if name not in model_params or name not in layer_ratios:
+            continue
+        ratio = layer_ratios[name]
+        flat = score.flatten()
+        k = int(len(flat) * ratio)
+        if k == 0:
+            masks[name] = torch.ones_like(score)
+            new_prev[name] = model_params[name].data.detach().cpu().clone()
+            continue
+
+        threshold = torch.kthvalue(flat, k).values
+        mask = (score > threshold).float()
+        masks[name] = mask
+
+        param = model_params[name]
+        w_prev = prev_weights[name].to(device)
+        delta = param.data - w_prev
+        delta_pruned = delta * mask.to(device)
+        param.data.copy_(w_prev + delta_pruned)
+        new_prev[name] = param.data.detach().cpu().clone()
+
+    # Params not in scores: keep as-is
+    for name, param in model_params.items():
+        if name not in new_prev:
+            new_prev[name] = param.data.detach().cpu().clone()
+
+    return masks, new_prev
 
 
 def apply_pruning_to_model(model, scores, layer_ratios, device):
@@ -177,7 +226,7 @@ def apply_pruning_to_model(model, scores, layer_ratios, device):
     return masks
 
 
-# 不量化 embedding 和 layernorm（只量化 weight matrices）
+# Skip quantizing embedding and layernorm (only quantize weight matrices)
 _SKIP_QUANTIZE = ['embed', 'wte', 'wpe', 'ln_', 'LayerNorm', 'layernorm']
 
 def apply_quantize_dequantize(model, masks, quantizer, device):
@@ -206,56 +255,326 @@ def apply_quantize_dequantize(model, masks, quantizer, device):
             param.data.mul_(masks[name].to(device))
 
 
+def _parse_method(method_name):
+    """Parse method string into (importance, allocation, quantizer_suffix).
+
+    Accepted formats:
+        magnitude+uniform
+        first-order+uniform+kmeans16
+        ours-2d+kmeans256
+        second-order-hvp+weibull-adaptive
+    """
+    parts = method_name.split('+')
+    quant_suffix = None
+    # Detect quantization suffix from tail
+    if parts and any(parts[-1].startswith(q) for q in ('kmeans', 'int4')):
+        quant_suffix = parts.pop()
+    if len(parts) == 1:
+        return parts[0], None, quant_suffix
+    return parts[0], parts[1], quant_suffix
+
+
 def compute_scores_for_method(method_name, model, optimizer, train_loader,
-                               device, num_steps, task_type, args):
-    """Compute importance scores based on method name."""
+                               device, num_steps, task_type, args,
+                               reference_weights=None):
+    """Compute importance scores based on method name.
+
+    Supports generic ``importance+allocation`` names as well as the
+    legacy ``ours-2d`` shorthand (mapped to 2D combination + weibull-adaptive).
+    """
+    imp_name, alloc_name, _ = _parse_method(method_name)
+
     weights, grads = collect_gradients_inline(
         model, optimizer, train_loader, device, num_steps, task_type)
-    
+
     prunable_w = filter_prunable_params(weights)
     prunable_g = {k: grads[k] for k in prunable_w if k in grads}
-    
-    if method_name.startswith('magnitude'):
-        # Magnitude scoring + uniform allocation
-        pruner = Pruner(importance='magnitude', allocation='uniform')
-        scores = pruner.compute_scores(prunable_w, prunable_g)
+
+    # --- excp-residual: magnitude of delta (ExCP pruning criterion) ---
+    if imp_name == 'excp-residual':
+        scores = {}
+        for name in prunable_w:
+            w = prunable_w[name]
+            ref = reference_weights.get(name) if reference_weights else None
+            if ref is not None:
+                delta = w - ref.to(w.device)
+                scores[name] = delta.abs()
+            else:
+                scores[name] = w.abs()
+        alloc = alloc_name or 'uniform'
+        pruner = Pruner(importance='magnitude', allocation=alloc)
         layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+        _protect = ['classifier', 'lm_head', 'qa_output', 'score']
+        for _n in layer_ratios:
+            if any(_p in _n.lower() for _p in _protect):
+                layer_ratios[_n] = min(layer_ratios[_n], 0.1)
+        del weights, grads, prunable_w, prunable_g
+        gc.collect()
         return scores, layer_ratios
-    
-    elif method_name.startswith('ours-2d'):
-        # 2D scoring: need HVP for damage scores
-        # Compute magnitude scores
-        mag_scorer = get_importance_scorer('magnitude')
-        mag_scores = mag_scorer.score(prunable_w, prunable_g)
-        
-        # Compute first-order damage scores (lightweight, no HVP needed for FT experiment)
-        # Use |g * theta| as damage proxy to avoid expensive HVP in every recovery cycle
-        damage_scores = {}
+
+    # --- ours-3d-residual: ours-3d scoring on delta (our method in residual mode) ---
+    if imp_name == 'ours-3d-residual':
+        from dacp.tools.importance import (
+            compute_hvp_blockwise_batched,
+            build_transformer_blocks,
+        )
+        criterion = torch.nn.CrossEntropyLoss()
+        if task_type == 'lm':
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                out = m(ids)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(
+                    logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
+                    batch['labels'].to(device)[..., 1:].contiguous().view(-1))
+        elif task_type == 'cv':
+            def loss_fn(m, batch):
+                images, labels = batch[0].to(device), batch[1].to(device)
+                out = m(images)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, labels)
+        else:
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                attn = batch.get('attention_mask')
+                if attn is not None:
+                    attn = attn.to(device)
+                out = m(ids, attention_mask=attn)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, batch['labels'].to(device))
+        hvp_batches = []
+        data_it = iter(train_loader)
+        for _ in range(min(5, num_steps)):
+            try:
+                hvp_batches.append(next(data_it))
+            except StopIteration:
+                data_it = iter(train_loader)
+                hvp_batches.append(next(data_it))
+        _ml = args.model.lower()
+        if 'bert' in _ml:
+            model_family = 'bert'
+        elif 'vit' in _ml:
+            model_family = 'vit'
+        elif 'pythia' in _ml:
+            model_family = 'pythia'
+        else:
+            model_family = 'gpt2'
+        blocks = build_transformer_blocks(model, model_family)
+        hvp_result = compute_hvp_blockwise_batched(
+            model, loss_fn, hvp_batches, blocks, num_batches=len(hvp_batches))
+        # Combine delta + first-order + second-order (all on delta)
+        alpha1 = 0.3
+        alpha2 = 0.2
+        scores = {}
+        for name in prunable_w:
+            w = prunable_w[name]
+            ref = reference_weights.get(name) if reference_weights else None
+            delta = (w - ref.to(w.device)) if ref is not None else w
+            mag = delta.abs()
+            g = prunable_g.get(name, torch.zeros_like(w))
+            fo = (g * delta).abs()
+            fo_mean = fo.mean()
+            fo_corr = alpha1 * (fo / (fo_mean + 1e-12)) if fo_mean > 0 else 0.0
+            hvp = hvp_result.get(name)
+            if hvp is not None:
+                hvp = hvp.to(w.device)
+                so = (delta * hvp).abs()
+                so_mean = so.mean()
+                so_corr = alpha2 * (so / (so_mean + 1e-12)) if so_mean > 0 else 0.0
+            else:
+                so_corr = 0.0
+            scores[name] = mag * (1.0 + fo_corr + so_corr)
+        alloc = alloc_name or 'weibull-adaptive'
+        pruner = Pruner(importance='magnitude', allocation=alloc)
+        layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+        _protect = ['classifier', 'lm_head', 'qa_output', 'score']
+        for _n in layer_ratios:
+            if any(_p in _n.lower() for _p in _protect):
+                layer_ratios[_n] = min(layer_ratios[_n], 0.1)
+        del weights, grads, prunable_w, prunable_g, hvp_batches, hvp_result
+        gc.collect()
+        return scores, layer_ratios
+
+    # --- ours-2d: magnitude-based scoring + first-order correction + Weibull allocation ---
+    if imp_name == 'ours-2d':
+        scores = {}
         for name in prunable_w:
             w = prunable_w[name]
             g = prunable_g.get(name, torch.zeros_like(w))
-            damage_scores[name] = (g * w).abs()
-        
-        # 2D combination
-        combined = combine_scores_2d_with_protection(
-            mag_scores, damage_scores,
-            protection_ratio=args.protection_ratio,
-            alpha=args.alpha,
-        )
-        
-        # Gamma-adaptive allocation using damage scores
-        pruner = Pruner(importance='magnitude', allocation='gamma-adaptive')
-        alloc_scores = damage_scores
-        layer_ratios = pruner.compute_layer_ratios(alloc_scores, args.prune_ratio)
-        
-        # 释放中间张量
-        del weights, grads, prunable_w, prunable_g, mag_scores, damage_scores
+            mag = w.abs()
+            # First-order sensitivity as multiplicative correction
+            fo = (g * w).abs()
+            fo_mean = fo.mean()
+            if fo_mean > 0:
+                correction = 1.0 + 0.3 * (fo / (fo_mean + 1e-12))
+            else:
+                correction = 1.0
+            scores[name] = mag * correction
+        alloc = alloc_name or 'weibull-adaptive'
+        pruner = Pruner(importance='magnitude', allocation=alloc)
+        layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+        # Protect output/classifier layers from aggressive pruning
+        _protect = ['classifier', 'lm_head', 'qa_output', 'score']
+        for _n in layer_ratios:
+            if any(_p in _n.lower() for _p in _protect):
+                layer_ratios[_n] = min(layer_ratios[_n], 0.1)
+        del weights, grads, prunable_w, prunable_g
         gc.collect()
-        
-        return combined, layer_ratios
-    
-    else:
-        raise ValueError(f"Unknown method: {method_name}")
+        return scores, layer_ratios
+
+    # --- ours-3d: magnitude + first-order + second-order HVP correction + Weibull allocation ---
+    if imp_name == 'ours-3d':
+        from dacp.tools.importance import (
+            compute_hvp_blockwise_batched,
+            build_transformer_blocks,
+        )
+        # Phase 1: Build HVP data batches
+        criterion = torch.nn.CrossEntropyLoss()
+        if task_type == 'lm':
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                out = m(ids)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(
+                    logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
+                    batch['labels'].to(device)[..., 1:].contiguous().view(-1))
+        elif task_type == 'cv':
+            def loss_fn(m, batch):
+                images, labels = batch[0].to(device), batch[1].to(device)
+                out = m(images)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, labels)
+        else:
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                attn = batch.get('attention_mask')
+                if attn is not None:
+                    attn = attn.to(device)
+                out = m(ids, attention_mask=attn)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, batch['labels'].to(device))
+        hvp_batches = []
+        data_it = iter(train_loader)
+        for _ in range(min(5, num_steps)):
+            try:
+                hvp_batches.append(next(data_it))
+            except StopIteration:
+                data_it = iter(train_loader)
+                hvp_batches.append(next(data_it))
+
+        # Phase 2: Block-wise HVP computation
+        _ml = args.model.lower()
+        if 'bert' in _ml:
+            model_family = 'bert'
+        elif 'vit' in _ml:
+            model_family = 'vit'
+        elif 'pythia' in _ml:
+            model_family = 'pythia'
+        else:
+            model_family = 'gpt2'
+        blocks = build_transformer_blocks(model, model_family)
+        hvp_result = compute_hvp_blockwise_batched(
+            model, loss_fn, hvp_batches, blocks, num_batches=len(hvp_batches))
+
+        # Phase 3: Combine magnitude + first-order + second-order
+        alpha1 = 0.3   # first-order correction weight
+        alpha2 = 0.2   # second-order correction weight
+        scores = {}
+        for name in prunable_w:
+            w = prunable_w[name]
+            g = prunable_g.get(name, torch.zeros_like(w))
+            mag = w.abs()
+            # First-order correction: |g * w|
+            fo = (g * w).abs()
+            fo_mean = fo.mean()
+            fo_corr = alpha1 * (fo / (fo_mean + 1e-12)) if fo_mean > 0 else 0.0
+            # Second-order correction: |theta * HVP|
+            hvp = hvp_result.get(name)
+            if hvp is not None:
+                hvp = hvp.to(w.device)
+                so = (w * hvp).abs()
+                so_mean = so.mean()
+                so_corr = alpha2 * (so / (so_mean + 1e-12)) if so_mean > 0 else 0.0
+            else:
+                so_corr = 0.0
+            scores[name] = mag * (1.0 + fo_corr + so_corr)
+
+        alloc = alloc_name or 'weibull-adaptive'
+        pruner = Pruner(importance='magnitude', allocation=alloc)
+        layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+        # Protect output/classifier layers from aggressive pruning
+        _protect = ['classifier', 'lm_head', 'qa_output', 'score']
+        for _n in layer_ratios:
+            if any(_p in _n.lower() for _p in _protect):
+                layer_ratios[_n] = min(layer_ratios[_n], 0.1)
+        del weights, grads, prunable_w, prunable_g, hvp_batches, hvp_result
+        gc.collect()
+        return scores, layer_ratios
+
+    # --- second-order-hvp: real block-wise HVP for damage scoring ---
+    if imp_name == 'second-order-hvp':
+        from dacp.tools.importance import compute_importance_scores_hvp_blockwise
+        criterion = torch.nn.CrossEntropyLoss()
+        if task_type == 'lm':
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                out = m(ids)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
+                                 batch['labels'].to(device)[..., 1:].contiguous().view(-1))
+        elif task_type == 'cv':
+            def loss_fn(m, batch):
+                images, labels = batch[0].to(device), batch[1].to(device)
+                out = m(images)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, labels)
+        else:
+            def loss_fn(m, batch):
+                ids = batch['input_ids'].to(device)
+                attn = batch.get('attention_mask')
+                if attn is not None:
+                    attn = attn.to(device)
+                out = m(ids, attention_mask=attn)
+                logits = out.logits if hasattr(out, 'logits') else out
+                return criterion(logits, batch['labels'].to(device))
+        hvp_batches = []
+        data_it = iter(train_loader)
+        for _ in range(min(5, num_steps)):
+            try:
+                hvp_batches.append(next(data_it))
+            except StopIteration:
+                data_it = iter(train_loader)
+                hvp_batches.append(next(data_it))
+        _ml2 = args.model.lower()
+        if 'bert' in _ml2:
+            model_family = 'bert'
+        elif 'vit' in _ml2:
+            model_family = 'vit'
+        elif 'pythia' in _ml2:
+            model_family = 'pythia'
+        else:
+            model_family = 'gpt2'
+        scores = compute_importance_scores_hvp_blockwise(
+            model, loss_fn, hvp_batches, model_family=model_family,
+            num_batches=len(hvp_batches), alpha=0.5, normalize=False)
+        scores = filter_prunable_params(scores)
+        alloc = alloc_name or 'weibull-adaptive'
+        pruner = Pruner(importance='magnitude', allocation=alloc)
+        layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+        del weights, grads, prunable_w, prunable_g, hvp_batches
+        gc.collect()
+        return scores, layer_ratios
+
+    # --- Generic path: magnitude / first-order / residual-magnitude ---
+    alloc = alloc_name or 'uniform'
+    pruner = Pruner(importance=imp_name, allocation=alloc)
+    scores = pruner.compute_scores(prunable_w, prunable_g,
+                                    reference_weights=reference_weights)
+    layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
+
+    del weights, grads, prunable_w, prunable_g
+    gc.collect()
+    return scores, layer_ratios
 
 
 def run_method(method_name, args, train_loader, val_batches, task_type):
@@ -264,24 +583,57 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
     print(f"Method: {method_name}")
     print(f"{'='*60}")
     
-    model, _ = load_model(args.model, pretrained=True, 
-                           checkpoint_path=args.checkpoint, device=args.device,
+    imp_name, _, quant_suffix = _parse_method(method_name)
+    
+    use_pretrained = not getattr(args, 'random_init', False)
+    model, _ = load_model(args.model, pretrained=use_pretrained, 
+                           checkpoint_path=args.checkpoint if use_pretrained else None,
+                           device=args.device,
                            dataset_name=args.dataset)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+
+    # Load optimizer state from checkpoint if available
+    if args.checkpoint is not None:
+        _ckpt = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
+        if isinstance(_ckpt, dict) and 'optimizer_state_dict' in _ckpt:
+            try:
+                optimizer.load_state_dict(_ckpt['optimizer_state_dict'])
+                for _state in optimizer.state.values():
+                    for _k, _v in _state.items():
+                        if isinstance(_v, torch.Tensor):
+                            _state[_k] = _v.to(args.device)
+                # Reset lr to configured value (checkpoint may have decayed lr to ~0)
+                for _pg in optimizer.param_groups:
+                    _pg['lr'] = args.lr
+                print(f"  Loaded optimizer state from checkpoint (lr reset to {args.lr})")
+            except Exception as e:
+                print(f"  Warning: optimizer state load failed ({e}), using fresh optimizer")
+        del _ckpt
+
     
-    # Setup quantizer if needed
+    # Learning rate scheduler
+    scheduler = None
+    if getattr(args, 'lr_schedule', 'constant') == 'cosine':
+        from torch.optim.lr_scheduler import CosineAnnealingLR
+        scheduler = CosineAnnealingLR(optimizer, T_max=args.total_steps, eta_min=0)
+    
+    # Setup quantizer if needed (via parsed suffix)
     quantizer = None
-    if '+kmeans' in method_name:
-        n_clusters = 16  # default
-        if 'kmeans4' in method_name:
-            n_clusters = 4
-        elif 'kmeans16' in method_name:
-            n_clusters = 16
-        elif 'kmeans256' in method_name:
-            n_clusters = 256
+    if quant_suffix and quant_suffix.startswith('kmeans'):
+        n_clusters = int(quant_suffix.replace('kmeans', '') or '16')
         quantizer = KMeansQuantizer(n_clusters=n_clusters)
-    elif '+int4' in method_name:
+    elif quant_suffix == 'int4':
         quantizer = INT4Quantizer()
+    
+    # Save initial weight snapshot for residual methods
+    reference_weights = None
+    if imp_name == 'residual-magnitude' or _is_residual_method(imp_name):
+        reference_weights = {
+            n: p.detach().cpu().clone()
+            for n, p in model.named_parameters()
+        }
+        if _is_residual_method(imp_name):
+            print(f"  [Residual mode] Initialized prev_reconstructed snapshot")
     
     steps_per_segment = args.total_steps // (args.num_recoveries + 1)
     loss_history = []
@@ -299,6 +651,8 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
                 batch = next(data_iter)
             
             loss = train_one_step(model, optimizer, batch, task_type, args.device)
+            if scheduler is not None:
+                scheduler.step()
             global_step += 1
             
             if step % args.eval_interval == 0:
@@ -318,21 +672,39 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
             # Compute scores
             scores, layer_ratios = compute_scores_for_method(
                 method_name, model, optimizer, train_loader,
-                args.device, args.num_importance_steps, task_type, args)
+                args.device, args.num_importance_steps, task_type, args,
+                reference_weights=reference_weights)
             
-            # Apply pruning (weights only, no optimizer modification)
-            masks = apply_pruning_to_model(model, scores, layer_ratios, args.device)
+            # Apply pruning
+            if _is_residual_method(imp_name):
+                masks, reference_weights = apply_residual_pruning(
+                    model, scores, layer_ratios, reference_weights, args.device)
+                print(f"  [Residual mode] Updated prev_reconstructed")
+            else:
+                masks = apply_pruning_to_model(model, scores, layer_ratios, args.device)
             
             # Apply quantization if configured
             if quantizer is not None:
                 apply_quantize_dequantize(model, masks, quantizer, args.device)
             
-            # 释放 scoring 中间产物
+            # Update reference_weights for residual-magnitude recovery
+            if imp_name == 'residual-magnitude':
+                reference_weights = {
+                    n: p.detach().cpu().clone()
+                    for n, p in model.named_parameters()
+                }
+            
+            # Release scoring intermediates
             del scores, layer_ratios
             gc.collect()
             
             metrics = evaluate(model, val_batches, task_type, args.device)
-            ppl_str = f"PPL={metrics.get('perplexity', 0):.2f}" if 'perplexity' in metrics else f"loss={metrics['loss']:.4f}"
+            if 'perplexity' in metrics:
+                ppl_str = f"PPL={metrics['perplexity']:.2f}"
+            elif 'accuracy' in metrics:
+                ppl_str = f"Acc={metrics['accuracy']:.4f}, loss={metrics['loss']:.4f}"
+            else:
+                ppl_str = f"loss={metrics['loss']:.4f}"
             print(f"  After compression: {ppl_str}")
     
     # Final evaluation
@@ -343,11 +715,12 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
 
 
 def plot_results(all_results, args):
-    """绘制 loss 曲线。"""
+    """Plot loss curves."""
     plt.figure(figsize=(12, 6))
-    colors = {'none': 'black', 'magnitude+uniform': 'blue',
-              'ours-2d': 'red', 'ours-2d+kmeans16': 'darkred',
+    colors = {'none': 'black', 'random+uniform': 'lightgray',
+              'magnitude+uniform': 'blue',
               'magnitude+weibull-adaptive': 'green',
+              'ours-2d': 'red', 'ours-2d+kmeans16': 'darkred',
               'first-order+uniform': 'gray',
               'first-order+weibull-adaptive': 'orange'}
     
@@ -374,7 +747,7 @@ def plot_results(all_results, args):
     plt.savefig(out_dir / f'ft_{args.model}_{args.dataset}_K{args.num_recoveries}.png', dpi=300)
     plt.savefig(out_dir / f'ft_{args.model}_{args.dataset}_K{args.num_recoveries}.pdf')
     plt.close()
-    print(f"图片已保存: {out_dir}")
+    print(f"Figures saved to {out_dir}")
 
 
 def main():
@@ -398,6 +771,13 @@ def main():
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--data_dir', type=str, default=None)
     parser.add_argument('--output_dir', type=str, default='results/paper_results/fault_tolerant')
+    parser.add_argument('--random_init', action='store_true',
+                        help='Use randomly initialized model instead of pretrained')
+    parser.add_argument('--lr_schedule', type=str, default='constant',
+                        choices=['constant', 'cosine'],
+                        help='Learning rate schedule')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for reproducibility')
     args = parser.parse_args()
     
     methods = [m.strip() for m in args.methods.split(',')] if args.methods else METHODS
@@ -414,11 +794,15 @@ def main():
         args.model, args.dataset, args.batch_size, args.seq_length,
         data_dir=args.data_dir or './data')
     
-    val_batches = cache_batches(val_loader, 50, task_type)
+    # Use more val batches for classification to improve accuracy resolution
+    n_val = 250 if task_type == 'cls' else 50
+    val_batches = cache_batches(val_loader, n_val, task_type)
     
     # Baseline evaluation
-    model_tmp, _ = load_model(args.model, pretrained=True,
-                               checkpoint_path=args.checkpoint, device=args.device,
+    use_pretrained = not args.random_init
+    model_tmp, _ = load_model(args.model, pretrained=use_pretrained,
+                               checkpoint_path=args.checkpoint if use_pretrained else None,
+                               device=args.device,
                                dataset_name=args.dataset)
     baseline_metrics = evaluate(model_tmp, val_batches, task_type, args.device)
     del model_tmp
@@ -428,6 +812,11 @@ def main():
     all_results = {}
     all_final = {}
     for method in methods:
+        if args.seed is not None:
+            torch.manual_seed(args.seed)
+            torch.cuda.manual_seed_all(args.seed)
+            random.seed(args.seed)
+            np.random.seed(args.seed)
         history, final = run_method(method, args, train_loader, val_batches, task_type)
         all_results[method] = history
         all_final[method] = final

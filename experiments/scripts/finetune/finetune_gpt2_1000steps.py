@@ -31,10 +31,10 @@ import time
 from tqdm import tqdm
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.ckpt_compress.models.gpt2 import get_gpt2_small
-from src.ckpt_compress.utils.data_loader import get_wikitext103_dataloader
+from dacp.models.gpt2 import get_gpt2_small
+from dacp.utils.data_loader import get_wikitext103_dataloader
 
 
 def train_n_steps(

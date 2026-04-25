@@ -1,8 +1,0 @@
-\section{Implementation}
-
-
-
-We have developed \sys and all the baseline systems discussed in \S~\ref{sec:eval-setup} using Pytorch, amounting to 7377 lines of Python code. To enhance the performance of delta encoding, we have implemented Huffman encoding and run-length encoding using 300 lines of C++ code. \sys can be effortlessly integrated into user applications with less than 10 lines of code modifications (\cref{lst:code-torch}). Additionally, we provide a custom callback for the MosaicML composer library, enabling single-line integration of our system into applications developed with Composer (\cref{lst:code-composer}). This strategy can be readily extended to frameworks such as Pytorch-lightning and Keras, both of which offer a high-level trainer interface.
-
-\input{algorithms/code_example_torch}
-\input{algorithms/code_example_composer}

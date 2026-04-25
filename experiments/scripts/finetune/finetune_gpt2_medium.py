@@ -33,6 +33,7 @@ os.environ["HF_DATASETS_OFFLINE"] = "1"
 
 import torch
 import torch.nn as nn
+import math
 from pathlib import Path
 import sys
 from tqdm import tqdm
@@ -40,8 +41,45 @@ import argparse
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.ckpt_compress.models.gpt2 import get_gpt2_medium
-from src.ckpt_compress.utils.data_loader import get_wikitext103_dataloader
+from transformers import GPT2LMHeadModel
+from dacp.utils.data_loader import get_wikitext103_dataloader
+
+LOCAL_MODEL_PATH = os.environ.get('GPT2M_MODEL_PATH', '/root/ckpt-compress/data/models/gpt2-medium')
+
+
+def get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps):
+    """Warmup + cosine decay 学习率调度器。"""
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            return float(current_step) / float(max(1, warmup_steps))
+        progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+        return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+
+@torch.no_grad()
+def evaluate_ppl(model, eval_loader, device, max_batches=50):
+    """在 eval 数据上计算 PPL。"""
+    model.eval()
+    total_loss = 0.0
+    total_tokens = 0
+    for i, batch in enumerate(eval_loader):
+        if i >= max_batches:
+            break
+        input_ids = batch['input_ids'].to(device)
+        labels = input_ids.clone()
+        outputs = model(input_ids)
+        logits = outputs.logits
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+        loss = nn.functional.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1), reduction='sum')
+        total_tokens += shift_labels.numel()
+        total_loss += loss.item()
+    avg_loss = total_loss / total_tokens
+    model.train()
+    return math.exp(avg_loss)
 
 
 def train_step(model, optimizer, scaler, batch, device, use_amp=True):
@@ -163,7 +201,7 @@ def main():
     
     # 加载模型
     print("\n加载 GPT-2 Medium 预训练模型...")
-    model = get_gpt2_medium(pretrained=True, local_files_only=True)
+    model = GPT2LMHeadModel.from_pretrained(LOCAL_MODEL_PATH, local_files_only=True)
     model = model.to(args.device)
     print(f"模型已加载到 {args.device}")
     
@@ -173,6 +211,11 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
     )
+    
+    # 创建学习率调度器（warmup + cosine decay）
+    warmup_steps = args.total_steps // 10
+    scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, args.total_steps)
+    print(f"LR Schedule: warmup {warmup_steps} steps + cosine decay")
     
     # 创建 GradScaler（用于混合精度训练）
     scaler = torch.cuda.amp.GradScaler() if args.use_amp else None
@@ -185,8 +228,25 @@ def main():
         seq_length=args.seq_length,
         num_workers=0,
         shuffle=True,
+        local_path=os.environ.get('WIKITEXT103_PATH', '/root/ckpt-compress/data/wikitext103'),
     )
-    print(f"数据加载器已创建")
+    print(f"训练数据加载器已创建")
+    
+    # 加载 validation 数据
+    print("加载 WikiText-103 validation 数据...")
+    eval_loader = get_wikitext103_dataloader(
+        split='validation',
+        batch_size=args.batch_size,
+        seq_length=args.seq_length,
+        num_workers=0,
+        shuffle=False,
+        local_path=os.environ.get('WIKITEXT103_PATH', '/root/ckpt-compress/data/wikitext103'),
+    )
+    print(f"Validation 数据加载器已创建")
+    
+    # 评估初始 PPL
+    init_ppl = evaluate_ppl(model, eval_loader, args.device)
+    print(f"\n初始 Validation PPL: {init_ppl:.4f}")
     
     # 训练循环
     print("\n开始训练...")
@@ -206,18 +266,22 @@ def main():
         
         # 训练一步
         loss = train_step(model, optimizer, scaler, batch, args.device, args.use_amp)
+        scheduler.step()
         running_loss += loss
         
         # 打印进度
         if step % log_interval == 0:
             avg_loss = running_loss / log_interval
             perplexity = torch.exp(torch.tensor(avg_loss)).item()
-            print(f"\nStep {step}/{args.total_steps}: Loss={avg_loss:.4f}, PPL={perplexity:.2f}")
+            current_lr = scheduler.get_last_lr()[0]
+            print(f"\nStep {step}/{args.total_steps}: Loss={avg_loss:.4f}, TrainPPL={perplexity:.2f}, LR={current_lr:.2e}")
             running_loss = 0.0
         
-        # 保存检查点
+        # 保存检查点 + 评估
         if step % args.save_every == 0:
-            print(f"\n保存检查点 (step {step})...")
+            val_ppl = evaluate_ppl(model, eval_loader, args.device)
+            print(f"\n[Step {step}] Validation PPL: {val_ppl:.4f}")
+            print(f"保存检查点 (step {step})...")
             save_checkpoint(model, optimizer, step, loss, args.output_dir)
     
     # 保存最终检查点

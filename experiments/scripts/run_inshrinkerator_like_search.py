@@ -34,8 +34,8 @@ from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate, compute_quality_drop
 from experiments.lib.importance_compare.scoring import compute_scores_by_method
-from src.ckpt_compress.pruning.param_schema import build_type_map
-from src.ckpt_compress.pruning.inshrinkerator_search import (
+from dacp.pruning.param_schema import build_type_map
+from baselines.inshrinkerator.per_type_search import (
     SearchConfig,
     search_best_config,
     save_search_result,
@@ -91,7 +91,7 @@ def main():
 
     # 1. Load model
     print("\n[1/5] Loading model...")
-    model, _ = load_model(
+    model, model_family = load_model(
         args.model,
         pretrained=True,
         checkpoint_path=args.checkpoint,
@@ -117,6 +117,7 @@ def main():
         methods=['magnitude', 'first-order'],
         alpha=args.alpha,
         hvp_batches=args.hvp_batches,
+        model_family=model_family,
     )
     del model_for_scoring
     if torch.cuda.is_available():

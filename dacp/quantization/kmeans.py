@@ -17,6 +17,23 @@ import numpy as np
 from typing import Tuple, Dict, Any, Optional
 
 
+def _dtype_from_str(dtype_str: str) -> torch.dtype:
+    """将字符串形式的 dtype 安全映射为 torch.dtype。"""
+    mapping = {
+        'torch.float16': torch.float16,
+        'torch.float32': torch.float32,
+        'torch.float64': torch.float64,
+        'torch.bfloat16': torch.bfloat16,
+        'torch.int8': torch.int8,
+        'torch.int16': torch.int16,
+        'torch.int32': torch.int32,
+        'torch.int64': torch.int64,
+        'torch.uint8': torch.uint8,
+        'torch.bool': torch.bool,
+    }
+    return mapping.get(dtype_str, torch.float32)
+
+
 def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
     """DDSketch 对数空间直方图（仅正值 / 绝对值）。
 
@@ -223,6 +240,23 @@ class KMeansQuantizer:
             }
             return indices, metadata
 
+        # 若活跃位置全部为 0，直接返回单零中心，避免重复零桶导致的不稳定行为
+        active_abs = np.abs(active_values)
+        if np.max(active_abs) <= 1e-30:
+            full_labels = np.full(len(weight_flat), -1, dtype=np.int64)
+            full_labels[mask_flat] = 0
+            full_signs = np.zeros(len(weight_flat), dtype=np.float64)
+            indices = torch.from_numpy(full_labels).to(torch.int64).view(shape)
+            metadata = {
+                'centroids': np.array([0.0]),
+                'signs': full_signs,
+                'shape': shape,
+                'n_clusters': 1,
+                'dtype': str(weight.dtype),
+                'mask_flat': mask_flat,
+            }
+            return indices, metadata
+
         # 提取符号，在绝对值上聚类（对齐 Inshrinkerator）
         active_signs = np.sign(active_values)
         active_abs = np.abs(active_values)
@@ -316,7 +350,7 @@ class KMeansQuantizer:
         weight = torch.from_numpy(weight_flat).view(shape)
 
         if 'dtype' in metadata:
-            dtype = eval(metadata['dtype'])
+            dtype = _dtype_from_str(metadata['dtype'])
             weight = weight.to(dtype)
 
         return weight

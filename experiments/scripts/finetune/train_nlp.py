@@ -12,17 +12,17 @@ from pathlib import Path
 import sys
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.ckpt_compress.models.gpt2 import (
+from dacp.models.gpt2 import (
     get_gpt2_small,
     get_gpt2_medium,
 )
-from src.ckpt_compress.utils.data_loader import (
+from dacp.utils.data_loader import (
     get_wikitext2_dataloader,
     get_wikitext103_dataloader,
 )
-from src.ckpt_compress.utils.trainer import BaseTrainer
+from dacp.utils.trainer import BaseTrainer
 
 
 def get_model(model_name: str, pretrained: bool = False):

@@ -1,0 +1,50 @@
+# Table 3: 主结果配置
+# 3 模型 × 4 稀疏度 × 4 方法，K=10 容错训练
+
+common:
+  total_steps: 1000        # 每个实验总训练步数
+  num_recoveries: 10       # compression-restore 次数（K=10）
+  lr: 5e-5                 # 学习率
+  hvp_batches: 8           # HVP batch size
+  alpha: 0.5               # 二阶权重系数
+
+models:
+  - name: gpt2-medium
+    dataset: wikitext103
+    checkpoint_dir: checkpoints/gpt2_medium_wikitext103
+    batch_size: 4
+    seq_length: 512
+    metric: perplexity
+
+  - name: pythia-410m
+    dataset: alpaca
+    checkpoint_dir: checkpoints/pythia_410m_alpaca
+    batch_size: 4
+    seq_length: 512
+    metric: downstream_avg_acc
+
+  - name: vit-l-32
+    dataset: imagenet
+    checkpoint_dir: checkpoints/vit_l32_imagenet
+    batch_size: 32
+    metric: top1_accuracy
+
+sparsity_levels: [0.1, 0.2, 0.3, 0.4]
+
+methods:
+  - label: magnitude+uniform
+    importance: magnitude
+    allocation: uniform
+
+  # Inshrinkerator baseline（per-type 需要预搜索 JSON，此处用 uniform 替代）
+  - label: first-order+uniform
+    importance: first-order
+    allocation: uniform
+
+  - label: residual-magnitude+uniform
+    importance: residual-magnitude
+    allocation: uniform
+
+  - label: second-order-hvp+weibull-adaptive
+    importance: second-order-hvp
+    allocation: weibull-adaptive

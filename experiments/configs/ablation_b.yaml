@@ -1,0 +1,22 @@
+# Ablation B: Gamma 近似 vs Global Top-K（附录）
+# GPT-2 Medium / WikiText-103
+
+common:
+  num_steps: 100
+  eval_batches: 20
+  hvp_batches: 8
+  alpha: 0.5
+
+models:
+  - name: gpt2-medium
+    dataset: wikitext103
+    batch_size: 4
+    seq_length: 512
+
+sparsity_levels: [0.2, 0.4]
+
+# 固定 second-order-hvp，对比 3 种分配策略
+methods:
+  - label: second-order-hvp+uniform
+  - label: second-order-hvp+global-topk
+  - label: second-order-hvp+gamma-adaptive

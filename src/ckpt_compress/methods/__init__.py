@@ -1,1 +1,0 @@
-"""Compression methods implementations."""

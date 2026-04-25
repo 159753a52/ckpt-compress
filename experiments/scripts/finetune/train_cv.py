@@ -12,17 +12,17 @@ from pathlib import Path
 import sys
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from src.ckpt_compress.models.resnet import (
+from dacp.models.resnet import (
     get_resnet18_cifar10,
     get_resnet50_cifar100,
 )
-from src.ckpt_compress.utils.data_loader import (
+from dacp.utils.data_loader import (
     get_cifar10_loaders,
     get_cifar100_loaders,
 )
-from src.ckpt_compress.utils.trainer import BaseTrainer
+from dacp.utils.trainer import BaseTrainer
 
 
 def get_model(model_name: str, num_classes: int):
@@ -42,7 +42,7 @@ def get_model(model_name: str, num_classes: int):
         if num_classes == 100:
             return get_resnet50_cifar100()
         else:
-            from src.ckpt_compress.models.resnet import ResNet50ForCIFAR
+            from dacp.models.resnet import ResNet50ForCIFAR
             return ResNet50ForCIFAR(num_classes=num_classes)
     else:
         raise ValueError(f"Unknown model: {model_name}")

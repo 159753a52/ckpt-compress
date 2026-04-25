@@ -1,0 +1,25 @@
+# Figure 3 & 多分布比较: Gamma 拟合验证配置
+# 对应 run_gamma_validation.py
+
+common:
+  num_steps: 100
+  hvp_batches: 8
+  alpha: 0.5
+
+models:
+  - name: gpt2-medium
+    dataset: wikitext103
+    batch_size: 4
+    seq_length: 512
+
+# 对比的分布族（run_gamma_validation.py 已内置）
+distributions:
+  - gamma
+  - lognormal
+  - weibull
+  - exponential
+
+# 拟合质量评估指标
+metrics:
+  - ks_test_pvalue
+  - aic
