@@ -151,7 +151,8 @@ def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, 
 
 def _is_residual_method(imp_name):
     """Check if the importance method operates on weight residuals."""
-    return imp_name in ('excp-residual', 'ours-3d-residual')
+    return imp_name in ('excp-residual', 'ours-3d-residual',
+                        'ours-fo-residual', 'ours-so-residual')
 
 
 def apply_residual_pruning(model, scores, layer_ratios, prev_weights, device):
@@ -313,7 +314,11 @@ def compute_scores_for_method(method_name, model, optimizer, train_loader,
         return scores, layer_ratios
 
     # --- ours-3d-residual: ours-3d scoring on delta (our method in residual mode) ---
-    if imp_name == 'ours-3d-residual':
+    # Variants for component ablation: ours-fo-residual (first-order only),
+    # ours-so-residual (second-order only)
+    if imp_name in ('ours-3d-residual', 'ours-fo-residual', 'ours-so-residual'):
+        use_fo = imp_name in ('ours-3d-residual', 'ours-fo-residual')
+        use_so = imp_name in ('ours-3d-residual', 'ours-so-residual')
         from dacp.tools.importance import (
             compute_hvp_blockwise_batched,
             build_transformer_blocks,
@@ -342,14 +347,14 @@ def compute_scores_for_method(method_name, model, optimizer, train_loader,
                 out = m(ids, attention_mask=attn)
                 logits = out.logits if hasattr(out, 'logits') else out
                 return criterion(logits, batch['labels'].to(device))
-        hvp_batches = []
+        score_batches = []
         data_it = iter(train_loader)
-        for _ in range(min(5, num_steps)):
+        for _ in range(min(8, max(num_steps, 1))):
             try:
-                hvp_batches.append(next(data_it))
+                score_batches.append(next(data_it))
             except StopIteration:
                 data_it = iter(train_loader)
-                hvp_batches.append(next(data_it))
+                score_batches.append(next(data_it))
         _ml = args.model.lower()
         if 'bert' in _ml:
             model_family = 'bert'
@@ -359,31 +364,66 @@ def compute_scores_for_method(method_name, model, optimizer, train_loader,
             model_family = 'pythia'
         else:
             model_family = 'gpt2'
-        blocks = build_transformer_blocks(model, model_family)
-        hvp_result = compute_hvp_blockwise_batched(
-            model, loss_fn, hvp_batches, blocks, num_batches=len(hvp_batches))
-        # Combine delta + first-order + second-order (all on delta)
-        alpha1 = 0.3
-        alpha2 = 0.2
+
+        # Residual (delta) w.r.t. prev reconstructed reference, on device.
+        # The pruning perturbation only touches prunable params, so the
+        # HVP probe vector is delta on prunable coords and zero elsewhere.
+        model_params = dict(model.named_parameters())
+        delta_dev = {}
+        for name in prunable_w:
+            p = model_params[name]
+            ref = reference_weights.get(name) if reference_weights else None
+            if ref is not None:
+                delta_dev[name] = (p.data - ref.to(p.device)).detach()
+            else:
+                delta_dev[name] = p.data.detach().clone()
+
+        # Clean gradients at the FINAL weights (eval mode, no optimizer step),
+        # replacing the path-averaged stale grads from collect_gradients_inline.
+        was_training = model.training
+        model.eval()
+        clean_grads = {}
+        if use_fo:
+            grad_param_names = list(delta_dev.keys())
+            grad_params = [model_params[n] for n in grad_param_names]
+            clean_grads = {n: torch.zeros_like(delta_dev[n]) for n in grad_param_names}
+            for b in score_batches:
+                loss = loss_fn(model, b)
+                gs = torch.autograd.grad(loss, grad_params, allow_unused=True)
+                for n, g in zip(grad_param_names, gs):
+                    if g is not None:
+                        clean_grads[n] += g.detach()
+                del loss, gs
+            for n in clean_grads:
+                clean_grads[n] /= len(score_batches)
+
+        if use_so:
+            blocks = build_transformer_blocks(model, model_family)
+            hvp_result = compute_hvp_blockwise_batched(
+                model, loss_fn, score_batches, blocks,
+                num_batches=min(5, len(score_batches)), vector=delta_dev)
+        else:
+            hvp_result = {}
+        if was_training:
+            model.train()
+
+        # Faithful Taylor damage of reverting delta_i:
+        #   ΔL ≈ -g_i·δ_i + 0.5·δ_i·(H·δ)_i ; score = |signed sum|
+        hvp_hits = 0
         scores = {}
         for name in prunable_w:
-            w = prunable_w[name]
-            ref = reference_weights.get(name) if reference_weights else None
-            delta = (w - ref.to(w.device)) if ref is not None else w
-            mag = delta.abs()
-            g = prunable_g.get(name, torch.zeros_like(w))
-            fo = (g * delta).abs()
-            fo_mean = fo.mean()
-            fo_corr = alpha1 * (fo / (fo_mean + 1e-12)) if fo_mean > 0 else 0.0
-            hvp = hvp_result.get(name)
-            if hvp is not None:
-                hvp = hvp.to(w.device)
-                so = (delta * hvp).abs()
-                so_mean = so.mean()
-                so_corr = alpha2 * (so / (so_mean + 1e-12)) if so_mean > 0 else 0.0
+            delta = delta_dev[name]
+            g = clean_grads.get(name)
+            fo = -(g * delta) if g is not None else torch.zeros_like(delta)
+            h = hvp_result.get(name)
+            if h is not None:
+                so = 0.5 * (delta * h.to(delta.device))
+                hvp_hits += 1
             else:
-                so_corr = 0.0
-            scores[name] = mag * (1.0 + fo_corr + so_corr)
+                so = torch.zeros_like(delta)
+            scores[name] = (fo + so).abs().cpu()
+        if use_so:
+            print(f"  [{imp_name}] HVP coverage: {hvp_hits}/{len(prunable_w)} params")
         alloc = alloc_name or 'weibull-adaptive'
         pruner = Pruner(importance='magnitude', allocation=alloc)
         layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
@@ -391,8 +431,10 @@ def compute_scores_for_method(method_name, model, optimizer, train_loader,
         for _n in layer_ratios:
             if any(_p in _n.lower() for _p in _protect):
                 layer_ratios[_n] = min(layer_ratios[_n], 0.1)
-        del weights, grads, prunable_w, prunable_g, hvp_batches, hvp_result
+        del weights, grads, prunable_w, prunable_g, score_batches, hvp_result
+        del delta_dev, clean_grads
         gc.collect()
+        torch.cuda.empty_cache()
         return scores, layer_ratios
 
     # --- ours-2d: magnitude-based scoring + first-order correction + Weibull allocation ---
@@ -706,7 +748,17 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
             else:
                 ppl_str = f"loss={metrics['loss']:.4f}"
             print(f"  After compression: {ppl_str}")
-    
+
+        # Re-align RNG at each recovery boundary (all methods, incl. none):
+        # scoring paths consume different amounts of CPU/CUDA RNG, which would
+        # otherwise fork post-compression trajectories across methods.
+        if seg < args.num_recoveries and getattr(args, 'seed', None) is not None:
+            _s = args.seed + 9973 * (seg + 1)
+            torch.manual_seed(_s)
+            torch.cuda.manual_seed_all(_s)
+            random.seed(_s)
+            np.random.seed(_s)
+
     # Final evaluation
     final_metrics = evaluate(model, val_batches, task_type, args.device)
     print(f"\nFinal: {final_metrics}")

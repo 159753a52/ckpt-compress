@@ -401,6 +401,7 @@ def compute_hvp_blockwise(
     loss_fn: Callable,
     data_batch,
     blocks: List[List[str]],
+    vector: Dict[str, torch.Tensor] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     真正的 Block-wise HVP 计算。
@@ -462,12 +463,17 @@ def compute_hvp_blockwise(
                 allow_unused=True,
             )
 
-            # 5. 计算 g_b · θ_b（标量）
+            # 5. 计算 g_b · v_b（标量）；v 默认为 θ（全权重置零场景），
+            #    residual 场景应传 vector=delta 得到 H·δ
             grad_vector_product = torch.tensor(0.0, device=loss.device)
             for g, name in zip(grads, block_param_names):
                 if g is not None:
+                    if vector is not None and name in vector:
+                        probe = vector[name].to(g.device)
+                    else:
+                        probe = named_params[name].data
                     grad_vector_product = grad_vector_product + (
-                        g * named_params[name].data
+                        g * probe
                     ).sum()
 
             # 6. 二次反向传播 → H_b θ_b
@@ -503,6 +509,7 @@ def compute_hvp_blockwise_batched(
     data_batches: list,
     blocks: List[List[str]],
     num_batches: int = 1,
+    vector: Dict[str, torch.Tensor] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     使用多个批次计算平均 block-wise HVP，提高估计稳定性。
@@ -522,7 +529,8 @@ def compute_hvp_blockwise_batched(
 
     for i in range(actual_batches):
         print(f"[Block-wise HVP] Batch {i + 1}/{actual_batches}...")
-        hvp = compute_hvp_blockwise(model, loss_fn, data_batches[i], blocks)
+        hvp = compute_hvp_blockwise(model, loss_fn, data_batches[i], blocks,
+                                     vector=vector)
 
         if hvp_sum is None:
             hvp_sum = {name: h.clone() for name, h in hvp.items()}
