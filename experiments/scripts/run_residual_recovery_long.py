@@ -26,6 +26,7 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     MaskDict,
     TensorDict,
     batch_hash,
+    calibrate_quantile_smooth_allocation,
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
     checkpoint_optimizer_state,
@@ -80,6 +81,17 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--spectral-probe-radius", type=float, default=0.025)
     parser.add_argument("--spectral-trust-radius", type=float, default=0.1)
+    parser.add_argument(
+        "--quantile-smoothness-values",
+        default="",
+        help="Comma-separated positive lambda values; empty disables the method",
+    )
+    parser.add_argument("--quantile-trust-radius", type=float, default=0.1)
+    parser.add_argument(
+        "--quantile-cost-normalization",
+        choices=("global", "layer_uniform_cost"),
+        default="global",
+    )
     parser.add_argument("--eval-batches", type=int, default=100)
     parser.add_argument("--train-pool-batches", type=int, default=512)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -270,6 +282,10 @@ def summarize_values(values: Sequence[float]) -> Dict[str, object]:
     }
 
 
+def float_slug(value: float) -> str:
+    return f"{value:.8g}".replace("-", "m").replace(".", "p").replace("+", "")
+
+
 def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
     seeds = sorted(seed_results, key=int)
     method_names = list(seed_results[seeds[0]]["methods"])
@@ -319,7 +335,7 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
         "probe_trust_vs_weibull": ("taylor_probe_trust", "taylor_weibull_mom"),
     }
     for method in method_names:
-        if not method.startswith("taylor_spectral_k"):
+        if not method.startswith(("taylor_spectral_k", "taylor_quantile_")):
             continue
         label = method.removeprefix("taylor_")
         comparisons[f"{label}_vs_taylor_uniform"] = (method, "taylor_uniform")
@@ -347,12 +363,27 @@ def main() -> None:
     spectral_ranks = sorted(
         {int(value) for value in args.spectral_ranks.split(",") if value.strip()}
     )
+    quantile_smoothness_values = sorted(
+        {
+            float(value)
+            for value in args.quantile_smoothness_values.split(",")
+            if value.strip()
+        }
+    )
     if not trust_radii or any(value <= 0 for value in trust_radii):
         raise ValueError("--allocation-trust-radii must contain positive values")
     if any(value > 1 for value in trust_radii):
         raise ValueError("--allocation-trust-radii values cannot exceed 1")
     if any(rank < 1 for rank in spectral_ranks):
         raise ValueError("--spectral-ranks must contain positive integers")
+    if quantile_smoothness_values and any(
+        not math.isfinite(value) or value <= 0 for value in quantile_smoothness_values
+    ):
+        raise ValueError("--quantile-smoothness-values must contain positive values")
+    if quantile_smoothness_values and not 0 < args.quantile_trust_radius <= min(
+        args.prune_ratio, args.max_layer_ratio - args.prune_ratio
+    ):
+        raise ValueError("--quantile-trust-radius must fit inside the layer-rate box")
     validate_args(args, seeds)
     continuation_steps = args.total_steps - args.recovery_step
     selected_batch_count = (
@@ -375,6 +406,7 @@ def main() -> None:
             "seeds": seeds,
             "allocation_trust_radii": trust_radii,
             "spectral_ranks": spectral_ranks,
+            "quantile_smoothness_values": quantile_smoothness_values,
             "scheduler": "cosine",
             "continuation_steps": continuation_steps,
         },
@@ -493,7 +525,7 @@ def main() -> None:
         allocation_started = time.perf_counter()
         taylor_score_orders = None
         score_order_seconds = 0.0
-        if spectral_ranks:
+        if spectral_ranks or quantile_smoothness_values:
             score_order_started = time.perf_counter()
             taylor_score_orders = layer_score_orders(
                 layers, components["taylor"], sort_device=args.device
@@ -552,12 +584,43 @@ def main() -> None:
                 )
             allocation_metadata["spectral_layer_counts"] = spectral_counts
             allocation_metadata["spectral"] = spectral_metadata
+        if quantile_smoothness_values:
+            quantile_counts, quantile_metadata = calibrate_quantile_smooth_allocation(
+                layers,
+                components["taylor"],
+                taylor_score_orders,
+                allocation_metadata["target_pruned"],
+                args.prune_ratio,
+                args.max_layer_ratio,
+                args.quantile_trust_radius,
+                quantile_smoothness_values,
+                args.device,
+                args.quantile_cost_normalization,
+            )
+            for smoothness, counts in quantile_counts.items():
+                normalization_slug = (
+                    "relative"
+                    if args.quantile_cost_normalization == "layer_uniform_cost"
+                    else "global"
+                )
+                method = (
+                    f"taylor_quantile_{normalization_slug}_smooth_"
+                    f"l{float_slug(smoothness)}"
+                )
+                masks[method] = layer_masks(
+                    layers, components["taylor"], counts, taylor_score_orders
+                )
+            allocation_metadata["quantile_smooth_layer_counts"] = {
+                str(value): counts for value, counts in quantile_counts.items()
+            }
+            allocation_metadata["quantile_smooth"] = quantile_metadata
         if taylor_score_orders is not None:
             allocation_metadata["score_order_seconds"] = score_order_seconds
             allocation_metadata["score_order_sort_device"] = args.device
             allocation_metadata["score_order_bytes"] = sum(
                 order.numel() * order.element_size() for order in taylor_score_orders
             )
+        del taylor_score_orders
         allocation_metadata["seconds"] = time.perf_counter() - allocation_started
         allocation_metadata["whole_model_parameters"] = sum(
             parameter.numel() for parameter in model.parameters()
@@ -632,7 +695,6 @@ def main() -> None:
 
         seed_result["wall_seconds"] = time.perf_counter() - seed_started
         del masks, components, components_raw, magnitude_scores, delta
-        del taylor_score_orders
         del current_state, current_optimizer_state, model
         gc.collect()
         torch.cuda.empty_cache()
