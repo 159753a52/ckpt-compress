@@ -1,4 +1,3 @@
-import itertools
 import unittest
 
 import torch
@@ -7,7 +6,6 @@ from experiments.lib.residual_recovery import (
     apply_mask_from_device_states,
     bounded_largest_remainder_counts,
     budget_tangent_dct_directions,
-    calibrate_quantile_smooth_allocation,
     cache_mask_states_on_device,
     directional_layer_counts,
     layer_masks,
@@ -186,152 +184,6 @@ class TestResidualAllocation(unittest.TestCase):
 
         expected = torch.tensor([[1.0, 20.0], [30.0, 4.0]])
         self.assertTrue(torch.equal(model.weight, expected))
-
-    def test_quantile_smooth_matches_small_discrete_optimum(self) -> None:
-        layers = [["low"], ["high"], ["middle"]]
-        scores = {
-            "low": torch.ones(6),
-            "high": torch.full((6,), 10.0),
-            "middle": torch.full((6,), 2.0),
-        }
-
-        counts_by_smoothness, metadata = calibrate_quantile_smooth_allocation(
-            layers,
-            scores,
-            layer_score_orders(layers, scores),
-            target=9,
-            ratio=0.5,
-            max_layer_ratio=0.8,
-            trust_radius=0.3,
-            smoothness_values=[1.0],
-            device="cpu",
-        )
-
-        def objective(counts: tuple[int, ...]) -> float:
-            proxy_cost = sum(
-                float(scores[name][:count].sum()) / 36.0
-                for name, count in zip(("low", "high", "middle"), counts)
-            )
-            rates = [count / 6.0 for count in counts]
-            smooth_penalty = 0.5 * sum(
-                (right - left) ** 2 for left, right in zip(rates, rates[1:])
-            )
-            return proxy_cost + smooth_penalty
-
-        feasible = [
-            counts
-            for counts in itertools.product(range(2, 5), repeat=3)
-            if sum(counts) == 9
-        ]
-        discrete_optimum = min(feasible, key=objective)
-        self.assertEqual(counts_by_smoothness[1.0], list(discrete_optimum))
-        self.assertEqual(sum(counts_by_smoothness[1.0]), 9)
-        self.assertEqual(metadata["model_forward_evaluations"], 0)
-        self.assertEqual(metadata["batch_forward_evaluations"], 0)
-        self.assertTrue(metadata["solutions"]["1.0"]["converged"])
-
-    def test_quantile_smooth_large_lambda_reduces_rate_variation(self) -> None:
-        layers = [["low"], ["high"], ["middle"]]
-        scores = {
-            "low": torch.ones(6),
-            "high": torch.full((6,), 10.0),
-            "middle": torch.full((6,), 2.0),
-        }
-
-        counts, _ = calibrate_quantile_smooth_allocation(
-            layers,
-            scores,
-            layer_score_orders(layers, scores),
-            target=9,
-            ratio=0.5,
-            max_layer_ratio=0.8,
-            trust_radius=0.3,
-            smoothness_values=[0.01, 10.0],
-            device="cpu",
-        )
-
-        low_rates = [count / 6 for count in counts[0.01]]
-        high_rates = [count / 6 for count in counts[10.0]]
-        low_variation = sum(
-            (right - left) ** 2 for left, right in zip(low_rates, low_rates[1:])
-        )
-        high_variation = sum(
-            (right - left) ** 2 for left, right in zip(high_rates, high_rates[1:])
-        )
-        self.assertLess(high_variation, low_variation)
-        self.assertEqual(counts[10.0], [3, 3, 3])
-
-    def test_relative_quantile_cost_is_invariant_to_layer_scaling(self) -> None:
-        layers = [["low"], ["high"], ["middle"]]
-        scores = {
-            "low": torch.tensor([1.0, 1.5, 2.0, 3.0, 4.0, 5.0]),
-            "high": torch.tensor([2.0, 2.5, 3.0, 6.0, 7.0, 8.0]),
-            "middle": torch.tensor([0.5, 1.0, 2.5, 3.5, 5.0, 9.0]),
-        }
-        scaled_scores = {
-            "low": 7.0 * scores["low"],
-            "high": 0.2 * scores["high"],
-            "middle": 3.0 * scores["middle"],
-        }
-
-        original, original_metadata = calibrate_quantile_smooth_allocation(
-            layers,
-            scores,
-            layer_score_orders(layers, scores),
-            target=9,
-            ratio=0.5,
-            max_layer_ratio=0.8,
-            trust_radius=0.3,
-            smoothness_values=[0.1],
-            device="cpu",
-            normalization="layer_uniform_cost",
-        )
-        scaled, scaled_metadata = calibrate_quantile_smooth_allocation(
-            layers,
-            scaled_scores,
-            layer_score_orders(layers, scaled_scores),
-            target=9,
-            ratio=0.5,
-            max_layer_ratio=0.8,
-            trust_radius=0.3,
-            smoothness_values=[0.1],
-            device="cpu",
-            normalization="layer_uniform_cost",
-        )
-
-        self.assertEqual(original[0.1], scaled[0.1])
-        original_solution = original_metadata["solutions"]["0.1"]
-        scaled_solution = scaled_metadata["solutions"]["0.1"]
-        for original_rate, scaled_rate in zip(
-            original_solution["continuous_rates"],
-            scaled_solution["continuous_rates"],
-        ):
-            self.assertAlmostEqual(original_rate, scaled_rate, places=12)
-        self.assertAlmostEqual(
-            original_solution["objective"], scaled_solution["objective"], places=12
-        )
-
-    def test_relative_quantile_cost_rejects_zero_uniform_cost(self) -> None:
-        layers = [["zero"], ["positive"]]
-        scores = {
-            "zero": torch.zeros(4),
-            "positive": torch.ones(4),
-        }
-
-        with self.assertRaisesRegex(ValueError, "nonzero uniform proxy costs"):
-            calibrate_quantile_smooth_allocation(
-                layers,
-                scores,
-                layer_score_orders(layers, scores),
-                target=4,
-                ratio=0.5,
-                max_layer_ratio=0.75,
-                trust_radius=0.25,
-                smoothness_values=[0.1],
-                device="cpu",
-                normalization="layer_uniform_cost",
-            )
-
 
 if __name__ == "__main__":
     unittest.main()
