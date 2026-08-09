@@ -9,6 +9,7 @@ from unittest import mock
 import torch
 
 import experiments.lib.residual_allocation as residual_allocation
+import experiments.lib.residual_masks as residual_masks
 import experiments.lib.residual_recovery as residual_recovery
 from experiments.lib.residual_recovery import (
     configure_hf_offline,
@@ -23,12 +24,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestResidualRuntime(unittest.TestCase):
-    def test_legacy_allocation_exports_are_aliases(self) -> None:
-        for name in residual_allocation.__all__:
-            self.assertIs(
-                getattr(residual_recovery, name),
-                getattr(residual_allocation, name),
-            )
+    def test_residual_recovery_reexports_helper_aliases(self) -> None:
+        helper_modules = (residual_allocation, residual_masks)
+        for module in helper_modules:
+            for name in module.__all__:
+                with self.subTest(module=module.__name__, name=name):
+                    self.assertIs(
+                        getattr(residual_recovery, name),
+                        getattr(module, name),
+                    )
 
     def test_import_has_no_hf_or_model_stack_side_effects(self) -> None:
         environment = os.environ.copy()

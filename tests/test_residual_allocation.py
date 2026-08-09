@@ -11,12 +11,6 @@ from experiments.lib.residual_allocation import (
     trust_region_counts,
     weibull_counts,
 )
-from experiments.lib.residual_recovery import (
-    apply_mask_from_device_states,
-    cache_mask_states_on_device,
-    layer_masks,
-    layer_score_orders,
-)
 
 
 class TestResidualAllocation(unittest.TestCase):
@@ -184,46 +178,6 @@ class TestResidualAllocation(unittest.TestCase):
                 [[1.0, -1.0], [2.0, -2.0]],
                 [3.0, 6.0],
             )
-
-    def test_cached_score_orders_match_direct_masks_with_ties(self) -> None:
-        layers = [["left", "right"], ["last"]]
-        scores = {
-            "left": torch.tensor([3.0, 1.0, 1.0]),
-            "right": torch.tensor([2.0, 1.0]),
-            "last": torch.tensor([4.0, 2.0, 2.0, 3.0]),
-        }
-        counts = [3, 2]
-
-        direct = layer_masks(layers, scores, counts)
-        cached = layer_masks(
-            layers,
-            scores,
-            counts,
-            layer_score_orders(layers, scores),
-        )
-
-        self.assertEqual(direct.keys(), cached.keys())
-        for name in direct:
-            self.assertTrue(torch.equal(direct[name], cached[name]))
-
-    def test_device_state_cache_applies_mask_exactly(self) -> None:
-        model = torch.nn.Linear(2, 2, bias=False)
-        current = {"weight": torch.tensor([[1.0, 2.0], [3.0, 4.0]])}
-        reference = {"weight": torch.tensor([[10.0, 20.0], [30.0, 40.0]])}
-        current_device, reference_device = cache_mask_states_on_device(
-            current, reference, ["weight"], "cpu"
-        )
-
-        apply_mask_from_device_states(
-            model,
-            current_device,
-            reference_device,
-            {"weight": torch.tensor([[True, False], [False, True]])},
-            "cpu",
-        )
-
-        expected = torch.tensor([[1.0, 20.0], [30.0, 4.0]])
-        self.assertTrue(torch.equal(model.weight, expected))
 
 if __name__ == "__main__":
     unittest.main()

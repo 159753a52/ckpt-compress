@@ -9,7 +9,7 @@ from experiments.lib.residual_allocation import (
     calibrate_quantile_smooth_allocation,
     uniform_counts,
 )
-from experiments.lib.residual_recovery import (
+from experiments.lib.residual_masks import (
     layer_score_orders,
 )
 

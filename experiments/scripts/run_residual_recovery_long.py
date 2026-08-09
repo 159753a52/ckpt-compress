@@ -27,9 +27,18 @@ from experiments.lib.residual_allocation import (  # noqa: E402
     uniform_counts,
     weibull_counts,
 )
-from experiments.lib.residual_recovery import (  # noqa: E402
+from experiments.lib.residual_masks import (  # noqa: E402
     MaskDict,
     TensorDict,
+    global_mask,
+    layer_masks,
+    layer_rates,
+    layer_score_orders,
+    mask_metrics,
+    mask_overlap,
+    restore_with_mask,
+)
+from experiments.lib.residual_recovery import (  # noqa: E402
     batch_hash,
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
@@ -40,17 +49,10 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     eligible_layers,
     empty_device_cache,
     evaluate_lm,
-    global_mask,
-    layer_masks,
-    layer_rates,
-    layer_score_orders,
     load_token_batches,
-    mask_metrics,
-    mask_overlap,
     optimizer_state_to_cpu,
     peak_memory_bytes,
     reset_peak_memory,
-    restore_with_mask,
     set_seed,
     sha256_file,
     write_json,
