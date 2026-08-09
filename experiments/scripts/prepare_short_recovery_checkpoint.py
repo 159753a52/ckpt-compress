@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import sys
 import time
@@ -15,13 +14,14 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.scripts.run_v100_allocation_gate import (
+from experiments.lib.residual_recovery import (
     ROOT,
     batch_hash,
     checkpoint_optimizer_state,
     checkpoint_state,
     lm_loss,
     load_token_batches,
+    optimizer_state_to_cpu,
     set_seed,
     sha256_file,
 )
@@ -51,16 +51,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda")
     return parser.parse_args()
-
-
-def optimizer_state_to_cpu(state: dict) -> dict:
-    result = {"state": {}, "param_groups": copy.deepcopy(state["param_groups"])}
-    for parameter_id, parameter_state in state["state"].items():
-        result["state"][parameter_id] = {
-            key: value.detach().cpu().clone() if torch.is_tensor(value) else copy.deepcopy(value)
-            for key, value in parameter_state.items()
-        }
-    return result
 
 
 def main() -> None:
