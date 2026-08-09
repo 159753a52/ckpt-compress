@@ -26,6 +26,7 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     MaskDict,
     TensorDict,
     batch_hash,
+    calibrate_trust_region_allocation,
     checkpoint_optimizer_state,
     checkpoint_state,
     compute_block_taylor_scores,
@@ -66,6 +67,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--seq-length", type=int, default=128)
     parser.add_argument("--hvp-batches", type=int, default=8)
+    parser.add_argument("--allocation-probe-batches", type=int, default=8)
+    parser.add_argument("--allocation-selection-batches", type=int, default=8)
+    parser.add_argument("--allocation-probe-radius", type=float, default=0.025)
+    parser.add_argument("--allocation-trust-radii", default="0.025,0.05,0.1")
     parser.add_argument("--eval-batches", type=int, default=100)
     parser.add_argument("--train-pool-batches", type=int, default=512)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -85,7 +90,20 @@ def validate_args(args: argparse.Namespace, seeds: Sequence[int]) -> None:
         raise ValueError("--recovery-step must be strictly inside --total-steps")
     if not 0 < args.prune_ratio < 1:
         raise ValueError("--prune-ratio must be in (0, 1)")
-    needed = args.total_steps + args.hvp_batches
+    if not args.prune_ratio <= args.max_layer_ratio <= 1:
+        raise ValueError("--max-layer-ratio must be in [prune_ratio, 1]")
+    if args.allocation_probe_batches < 1 or args.allocation_selection_batches < 1:
+        raise ValueError("Allocation probe and selection batch counts must be positive")
+    if not 0 < args.allocation_probe_radius < min(args.prune_ratio, 1.0 - args.prune_ratio):
+        raise ValueError("--allocation-probe-radius must fit around --prune-ratio")
+    if args.prune_ratio + args.allocation_probe_radius > args.max_layer_ratio:
+        raise ValueError("--max-layer-ratio must leave room for the positive allocation probe")
+    needed = (
+        args.total_steps
+        + args.hvp_batches
+        + args.allocation_probe_batches
+        + args.allocation_selection_batches
+    )
     if args.train_pool_batches < needed:
         raise ValueError(f"--train-pool-batches must be at least {needed}")
     if args.device.startswith("cuda") and not torch.cuda.is_available():
@@ -279,6 +297,8 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
         "second_order_vs_first_order": ("second_order_uniform", "first_order_uniform"),
         "weibull_vs_taylor_uniform": ("taylor_weibull_mom", "taylor_uniform"),
         "exact_global_vs_taylor_uniform": ("taylor_exact_global", "taylor_uniform"),
+        "probe_trust_vs_taylor_uniform": ("taylor_probe_trust", "taylor_uniform"),
+        "probe_trust_vs_weibull": ("taylor_probe_trust", "taylor_weibull_mom"),
     }
     for label, (left, right) in comparisons.items():
         comparison = {}
@@ -296,9 +316,21 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
 def main() -> None:
     args = parse_args()
     seeds = [int(value) for value in args.seeds.split(",") if value.strip()]
+    trust_radii = [
+        float(value) for value in args.allocation_trust_radii.split(",") if value.strip()
+    ]
+    if not trust_radii or any(value <= 0 for value in trust_radii):
+        raise ValueError("--allocation-trust-radii must contain positive values")
+    if any(value > 1 for value in trust_radii):
+        raise ValueError("--allocation-trust-radii values cannot exceed 1")
     validate_args(args, seeds)
     continuation_steps = args.total_steps - args.recovery_step
-    selected_batch_count = args.total_steps + args.hvp_batches
+    selected_batch_count = (
+        args.total_steps
+        + args.hvp_batches
+        + args.allocation_probe_batches
+        + args.allocation_selection_batches
+    )
     started_at = datetime.now(timezone.utc)
     run_name = started_at.strftime("%Y%m%d_%H%M%S") + "_gpt2m_recovery_long"
     output_path = args.output_dir / f"{run_name}.json"
@@ -311,6 +343,7 @@ def main() -> None:
             "data_dir": str(args.data_dir.resolve()),
             "output_dir": str(args.output_dir.resolve()),
             "seeds": seeds,
+            "allocation_trust_radii": trust_radii,
             "scheduler": "cosine",
             "continuation_steps": continuation_steps,
         },
@@ -350,12 +383,14 @@ def main() -> None:
             training_pool, selected_batch_count, seed
         )
         pre_batches = selected[: args.recovery_step]
-        score_batches = selected[
-            args.recovery_step : args.recovery_step + args.hvp_batches
-        ]
-        continuation_batches = selected[
-            args.recovery_step + args.hvp_batches :
-        ]
+        score_start = args.recovery_step
+        probe_start = score_start + args.hvp_batches
+        selection_start = probe_start + args.allocation_probe_batches
+        continuation_start = selection_start + args.allocation_selection_batches
+        score_batches = selected[score_start:probe_start]
+        probe_batches = selected[probe_start:selection_start]
+        selection_batches = selected[selection_start:continuation_start]
+        continuation_batches = selected[continuation_start:]
         if len(continuation_batches) != continuation_steps:
             raise RuntimeError("Internal batch partition does not match continuation steps")
 
@@ -365,6 +400,8 @@ def main() -> None:
             "data_hashes": {
                 "pre_recovery": batch_hash(pre_batches),
                 "scoring": batch_hash(score_batches),
+                "allocation_probe": batch_hash(probe_batches),
+                "allocation_selection": batch_hash(selection_batches),
                 "continuation": batch_hash(continuation_batches),
             },
             "methods": {},
@@ -430,6 +467,27 @@ def main() -> None:
             args.prune_ratio,
             args.max_layer_ratio,
         )
+        probe_trust_counts, probe_trust_metadata = calibrate_trust_region_allocation(
+            model,
+            current_state,
+            reference_state,
+            layers,
+            components["taylor"],
+            allocation_metadata["uniform_layer_counts"],
+            allocation_metadata["target_pruned"],
+            args.prune_ratio,
+            args.max_layer_ratio,
+            probe_batches,
+            selection_batches,
+            args.allocation_probe_radius,
+            trust_radii,
+            args.device,
+        )
+        masks["taylor_probe_trust"] = layer_masks(
+            layers, components["taylor"], probe_trust_counts
+        )
+        allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
+        allocation_metadata["probe_trust"] = probe_trust_metadata
         allocation_metadata["seconds"] = time.perf_counter() - allocation_started
         allocation_metadata["whole_model_parameters"] = sum(
             parameter.numel() for parameter in model.parameters()

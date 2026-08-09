@@ -501,6 +501,98 @@ def uniform_counts(layer_sizes: Sequence[int], target: int, ratio: float) -> Lis
     return largest_remainder_counts(real, target, list(layer_sizes))
 
 
+def bounded_largest_remainder_counts(
+    real_counts: Sequence[float],
+    target: int,
+    lower_bounds: Sequence[int],
+    upper_bounds: Sequence[int],
+) -> List[int]:
+    if not (
+        len(real_counts) == len(lower_bounds) == len(upper_bounds)
+        and all(lower <= upper for lower, upper in zip(lower_bounds, upper_bounds))
+    ):
+        raise ValueError("Invalid bounded-rounding inputs")
+    if not sum(lower_bounds) <= target <= sum(upper_bounds):
+        raise ValueError("Bounds cannot meet the requested global target")
+
+    shifted_real = [
+        min(max(value, lower), upper) - lower
+        for value, lower, upper in zip(real_counts, lower_bounds, upper_bounds)
+    ]
+    shifted_target = target - sum(lower_bounds)
+    capacities = [upper - lower for lower, upper in zip(lower_bounds, upper_bounds)]
+    shifted = largest_remainder_counts(shifted_real, shifted_target, capacities)
+    return [value + lower for value, lower in zip(shifted, lower_bounds)]
+
+
+def trust_region_counts(
+    marginal_losses: Sequence[float],
+    layer_sizes: Sequence[int],
+    target: int,
+    ratio: float,
+    trust_radius: float,
+    max_layer_ratio: float,
+) -> List[int]:
+    """Project a loss-decreasing rate step onto an exact, bounded budget."""
+    if len(marginal_losses) != len(layer_sizes) or not layer_sizes:
+        raise ValueError("Marginals and non-empty layer sizes must have the same length")
+    if not 0 < trust_radius <= 1:
+        raise ValueError("trust_radius must be in (0, 1]")
+    if not all(math.isfinite(value) for value in marginal_losses):
+        raise ValueError("Marginal losses must be finite")
+
+    lower_rate = max(0.0, ratio - trust_radius)
+    upper_rate = min(1.0, max_layer_ratio, ratio + trust_radius)
+    lower_bounds = [int(math.ceil(lower_rate * size)) for size in layer_sizes]
+    upper_bounds = [int(math.floor(upper_rate * size)) for size in layer_sizes]
+    if any(lower > upper for lower, upper in zip(lower_bounds, upper_bounds)):
+        raise ValueError("A layer is too small to represent the requested trust region")
+    if not sum(lower_bounds) <= target <= sum(upper_bounds):
+        raise ValueError("Trust region cannot meet the requested global target")
+
+    # The finite-difference derivative is dL/dp_l. Dividing by n_l gives a
+    # comparable per-parameter marginal before the weighted budget projection.
+    per_parameter = [
+        marginal / size for marginal, size in zip(marginal_losses, layer_sizes)
+    ]
+    spread = max(per_parameter) - min(per_parameter)
+    if spread <= 1e-30:
+        return bounded_largest_remainder_counts(
+            [ratio * size for size in layer_sizes],
+            target,
+            lower_bounds,
+            upper_bounds,
+        )
+
+    # This is the closed-form gradient step for
+    #   min_x g^T x + (1 / 2 eta) sum_l n_l x_l^2,
+    # followed by a weighted projection onto the budget and box constraints.
+    step_size = 2.0 * trust_radius / spread
+
+    def rates_at_shift(shift: float) -> List[float]:
+        return [
+            min(upper_rate, max(lower_rate, ratio - step_size * value + shift))
+            for value in per_parameter
+        ]
+
+    low = -2.0
+    high = 2.0
+    for _ in range(100):
+        middle = 0.5 * (low + high)
+        total = sum(
+            size * rate for size, rate in zip(layer_sizes, rates_at_shift(middle))
+        )
+        if total < target:
+            low = middle
+        else:
+            high = middle
+    rates = rates_at_shift(0.5 * (low + high))
+    real_counts = [size * rate for size, rate in zip(layer_sizes, rates)]
+    return bounded_largest_remainder_counts(
+        real_counts, target, lower_bounds, upper_bounds
+    )
+
+
 def fit_weibull_mom(values: torch.Tensor) -> Dict[str, float | bool | str]:
     flat = values.detach().float().flatten().cpu()
     count = flat.numel()
@@ -620,6 +712,23 @@ def layer_masks(
     return masks
 
 
+def layer_mask_at_count(
+    names: Sequence[str],
+    scores: Mapping[str, torch.Tensor],
+    prune_count: int,
+) -> MaskDict:
+    """Build one structural layer's exact-count mask."""
+    flat_scores = torch.cat([scores[name].flatten() for name in names])
+    flat_keep = exact_keep_mask(flat_scores, prune_count)
+    masks: MaskDict = {}
+    offset = 0
+    for name in names:
+        size = scores[name].numel()
+        masks[name] = flat_keep[offset : offset + size].view_as(scores[name])
+        offset += size
+    return masks
+
+
 def global_mask(
     names: Sequence[str],
     scores: Mapping[str, torch.Tensor],
@@ -680,6 +789,168 @@ def restore_with_mask(
             current = current_state[name].to(device, non_blocking=True)
             restored = torch.where(keep.to(device, non_blocking=True), current, reference)
             named_params[name].copy_(restored)
+
+
+def apply_layer_mask(
+    model: nn.Module,
+    current_state: Mapping[str, torch.Tensor],
+    reference_state: Mapping[str, torch.Tensor],
+    masks: Mapping[str, torch.Tensor],
+    device: str,
+) -> None:
+    """Apply a partial mask without reloading parameters outside that layer."""
+    named_params = dict(model.named_parameters())
+    with torch.no_grad():
+        for name, keep in masks.items():
+            reference = reference_state[name].to(device, non_blocking=True)
+            current = current_state[name].to(device, non_blocking=True)
+            restored = torch.where(keep.to(device, non_blocking=True), current, reference)
+            named_params[name].copy_(restored)
+
+
+def batch_loss_values(
+    model: nn.Module,
+    batches: Sequence[Mapping[str, torch.Tensor]],
+    device: str,
+) -> List[float]:
+    model.eval()
+    with torch.no_grad():
+        return [lm_loss(model, batch, device).item() for batch in batches]
+
+
+def calibrate_trust_region_allocation(
+    model: nn.Module,
+    current_state: Mapping[str, torch.Tensor],
+    reference_state: Mapping[str, torch.Tensor],
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+    uniform_layer_counts: Sequence[int],
+    target: int,
+    ratio: float,
+    max_layer_ratio: float,
+    probe_batches: Sequence[Mapping[str, torch.Tensor]],
+    selection_batches: Sequence[Mapping[str, torch.Tensor]],
+    probe_radius: float,
+    candidate_trust_radii: Sequence[float],
+    device: str,
+) -> Tuple[List[int], Dict[str, object]]:
+    """Estimate true-loss marginals near uniform and select a bounded rate step."""
+    if not probe_batches or not selection_batches:
+        raise ValueError("Probe and selection batches must both be non-empty")
+    if not 0 < probe_radius < min(ratio, 1.0 - ratio):
+        raise ValueError("probe_radius must fit strictly around the uniform rate")
+
+    started = time.perf_counter()
+    layer_sizes = [sum(scores[name].numel() for name in names) for names in layers]
+    uniform_masks = layer_masks(layers, scores, uniform_layer_counts)
+    restore_with_mask(model, current_state, reference_state, uniform_masks, device)
+    uniform_probe_losses = batch_loss_values(model, probe_batches, device)
+    uniform_selection_losses = batch_loss_values(model, selection_batches, device)
+
+    marginals = []
+    probes = []
+    for index, (names, size, base_count) in enumerate(
+        zip(layers, layer_sizes, uniform_layer_counts)
+    ):
+        count_delta = max(1, int(round(probe_radius * size)))
+        lower_count = max(0, base_count - count_delta)
+        upper_count = min(int(math.floor(max_layer_ratio * size)), base_count + count_delta)
+        if lower_count >= upper_count:
+            raise ValueError(f"Layer {index} has no room for a finite-difference probe")
+
+        upper_masks = layer_mask_at_count(names, scores, upper_count)
+        apply_layer_mask(model, current_state, reference_state, upper_masks, device)
+        upper_losses = batch_loss_values(model, probe_batches, device)
+
+        lower_masks = layer_mask_at_count(names, scores, lower_count)
+        apply_layer_mask(model, current_state, reference_state, lower_masks, device)
+        lower_losses = batch_loss_values(model, probe_batches, device)
+
+        base_layer_masks = {name: uniform_masks[name] for name in names}
+        apply_layer_mask(model, current_state, reference_state, base_layer_masks, device)
+        lower_rate = lower_count / size
+        upper_rate = upper_count / size
+        paired_derivatives = [
+            (upper - lower) / (upper_rate - lower_rate)
+            for upper, lower in zip(upper_losses, lower_losses)
+        ]
+        marginal = float(np.mean(paired_derivatives))
+        marginals.append(marginal)
+        probes.append(
+            {
+                "layer": index,
+                "lower_count": lower_count,
+                "upper_count": upper_count,
+                "lower_rate": lower_rate,
+                "upper_rate": upper_rate,
+                "lower_mean_loss": float(np.mean(lower_losses)),
+                "upper_mean_loss": float(np.mean(upper_losses)),
+                "marginal_loss": marginal,
+                "marginal_standard_error": float(
+                    np.std(paired_derivatives, ddof=1) / math.sqrt(len(paired_derivatives))
+                )
+                if len(paired_derivatives) > 1
+                else None,
+            }
+        )
+        del upper_masks, lower_masks
+
+    candidates = [
+        {
+            "trust_radius": 0.0,
+            "counts": list(uniform_layer_counts),
+            "mean_selection_loss": float(np.mean(uniform_selection_losses)),
+            "paired_delta_vs_uniform": 0.0,
+        }
+    ]
+    for trust_radius in sorted(set(candidate_trust_radii)):
+        counts = trust_region_counts(
+            marginals,
+            layer_sizes,
+            target,
+            ratio,
+            trust_radius,
+            max_layer_ratio,
+        )
+        candidate_masks = layer_masks(layers, scores, counts)
+        restore_with_mask(model, current_state, reference_state, candidate_masks, device)
+        losses = batch_loss_values(model, selection_batches, device)
+        deltas = [
+            candidate - baseline
+            for candidate, baseline in zip(losses, uniform_selection_losses)
+        ]
+        candidates.append(
+            {
+                "trust_radius": trust_radius,
+                "counts": counts,
+                "mean_selection_loss": float(np.mean(losses)),
+                "paired_delta_vs_uniform": float(np.mean(deltas)),
+                "paired_delta_standard_error": float(
+                    np.std(deltas, ddof=1) / math.sqrt(len(deltas))
+                )
+                if len(deltas) > 1
+                else None,
+            }
+        )
+        del candidate_masks
+
+    selected = min(candidates, key=lambda item: (item["mean_selection_loss"], item["trust_radius"]))
+    restore_with_mask(model, current_state, reference_state, uniform_masks, device)
+    metadata = {
+        "seconds": time.perf_counter() - started,
+        "probe_radius": probe_radius,
+        "probe_batches": len(probe_batches),
+        "selection_batches": len(selection_batches),
+        "uniform_probe_mean_loss": float(np.mean(uniform_probe_losses)),
+        "uniform_selection_mean_loss": float(np.mean(uniform_selection_losses)),
+        "probes": probes,
+        "marginal_losses": marginals,
+        "candidates": candidates,
+        "selected_trust_radius": selected["trust_radius"],
+        "selected_counts": selected["counts"],
+        "selection_uses_validation_data": False,
+    }
+    return list(selected["counts"]), metadata
 
 
 def layer_rates(layers: Sequence[Sequence[str]], masks: Mapping[str, torch.Tensor]) -> List[float]:
