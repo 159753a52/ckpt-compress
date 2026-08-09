@@ -39,19 +39,41 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+if __package__ in {None, ""} and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
-from dacp.models.gpt2 import get_gpt2_medium  # noqa: E402
-from dacp.tools.importance import build_transformer_blocks  # noqa: E402
-from dacp.utils.data_loader import _load_gpt2_tokenizer  # noqa: E402
 from experiments.lib.quantile_allocation import _solve_quantile_smooth_counts  # noqa: E402
 
 
 TensorDict = Dict[str, torch.Tensor]
 MaskDict = Dict[str, torch.Tensor]
+
+
+def configure_hf_offline() -> None:
+    """Configure deterministic local-only model and tokenizer loading."""
+    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+
+def empty_device_cache(device: str) -> None:
+    if device.startswith("cuda"):
+        torch.cuda.empty_cache()
+
+
+def reset_peak_memory(device: str) -> None:
+    if device.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats()
+
+
+def peak_memory_bytes(device: str) -> int:
+    if not device.startswith("cuda"):
+        return 0
+    return int(torch.cuda.max_memory_allocated())
+
+
+def synchronize_device(device: str) -> None:
+    if device.startswith("cuda"):
+        torch.cuda.synchronize(torch.device(device))
 
 
 def parse_args() -> argparse.Namespace:
@@ -256,6 +278,8 @@ def continue_training(
 
 
 def eligible_layers(model: nn.Module) -> List[List[str]]:
+    from dacp.tools.importance import build_transformer_blocks
+
     named_params = dict(model.named_parameters())
     layers = []
     for block in build_transformer_blocks(model, "gpt2"):
@@ -394,7 +418,7 @@ def compute_block_taylor_scores(
             if return_components:
                 del first_order_accumulator, second_order_accumulator
             model.zero_grad(set_to_none=True)
-            torch.cuda.empty_cache()
+            empty_device_cache(device)
     finally:
         for name, parameter in named_params.items():
             parameter.requires_grad_(original_requires_grad[name])
@@ -1236,8 +1260,7 @@ def calibrate_spectral_allocation(
     current_device, reference_device = cache_mask_states_on_device(
         current_state, reference_state, eligible_names, device
     )
-    if device.startswith("cuda"):
-        torch.cuda.synchronize(torch.device(device))
+    synchronize_device(device)
     device_cache_seconds = time.perf_counter() - cache_started
     device_cache_bytes = sum(
         tensor.numel() * tensor.element_size()
@@ -1338,8 +1361,7 @@ def calibrate_spectral_allocation(
         named_params = dict(model.named_parameters())
         for name, value in current_device.items():
             named_params[name].copy_(value)
-    if device.startswith("cuda"):
-        torch.cuda.synchronize(torch.device(device))
+    synchronize_device(device)
     del current_device, reference_device
     return counts_by_rank, {
         "seconds": time.perf_counter() - started,
@@ -1375,6 +1397,10 @@ def main() -> None:
         raise ValueError("HVP batches must be positive and step/offset counts non-negative")
     if not torch.cuda.is_available() and args.device.startswith("cuda"):
         raise RuntimeError("CUDA was requested but is unavailable")
+
+    configure_hf_offline()
+    from dacp.models.gpt2 import get_gpt2_medium
+    from dacp.utils.data_loader import _load_gpt2_tokenizer
 
     set_seed(args.seed)
     started_at = datetime.now(timezone.utc)
@@ -1479,11 +1505,11 @@ def main() -> None:
     )
 
     print("[4/6] Computing one clean residual block-HVP", flush=True)
-    torch.cuda.reset_peak_memory_stats()
+    reset_peak_memory(args.device)
     taylor_scores, scoring_metrics = compute_block_taylor_scores(
         model, train_batches[: args.hvp_batches], layers, delta, args.device
     )
-    scoring_metrics["peak_gpu_memory_bytes"] = torch.cuda.max_memory_allocated()
+    scoring_metrics["peak_gpu_memory_bytes"] = peak_memory_bytes(args.device)
     results["scoring"] = scoring_metrics
     write_json(output_path, results)
 
@@ -1597,7 +1623,7 @@ def main() -> None:
 
     del masks, taylor_scores, magnitude_scores, delta
     gc.collect()
-    torch.cuda.empty_cache()
+    empty_device_cache(args.device)
 
 
 if __name__ == "__main__":

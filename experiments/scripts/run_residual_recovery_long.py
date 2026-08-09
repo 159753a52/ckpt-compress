@@ -18,10 +18,9 @@ from scipy.stats import t as student_t
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+if __package__ in {None, ""} and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from dacp.models.gpt2 import get_gpt2_medium  # noqa: E402
-from dacp.utils.data_loader import _load_gpt2_tokenizer  # noqa: E402
 from experiments.lib.residual_recovery import (  # noqa: E402
     MaskDict,
     TensorDict,
@@ -32,7 +31,9 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     checkpoint_optimizer_state,
     checkpoint_state,
     compute_block_taylor_scores,
+    configure_hf_offline,
     eligible_layers,
+    empty_device_cache,
     evaluate_lm,
     fit_weibull_mom,
     global_mask,
@@ -43,6 +44,8 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     mask_metrics,
     mask_overlap,
     optimizer_state_to_cpu,
+    peak_memory_bytes,
+    reset_peak_memory,
     restore_with_mask,
     set_seed,
     sha256_file,
@@ -385,6 +388,10 @@ def main() -> None:
     ):
         raise ValueError("--quantile-trust-radius must fit inside the layer-rate box")
     validate_args(args, seeds)
+    configure_hf_offline()
+    from dacp.models.gpt2 import get_gpt2_medium
+    from dacp.utils.data_loader import _load_gpt2_tokenizer
+
     continuation_steps = args.total_steps - args.recovery_step
     selected_batch_count = (
         args.total_steps
@@ -491,7 +498,7 @@ def main() -> None:
         current_optimizer_state = optimizer_state_to_cpu(optimizer.state_dict())
         current_scheduler_state = copy.deepcopy(scheduler.state_dict())
         del optimizer, scheduler
-        torch.cuda.empty_cache()
+        empty_device_cache(args.device)
         current_metrics = evaluate_lm(model, eval_batches, args.device)
         seed_result["pre_recovery_training"] = pre_metrics
         seed_result["current"] = current_metrics
@@ -509,7 +516,7 @@ def main() -> None:
             for name in eligible_names
         }
         magnitude_scores = {name: values.abs() for name, values in delta.items()}
-        torch.cuda.reset_peak_memory_stats()
+        reset_peak_memory(args.device)
         components_raw, scoring_metrics = compute_block_taylor_scores(
             model,
             score_batches,
@@ -519,7 +526,7 @@ def main() -> None:
             return_components=True,
         )
         components = components_raw
-        scoring_metrics["peak_gpu_memory_bytes"] = torch.cuda.max_memory_allocated()
+        scoring_metrics["peak_gpu_memory_bytes"] = peak_memory_bytes(args.device)
         seed_result["scoring"] = scoring_metrics
 
         allocation_started = time.perf_counter()
@@ -689,7 +696,7 @@ def main() -> None:
                 seed_result["methods"][method]["final"] = final_metrics
             del optimizer, scheduler
             model.zero_grad(set_to_none=True)
-            torch.cuda.empty_cache()
+            empty_device_cache(args.device)
             write_json(output_path, results)
             print(f"  final     {method:28s} PPL={final_metrics['perplexity']:.4f}", flush=True)
 
@@ -697,7 +704,7 @@ def main() -> None:
         del masks, components, components_raw, magnitude_scores, delta
         del current_state, current_optimizer_state, model
         gc.collect()
-        torch.cuda.empty_cache()
+        empty_device_cache(args.device)
         write_json(output_path, results)
 
     results["aggregate"] = aggregate(results["seed_results"])
