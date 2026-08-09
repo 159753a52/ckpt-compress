@@ -39,17 +39,19 @@ from experiments.lib.residual_masks import (  # noqa: E402
     restore_with_mask,
 )
 from experiments.lib.residual_recovery import (  # noqa: E402
-    batch_hash,
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
-    checkpoint_optimizer_state,
-    checkpoint_state,
     compute_block_taylor_scores,
-    configure_hf_offline,
     eligible_layers,
+)
+from experiments.lib.residual_runtime import (  # noqa: E402
+    batch_hash,
+    configure_hf_offline,
     empty_device_cache,
     evaluate_lm,
+    lm_loss,
     load_token_batches,
+    load_training_checkpoint,
     optimizer_state_to_cpu,
     peak_memory_bytes,
     reset_peak_memory,
@@ -183,8 +185,6 @@ def train_segment(
     seed: int,
     device: str,
 ) -> Dict[str, object]:
-    from experiments.lib.residual_recovery import lm_loss
-
     set_seed(seed)
     model.train()
     losses = []
@@ -430,8 +430,10 @@ def main() -> None:
     write_json(output_path, results)
     print(f"Writing incremental results to {output_path}", flush=True)
 
-    reference_state = checkpoint_state(args.checkpoint)
-    reference_optimizer_state = checkpoint_optimizer_state(args.checkpoint)
+    checkpoint = load_training_checkpoint(args.checkpoint)
+    reference_state = checkpoint.model_state
+    reference_optimizer_state = checkpoint.optimizer_state
+    del checkpoint
     tokenizer = _load_gpt2_tokenizer()
     training_pool = load_token_batches(
         args.data_dir / "train.txt",

@@ -17,13 +17,8 @@ full model weight.
 from __future__ import annotations
 
 import argparse
-import copy
 import gc
-import hashlib
-import json
 import math
-import os
-import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -70,33 +65,25 @@ from experiments.lib.residual_masks import (  # noqa: E402
     mask_overlap,
     restore_with_mask,
 )
-
-
-def configure_hf_offline() -> None:
-    """Configure deterministic local-only model and tokenizer loading."""
-    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
-
-def empty_device_cache(device: str) -> None:
-    if device.startswith("cuda"):
-        torch.cuda.empty_cache()
-
-
-def reset_peak_memory(device: str) -> None:
-    if device.startswith("cuda"):
-        torch.cuda.reset_peak_memory_stats()
-
-
-def peak_memory_bytes(device: str) -> int:
-    if not device.startswith("cuda"):
-        return 0
-    return int(torch.cuda.max_memory_allocated())
-
-
-def synchronize_device(device: str) -> None:
-    if device.startswith("cuda"):
-        torch.cuda.synchronize(torch.device(device))
+from experiments.lib.residual_runtime import (  # noqa: E402
+    LoadedTrainingCheckpoint,
+    batch_hash,
+    checkpoint_optimizer_state,
+    checkpoint_state,
+    configure_hf_offline,
+    empty_device_cache,
+    evaluate_lm,
+    lm_loss,
+    load_token_batches,
+    load_training_checkpoint,
+    optimizer_state_to_cpu,
+    peak_memory_bytes,
+    reset_peak_memory,
+    set_seed,
+    sha256_file,
+    synchronize_device,
+    write_json,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,131 +125,6 @@ def parse_args() -> argparse.Namespace:
         default=ROOT / "results/diagnostics/v100_allocation_gate",
     )
     return parser.parse_args()
-
-
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-
-def checkpoint_state(path: Path) -> TensorDict:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict):
-        raise TypeError(f"Unsupported checkpoint payload in {path}: {type(payload)}")
-    for key in ("model_state_dict", "state_dict", "model"):
-        if key in payload and isinstance(payload[key], dict):
-            return payload[key]
-    if payload and all(torch.is_tensor(value) for value in payload.values()):
-        return payload
-    raise KeyError(f"No model state dict found in {path}")
-
-
-def checkpoint_optimizer_state(path: Path) -> Dict:
-    payload = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(payload, dict) or "optimizer_state_dict" not in payload:
-        raise KeyError(f"No optimizer state dict found in {path}")
-    return payload["optimizer_state_dict"]
-
-
-def optimizer_state_to_cpu(state: Mapping) -> Dict:
-    """Clone an optimizer state dict to CPU without a transient GPU deepcopy."""
-    result = {"state": {}, "param_groups": copy.deepcopy(state["param_groups"])}
-    for parameter_id, parameter_state in state["state"].items():
-        result["state"][parameter_id] = {
-            key: value.detach().cpu().clone() if torch.is_tensor(value) else copy.deepcopy(value)
-            for key, value in parameter_state.items()
-        }
-    return result
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def write_json(path: Path, payload: Mapping) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True, allow_nan=False)
-        handle.write("\n")
-    temporary.replace(path)
-
-
-def load_token_batches(
-    path: Path,
-    tokenizer,
-    batch_size: int,
-    seq_length: int,
-    num_batches: int,
-    batch_offset: int = 0,
-) -> List[Dict[str, torch.Tensor]]:
-    skip = batch_size * seq_length * batch_offset
-    needed = batch_size * seq_length * num_batches
-    required = skip + needed
-    tokens: List[int] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if line.strip():
-                tokens.extend(tokenizer.encode(line))
-            if len(tokens) >= required:
-                break
-    if len(tokens) < required:
-        raise RuntimeError(f"Only found {len(tokens)} tokens in {path}, need {required}")
-
-    batches = []
-    offset = skip
-    for _ in range(num_batches):
-        size = batch_size * seq_length
-        input_ids = torch.tensor(tokens[offset : offset + size], dtype=torch.long)
-        input_ids = input_ids.view(batch_size, seq_length)
-        batches.append({"input_ids": input_ids, "labels": input_ids.clone()})
-        offset += size
-    return batches
-
-
-def batch_hash(batches: Sequence[Mapping[str, torch.Tensor]]) -> str:
-    digest = hashlib.sha256()
-    for batch in batches:
-        digest.update(batch["input_ids"].contiguous().numpy().tobytes())
-    return digest.hexdigest()
-
-
-def lm_loss(model: nn.Module, batch: Mapping[str, torch.Tensor], device: str) -> torch.Tensor:
-    input_ids = batch["input_ids"].to(device, non_blocking=True)
-    labels = batch["labels"].to(device, non_blocking=True)
-    outputs = model(input_ids)
-    logits = outputs.logits if hasattr(outputs, "logits") else outputs
-    return nn.functional.cross_entropy(
-        logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
-        labels[..., 1:].contiguous().view(-1),
-    )
-
-
-def evaluate_lm(
-    model: nn.Module,
-    batches: Sequence[Mapping[str, torch.Tensor]],
-    device: str,
-) -> Dict[str, float]:
-    model.eval()
-    total_loss = 0.0
-    started = time.perf_counter()
-    with torch.no_grad():
-        for batch in batches:
-            total_loss += lm_loss(model, batch, device).item()
-    average = total_loss / len(batches)
-    return {
-        "loss": average,
-        "perplexity": math.exp(min(average, 20.0)),
-        "seconds": time.perf_counter() - started,
-        "batches": len(batches),
-        "tokens": sum(batch["input_ids"].numel() for batch in batches),
-    }
 
 
 def continue_training(

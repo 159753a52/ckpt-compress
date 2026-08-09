@@ -11,7 +11,8 @@ import torch
 import experiments.lib.residual_allocation as residual_allocation
 import experiments.lib.residual_masks as residual_masks
 import experiments.lib.residual_recovery as residual_recovery
-from experiments.lib.residual_recovery import (
+import experiments.lib.residual_runtime as residual_runtime
+from experiments.lib.residual_runtime import (
     configure_hf_offline,
     empty_device_cache,
     peak_memory_bytes,
@@ -25,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TestResidualRuntime(unittest.TestCase):
     def test_residual_recovery_reexports_helper_aliases(self) -> None:
-        helper_modules = (residual_allocation, residual_masks)
+        helper_modules = (residual_allocation, residual_masks, residual_runtime)
         for module in helper_modules:
             for name in module.__all__:
                 with self.subTest(module=module.__name__, name=name):
@@ -124,15 +125,16 @@ print(json.dumps({
         max_memory_mock: mock.Mock,
         synchronize_mock: mock.Mock,
     ) -> None:
-        empty_device_cache("cuda")
-        reset_peak_memory("cuda")
-        self.assertEqual(peak_memory_bytes("cuda"), 123)
+        device = torch.device("cuda:0")
+        empty_device_cache("cuda:0")
+        reset_peak_memory("cuda:0")
+        self.assertEqual(peak_memory_bytes("cuda:0"), 123)
         synchronize_device("cuda:0")
 
         empty_cache_mock.assert_called_once_with()
-        reset_peak_mock.assert_called_once_with()
-        max_memory_mock.assert_called_once_with()
-        synchronize_mock.assert_called_once_with(torch.device("cuda:0"))
+        reset_peak_mock.assert_called_once_with(device)
+        max_memory_mock.assert_called_once_with(device)
+        synchronize_mock.assert_called_once_with(device)
 
 
 if __name__ == "__main__":
