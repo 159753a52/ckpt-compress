@@ -1,6 +1,6 @@
 """Pure numerical core for empirical quantile residual allocation.
 
-The public experiment adapter remains in ``residual_recovery``. This module
+The public experiment adapter lives in ``residual_allocation``. This module
 only owns the NumPy optimization after Taylor scores have been materialized in
 stable ascending order.
 """

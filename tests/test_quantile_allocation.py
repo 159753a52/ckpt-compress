@@ -5,10 +5,12 @@ import numpy as np
 import torch
 
 from experiments.lib.quantile_allocation import _solve_quantile_smooth_counts
-from experiments.lib.residual_recovery import (
+from experiments.lib.residual_allocation import (
     calibrate_quantile_smooth_allocation,
-    layer_score_orders,
     uniform_counts,
+)
+from experiments.lib.residual_recovery import (
+    layer_score_orders,
 )
 
 

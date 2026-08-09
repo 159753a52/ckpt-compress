@@ -21,11 +21,16 @@ ROOT = Path(__file__).resolve().parents[2]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from experiments.lib.residual_allocation import (  # noqa: E402
+    calibrate_quantile_smooth_allocation,
+    fit_weibull_mom,
+    uniform_counts,
+    weibull_counts,
+)
 from experiments.lib.residual_recovery import (  # noqa: E402
     MaskDict,
     TensorDict,
     batch_hash,
-    calibrate_quantile_smooth_allocation,
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
     checkpoint_optimizer_state,
@@ -35,7 +40,6 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     eligible_layers,
     empty_device_cache,
     evaluate_lm,
-    fit_weibull_mom,
     global_mask,
     layer_masks,
     layer_rates,
@@ -49,8 +53,6 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     restore_with_mask,
     set_seed,
     sha256_file,
-    uniform_counts,
-    weibull_counts,
     write_json,
 )
 

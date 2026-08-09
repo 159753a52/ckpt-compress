@@ -8,6 +8,8 @@ from unittest import mock
 
 import torch
 
+import experiments.lib.residual_allocation as residual_allocation
+import experiments.lib.residual_recovery as residual_recovery
 from experiments.lib.residual_recovery import (
     configure_hf_offline,
     empty_device_cache,
@@ -21,6 +23,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestResidualRuntime(unittest.TestCase):
+    def test_legacy_allocation_exports_are_aliases(self) -> None:
+        for name in residual_allocation.__all__:
+            self.assertIs(
+                getattr(residual_recovery, name),
+                getattr(residual_allocation, name),
+            )
+
     def test_import_has_no_hf_or_model_stack_side_effects(self) -> None:
         environment = os.environ.copy()
         environment.pop("HF_DATASETS_OFFLINE", None)

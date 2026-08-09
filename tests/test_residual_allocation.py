@@ -2,20 +2,60 @@ import unittest
 
 import torch
 
-from experiments.lib.residual_recovery import (
-    apply_mask_from_device_states,
+from experiments.lib.residual_allocation import (
     bounded_largest_remainder_counts,
     budget_tangent_dct_directions,
-    cache_mask_states_on_device,
     directional_layer_counts,
-    layer_masks,
-    layer_score_orders,
+    fit_weibull_mom,
     reconstruct_directional_gradient,
     trust_region_counts,
+    weibull_counts,
+)
+from experiments.lib.residual_recovery import (
+    apply_mask_from_device_states,
+    cache_mask_states_on_device,
+    layer_masks,
+    layer_score_orders,
 )
 
 
 class TestResidualAllocation(unittest.TestCase):
+    def test_weibull_counts_preserve_exact_budget_and_caps(self) -> None:
+        fits = [
+            fit_weibull_mom(torch.tensor([0.1, 0.2, 0.4, 0.8, 1.6, 3.2])),
+            fit_weibull_mom(torch.tensor([0.5, 0.6, 0.8, 1.1, 1.5, 2.0])),
+        ]
+
+        counts, metadata = weibull_counts(
+            fits,
+            layer_sizes=[6, 6],
+            target=6,
+            ratio=0.5,
+            max_layer_ratio=0.8,
+        )
+
+        self.assertTrue(all(fit["valid"] for fit in fits))
+        self.assertEqual(sum(counts), 6)
+        self.assertTrue(all(count <= 4 for count in counts))
+        self.assertIsNone(metadata["fallback"])
+
+    def test_weibull_counts_fall_back_when_all_fits_are_invalid(self) -> None:
+        fits = [
+            fit_weibull_mom(torch.zeros(5)),
+            fit_weibull_mom(torch.zeros(7)),
+        ]
+
+        counts, metadata = weibull_counts(
+            fits,
+            layer_sizes=[5, 7],
+            target=6,
+            ratio=0.5,
+            max_layer_ratio=0.8,
+        )
+
+        self.assertEqual(counts, [3, 3])
+        self.assertEqual(metadata["fallback"], "all Weibull fits invalid")
+
     def test_trust_region_counts_preserve_budget_and_order(self) -> None:
         counts = trust_region_counts(
             marginal_losses=[3.0, 1.0, 2.0],
