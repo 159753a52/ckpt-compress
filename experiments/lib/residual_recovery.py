@@ -453,6 +453,35 @@ def exact_keep_mask(values: torch.Tensor, prune_count: int) -> torch.Tensor:
     return ~pruned
 
 
+def exact_keep_mask_from_order(order: torch.Tensor, prune_count: int) -> torch.Tensor:
+    """Build an exact nested mask from one stable ascending score order."""
+    if order.ndim != 1:
+        raise ValueError("Score order must be one-dimensional")
+    count = order.numel()
+    if prune_count < 0 or prune_count > count:
+        raise ValueError(f"Invalid prune count {prune_count} for {count} scores")
+    keep = torch.ones(count, dtype=torch.bool)
+    keep[order[:prune_count]] = False
+    return keep
+
+
+def layer_score_orders(
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+    sort_device: str | None = None,
+) -> List[torch.Tensor]:
+    """Cache stable within-layer score orders for repeated exact masks."""
+    orders = []
+    for names in layers:
+        flat_scores = torch.cat([scores[name].detach().float().flatten().cpu() for name in names])
+        if sort_device is None or sort_device == "cpu":
+            order = torch.argsort(flat_scores, stable=True)
+        else:
+            order = torch.argsort(flat_scores.to(sort_device), stable=True).cpu()
+        orders.append(order)
+    return orders
+
+
 def largest_remainder_counts(
     real_counts: Sequence[float],
     target: int,
@@ -699,11 +728,21 @@ def layer_masks(
     layers: Sequence[Sequence[str]],
     scores: Mapping[str, torch.Tensor],
     counts: Sequence[int],
+    score_orders: Sequence[torch.Tensor] | None = None,
 ) -> MaskDict:
+    if score_orders is not None and len(score_orders) != len(layers):
+        raise ValueError("Score orders must match the structural layers")
     masks: MaskDict = {}
-    for names, prune_count in zip(layers, counts):
-        flat_scores = torch.cat([scores[name].flatten() for name in names])
-        flat_keep = exact_keep_mask(flat_scores, prune_count)
+    for index, (names, prune_count) in enumerate(zip(layers, counts)):
+        if score_orders is None:
+            flat_scores = torch.cat([scores[name].flatten() for name in names])
+            flat_keep = exact_keep_mask(flat_scores, prune_count)
+        else:
+            expected_size = sum(scores[name].numel() for name in names)
+            order = score_orders[index]
+            if order.numel() != expected_size:
+                raise ValueError("A score order has the wrong number of elements")
+            flat_keep = exact_keep_mask_from_order(order, prune_count)
         offset = 0
         for name in names:
             size = scores[name].numel()
@@ -716,10 +755,17 @@ def layer_mask_at_count(
     names: Sequence[str],
     scores: Mapping[str, torch.Tensor],
     prune_count: int,
+    score_order: torch.Tensor | None = None,
 ) -> MaskDict:
     """Build one structural layer's exact-count mask."""
-    flat_scores = torch.cat([scores[name].flatten() for name in names])
-    flat_keep = exact_keep_mask(flat_scores, prune_count)
+    if score_order is None:
+        flat_scores = torch.cat([scores[name].flatten() for name in names])
+        flat_keep = exact_keep_mask(flat_scores, prune_count)
+    else:
+        expected_size = sum(scores[name].numel() for name in names)
+        if score_order.numel() != expected_size:
+            raise ValueError("The score order has the wrong number of elements")
+        flat_keep = exact_keep_mask_from_order(score_order, prune_count)
     masks: MaskDict = {}
     offset = 0
     for name in names:
@@ -791,6 +837,43 @@ def restore_with_mask(
             named_params[name].copy_(restored)
 
 
+def cache_mask_states_on_device(
+    current_state: Mapping[str, torch.Tensor],
+    reference_state: Mapping[str, torch.Tensor],
+    names: Sequence[str],
+    device: str,
+) -> Tuple[TensorDict, TensorDict]:
+    """Transfer mask-selectable states once for repeated whole-model probes."""
+    current_device = {
+        name: current_state[name].to(device, non_blocking=True, copy=True)
+        for name in names
+    }
+    reference_device = {
+        name: reference_state[name].to(device, non_blocking=True, copy=True)
+        for name in names
+    }
+    return current_device, reference_device
+
+
+def apply_mask_from_device_states(
+    model: nn.Module,
+    current_device: Mapping[str, torch.Tensor],
+    reference_device: Mapping[str, torch.Tensor],
+    masks: Mapping[str, torch.Tensor],
+    device: str,
+) -> None:
+    """Apply a mask using states already resident on the evaluation device."""
+    named_params = dict(model.named_parameters())
+    with torch.no_grad():
+        for name, keep in masks.items():
+            torch.where(
+                keep.to(device, non_blocking=True),
+                current_device[name],
+                reference_device[name],
+                out=named_params[name],
+            )
+
+
 def apply_layer_mask(
     model: nn.Module,
     current_state: Mapping[str, torch.Tensor],
@@ -833,6 +916,7 @@ def calibrate_trust_region_allocation(
     probe_radius: float,
     candidate_trust_radii: Sequence[float],
     device: str,
+    score_orders: Sequence[torch.Tensor] | None = None,
 ) -> Tuple[List[int], Dict[str, object]]:
     """Estimate true-loss marginals near uniform and select a bounded rate step."""
     if not probe_batches or not selection_batches:
@@ -842,7 +926,7 @@ def calibrate_trust_region_allocation(
 
     started = time.perf_counter()
     layer_sizes = [sum(scores[name].numel() for name in names) for names in layers]
-    uniform_masks = layer_masks(layers, scores, uniform_layer_counts)
+    uniform_masks = layer_masks(layers, scores, uniform_layer_counts, score_orders)
     restore_with_mask(model, current_state, reference_state, uniform_masks, device)
     uniform_probe_losses = batch_loss_values(model, probe_batches, device)
     uniform_selection_losses = batch_loss_values(model, selection_batches, device)
@@ -858,11 +942,12 @@ def calibrate_trust_region_allocation(
         if lower_count >= upper_count:
             raise ValueError(f"Layer {index} has no room for a finite-difference probe")
 
-        upper_masks = layer_mask_at_count(names, scores, upper_count)
+        score_order = score_orders[index] if score_orders is not None else None
+        upper_masks = layer_mask_at_count(names, scores, upper_count, score_order)
         apply_layer_mask(model, current_state, reference_state, upper_masks, device)
         upper_losses = batch_loss_values(model, probe_batches, device)
 
-        lower_masks = layer_mask_at_count(names, scores, lower_count)
+        lower_masks = layer_mask_at_count(names, scores, lower_count, score_order)
         apply_layer_mask(model, current_state, reference_state, lower_masks, device)
         lower_losses = batch_loss_values(model, probe_batches, device)
 
@@ -912,7 +997,7 @@ def calibrate_trust_region_allocation(
             trust_radius,
             max_layer_ratio,
         )
-        candidate_masks = layer_masks(layers, scores, counts)
+        candidate_masks = layer_masks(layers, scores, counts, score_orders)
         restore_with_mask(model, current_state, reference_state, candidate_masks, device)
         losses = batch_loss_values(model, selection_batches, device)
         deltas = [
@@ -951,6 +1036,245 @@ def calibrate_trust_region_allocation(
         "selection_uses_validation_data": False,
     }
     return list(selected["counts"]), metadata
+
+
+def budget_tangent_dct_directions(
+    layer_sizes: Sequence[int],
+    rank: int,
+) -> List[List[float]]:
+    """Build low-frequency DCT directions orthogonal to the pruning budget."""
+    if not layer_sizes or any(size <= 0 for size in layer_sizes):
+        raise ValueError("Layer sizes must be positive")
+    if not 1 <= rank < len(layer_sizes):
+        raise ValueError("rank must be in [1, number of layers)")
+
+    sizes = np.asarray(layer_sizes, dtype=np.float64)
+    layer_indices = np.arange(len(layer_sizes), dtype=np.float64)
+    directions = []
+    for frequency in range(1, rank + 1):
+        direction = np.cos(
+            math.pi * (layer_indices + 0.5) * frequency / len(layer_sizes)
+        )
+        direction -= np.dot(sizes, direction) / sizes.sum()
+        maximum = np.max(np.abs(direction))
+        if maximum <= 1e-12:
+            raise ValueError(f"Degenerate spectral direction at frequency {frequency}")
+        directions.append((direction / maximum).tolist())
+    return directions
+
+
+def reconstruct_directional_gradient(
+    design: Sequence[Sequence[float]],
+    responses: Sequence[float],
+) -> Tuple[List[float], Dict[str, float | int]]:
+    """Return the minimum-norm gradient matching measured directional derivatives."""
+    matrix = np.asarray(design, dtype=np.float64)
+    values = np.asarray(responses, dtype=np.float64)
+    if matrix.ndim != 2 or values.shape != (matrix.shape[0],):
+        raise ValueError("Directional design and responses have incompatible shapes")
+    if not np.all(np.isfinite(matrix)) or not np.all(np.isfinite(values)):
+        raise ValueError("Directional measurements must be finite")
+
+    matrix_rank = int(np.linalg.matrix_rank(matrix))
+    if matrix_rank != matrix.shape[0]:
+        raise ValueError("Directional design must have full row rank")
+    condition_number = float(np.linalg.cond(matrix))
+    gradient, _, _, _ = np.linalg.lstsq(matrix, values, rcond=None)
+    residual = matrix @ gradient - values
+    return gradient.tolist(), {
+        "rank": matrix_rank,
+        "condition_number": condition_number,
+        "response_residual_l2": float(np.linalg.norm(residual)),
+    }
+
+
+def directional_layer_counts(
+    direction: Sequence[float],
+    layer_sizes: Sequence[int],
+    target: int,
+    ratio: float,
+    probe_radius: float,
+    max_layer_ratio: float,
+    sign: float,
+) -> List[int]:
+    if len(direction) != len(layer_sizes):
+        raise ValueError("Direction and layer sizes must have the same length")
+    lower_bounds = [0] * len(layer_sizes)
+    upper_bounds = [int(math.floor(max_layer_ratio * size)) for size in layer_sizes]
+    rates = [ratio + sign * probe_radius * value for value in direction]
+    if any(rate < 0 or rate > max_layer_ratio for rate in rates):
+        raise ValueError("Spectral probe leaves the feasible layer-rate box")
+    real_counts = [size * rate for size, rate in zip(layer_sizes, rates)]
+    return bounded_largest_remainder_counts(
+        real_counts, target, lower_bounds, upper_bounds
+    )
+
+
+def calibrate_spectral_allocation(
+    model: nn.Module,
+    current_state: Mapping[str, torch.Tensor],
+    reference_state: Mapping[str, torch.Tensor],
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+    target: int,
+    ratio: float,
+    max_layer_ratio: float,
+    probe_batches: Sequence[Mapping[str, torch.Tensor]],
+    probe_radius: float,
+    ranks: Sequence[int],
+    trust_radius: float,
+    device: str,
+    score_orders: Sequence[torch.Tensor] | None = None,
+) -> Tuple[Dict[int, List[int]], Dict[str, object]]:
+    """Estimate a low-rank rate gradient from budget-preserving spectral probes."""
+    if not probe_batches:
+        raise ValueError("Spectral probing requires at least one batch")
+    if not 0 < ratio < max_layer_ratio <= 1:
+        raise ValueError("Spectral probing requires 0 < ratio < max_layer_ratio <= 1")
+    if not 0 < probe_radius <= min(ratio, max_layer_ratio - ratio):
+        raise ValueError("probe_radius must stay inside the feasible layer-rate box")
+    unique_ranks = sorted(set(ranks))
+    if not unique_ranks:
+        raise ValueError("At least one spectral rank is required")
+    if unique_ranks[0] < 1 or unique_ranks[-1] >= len(layers):
+        raise ValueError("Spectral ranks must be in [1, number of layers)")
+
+    started = time.perf_counter()
+    layer_sizes = [sum(scores[name].numel() for name in names) for names in layers]
+    if abs(target - ratio * sum(layer_sizes)) > 1.0:
+        raise ValueError("target must match ratio times the eligible parameter count")
+    directions = budget_tangent_dct_directions(layer_sizes, max(unique_ranks))
+    design = []
+    responses = []
+    measurements = []
+    mask_seconds = 0.0
+    evaluation_seconds = 0.0
+    cache_started = time.perf_counter()
+    eligible_names = [name for names in layers for name in names]
+    model.load_state_dict(current_state, strict=True)
+    current_device, reference_device = cache_mask_states_on_device(
+        current_state, reference_state, eligible_names, device
+    )
+    if device.startswith("cuda"):
+        torch.cuda.synchronize(torch.device(device))
+    device_cache_seconds = time.perf_counter() - cache_started
+    device_cache_bytes = sum(
+        tensor.numel() * tensor.element_size()
+        for state in (current_device, reference_device)
+        for tensor in state.values()
+    )
+
+    for index, direction in enumerate(directions, start=1):
+        plus_counts = directional_layer_counts(
+            direction,
+            layer_sizes,
+            target,
+            ratio,
+            probe_radius,
+            max_layer_ratio,
+            1.0,
+        )
+        minus_counts = directional_layer_counts(
+            direction,
+            layer_sizes,
+            target,
+            ratio,
+            probe_radius,
+            max_layer_ratio,
+            -1.0,
+        )
+
+        mask_started = time.perf_counter()
+        plus_masks = layer_masks(layers, scores, plus_counts, score_orders)
+        mask_seconds += time.perf_counter() - mask_started
+        evaluation_started = time.perf_counter()
+        apply_mask_from_device_states(
+            model, current_device, reference_device, plus_masks, device
+        )
+        plus_losses = batch_loss_values(model, probe_batches, device)
+        evaluation_seconds += time.perf_counter() - evaluation_started
+        del plus_masks
+
+        mask_started = time.perf_counter()
+        minus_masks = layer_masks(layers, scores, minus_counts, score_orders)
+        mask_seconds += time.perf_counter() - mask_started
+        evaluation_started = time.perf_counter()
+        apply_mask_from_device_states(
+            model, current_device, reference_device, minus_masks, device
+        )
+        minus_losses = batch_loss_values(model, probe_batches, device)
+        evaluation_seconds += time.perf_counter() - evaluation_started
+        del minus_masks
+
+        plus_rates = [count / size for count, size in zip(plus_counts, layer_sizes)]
+        minus_rates = [count / size for count, size in zip(minus_counts, layer_sizes)]
+        actual_direction = [
+            (plus - minus) / (2.0 * probe_radius)
+            for plus, minus in zip(plus_rates, minus_rates)
+        ]
+        paired_derivatives = [
+            (plus - minus) / (2.0 * probe_radius)
+            for plus, minus in zip(plus_losses, minus_losses)
+        ]
+        response = float(np.mean(paired_derivatives))
+        design.append(actual_direction)
+        responses.append(response)
+        measurements.append(
+            {
+                "frequency": index,
+                "plus_counts": plus_counts,
+                "minus_counts": minus_counts,
+                "actual_direction": actual_direction,
+                "response": response,
+                "response_standard_error": float(
+                    np.std(paired_derivatives, ddof=1) / math.sqrt(len(paired_derivatives))
+                )
+                if len(paired_derivatives) > 1
+                else None,
+            }
+        )
+
+    counts_by_rank = {}
+    reconstructions = {}
+    for rank in unique_ranks:
+        gradient, reconstruction = reconstruct_directional_gradient(
+            design[:rank], responses[:rank]
+        )
+        counts = trust_region_counts(
+            gradient,
+            layer_sizes,
+            target,
+            ratio,
+            trust_radius,
+            max_layer_ratio,
+        )
+        counts_by_rank[rank] = counts
+        reconstruction["gradient"] = gradient
+        reconstruction["layer_counts"] = counts
+        reconstructions[str(rank)] = reconstruction
+
+    with torch.no_grad():
+        named_params = dict(model.named_parameters())
+        for name, value in current_device.items():
+            named_params[name].copy_(value)
+    if device.startswith("cuda"):
+        torch.cuda.synchronize(torch.device(device))
+    del current_device, reference_device
+    return counts_by_rank, {
+        "seconds": time.perf_counter() - started,
+        "mask_seconds": mask_seconds,
+        "evaluation_seconds": evaluation_seconds,
+        "device_cache_seconds": device_cache_seconds,
+        "device_cache_bytes": device_cache_bytes,
+        "probe_batches": len(probe_batches),
+        "probe_radius": probe_radius,
+        "trust_radius": trust_radius,
+        "direction_evaluations": 2 * len(directions),
+        "batch_forward_evaluations": 2 * len(directions) * len(probe_batches),
+        "measurements": measurements,
+        "reconstructions": reconstructions,
+        "returned_model_state": "current_uncompressed",
+    }
 
 
 def layer_rates(layers: Sequence[Sequence[str]], masks: Mapping[str, torch.Tensor]) -> List[float]:

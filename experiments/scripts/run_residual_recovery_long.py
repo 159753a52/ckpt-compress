@@ -26,6 +26,7 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     MaskDict,
     TensorDict,
     batch_hash,
+    calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
     checkpoint_optimizer_state,
     checkpoint_state,
@@ -36,6 +37,7 @@ from experiments.lib.residual_recovery import (  # noqa: E402
     global_mask,
     layer_masks,
     layer_rates,
+    layer_score_orders,
     load_token_batches,
     mask_metrics,
     mask_overlap,
@@ -71,6 +73,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--allocation-selection-batches", type=int, default=8)
     parser.add_argument("--allocation-probe-radius", type=float, default=0.025)
     parser.add_argument("--allocation-trust-radii", default="0.025,0.05,0.1")
+    parser.add_argument(
+        "--spectral-ranks",
+        default="",
+        help="Comma-separated DCT ranks; empty disables spectral allocation",
+    )
+    parser.add_argument("--spectral-probe-radius", type=float, default=0.025)
+    parser.add_argument("--spectral-trust-radius", type=float, default=0.1)
     parser.add_argument("--eval-batches", type=int, default=100)
     parser.add_argument("--train-pool-batches", type=int, default=512)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
@@ -98,6 +107,12 @@ def validate_args(args: argparse.Namespace, seeds: Sequence[int]) -> None:
         raise ValueError("--allocation-probe-radius must fit around --prune-ratio")
     if args.prune_ratio + args.allocation_probe_radius > args.max_layer_ratio:
         raise ValueError("--max-layer-ratio must leave room for the positive allocation probe")
+    if not 0 < args.spectral_probe_radius < min(args.prune_ratio, 1.0 - args.prune_ratio):
+        raise ValueError("--spectral-probe-radius must fit around --prune-ratio")
+    if args.prune_ratio + args.spectral_probe_radius > args.max_layer_ratio:
+        raise ValueError("--max-layer-ratio must leave room for the positive spectral probe")
+    if not 0 < args.spectral_trust_radius <= 1:
+        raise ValueError("--spectral-trust-radius must be in (0, 1]")
     needed = (
         args.total_steps
         + args.hvp_batches
@@ -178,6 +193,7 @@ def build_masks(
     components: Dict[str, TensorDict],
     prune_ratio: float,
     max_layer_ratio: float,
+    taylor_score_orders: Sequence[torch.Tensor] | None = None,
 ) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
     taylor_scores = components["taylor"]
     layer_sizes = [sum(taylor_scores[name].numel() for name in layer) for layer in layers]
@@ -205,9 +221,11 @@ def build_masks(
         "second_order_uniform": layer_masks(
             layers, components["second_order"], uniform_layer_counts
         ),
-        "taylor_uniform": layer_masks(layers, taylor_scores, uniform_layer_counts),
+        "taylor_uniform": layer_masks(
+            layers, taylor_scores, uniform_layer_counts, taylor_score_orders
+        ),
         "taylor_weibull_mom": layer_masks(
-            layers, taylor_scores, weibull_layer_counts
+            layers, taylor_scores, weibull_layer_counts, taylor_score_orders
         ),
         "taylor_exact_global": global_mask(eligible_names, taylor_scores, target),
     }
@@ -300,6 +318,13 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
         "probe_trust_vs_taylor_uniform": ("taylor_probe_trust", "taylor_uniform"),
         "probe_trust_vs_weibull": ("taylor_probe_trust", "taylor_weibull_mom"),
     }
+    for method in method_names:
+        if not method.startswith("taylor_spectral_k"):
+            continue
+        label = method.removeprefix("taylor_")
+        comparisons[f"{label}_vs_taylor_uniform"] = (method, "taylor_uniform")
+        comparisons[f"{label}_vs_weibull"] = (method, "taylor_weibull_mom")
+        comparisons[f"{label}_vs_probe_trust"] = (method, "taylor_probe_trust")
     for label, (left, right) in comparisons.items():
         comparison = {}
         for stage in ("immediate", "final"):
@@ -319,10 +344,15 @@ def main() -> None:
     trust_radii = [
         float(value) for value in args.allocation_trust_radii.split(",") if value.strip()
     ]
+    spectral_ranks = sorted(
+        {int(value) for value in args.spectral_ranks.split(",") if value.strip()}
+    )
     if not trust_radii or any(value <= 0 for value in trust_radii):
         raise ValueError("--allocation-trust-radii must contain positive values")
     if any(value > 1 for value in trust_radii):
         raise ValueError("--allocation-trust-radii values cannot exceed 1")
+    if any(rank < 1 for rank in spectral_ranks):
+        raise ValueError("--spectral-ranks must contain positive integers")
     validate_args(args, seeds)
     continuation_steps = args.total_steps - args.recovery_step
     selected_batch_count = (
@@ -344,6 +374,7 @@ def main() -> None:
             "output_dir": str(args.output_dir.resolve()),
             "seeds": seeds,
             "allocation_trust_radii": trust_radii,
+            "spectral_ranks": spectral_ranks,
             "scheduler": "cosine",
             "continuation_steps": continuation_steps,
         },
@@ -460,12 +491,21 @@ def main() -> None:
         seed_result["scoring"] = scoring_metrics
 
         allocation_started = time.perf_counter()
+        taylor_score_orders = None
+        score_order_seconds = 0.0
+        if spectral_ranks:
+            score_order_started = time.perf_counter()
+            taylor_score_orders = layer_score_orders(
+                layers, components["taylor"], sort_device=args.device
+            )
+            score_order_seconds = time.perf_counter() - score_order_started
         masks, allocation_metadata = build_masks(
             layers,
             magnitude_scores,
             components,
             args.prune_ratio,
             args.max_layer_ratio,
+            taylor_score_orders,
         )
         probe_trust_counts, probe_trust_metadata = calibrate_trust_region_allocation(
             model,
@@ -482,12 +522,42 @@ def main() -> None:
             args.allocation_probe_radius,
             trust_radii,
             args.device,
+            taylor_score_orders,
         )
         masks["taylor_probe_trust"] = layer_masks(
-            layers, components["taylor"], probe_trust_counts
+            layers, components["taylor"], probe_trust_counts, taylor_score_orders
         )
         allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
         allocation_metadata["probe_trust"] = probe_trust_metadata
+        if spectral_ranks:
+            spectral_counts, spectral_metadata = calibrate_spectral_allocation(
+                model,
+                current_state,
+                reference_state,
+                layers,
+                components["taylor"],
+                allocation_metadata["target_pruned"],
+                args.prune_ratio,
+                args.max_layer_ratio,
+                probe_batches,
+                args.spectral_probe_radius,
+                spectral_ranks,
+                args.spectral_trust_radius,
+                args.device,
+                taylor_score_orders,
+            )
+            for rank, counts in spectral_counts.items():
+                masks[f"taylor_spectral_k{rank}"] = layer_masks(
+                    layers, components["taylor"], counts, taylor_score_orders
+                )
+            allocation_metadata["spectral_layer_counts"] = spectral_counts
+            allocation_metadata["spectral"] = spectral_metadata
+        if taylor_score_orders is not None:
+            allocation_metadata["score_order_seconds"] = score_order_seconds
+            allocation_metadata["score_order_sort_device"] = args.device
+            allocation_metadata["score_order_bytes"] = sum(
+                order.numel() * order.element_size() for order in taylor_score_orders
+            )
         allocation_metadata["seconds"] = time.perf_counter() - allocation_started
         allocation_metadata["whole_model_parameters"] = sum(
             parameter.numel() for parameter in model.parameters()
@@ -562,6 +632,7 @@ def main() -> None:
 
         seed_result["wall_seconds"] = time.perf_counter() - seed_started
         del masks, components, components_raw, magnitude_scores, delta
+        del taylor_score_orders
         del current_state, current_optimizer_state, model
         gc.collect()
         torch.cuda.empty_cache()
