@@ -18,6 +18,8 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import yaml
 
+from .result_schema import load_result_bundle
+
 pd = None  # lazy import of pandas
 def _get_pd():
     global pd
@@ -104,8 +106,7 @@ class ResultManager:
         if not results_file.exists():
             raise FileNotFoundError(f"Results not found: {results_file}")
 
-        with open(results_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return load_result_bundle(results_file).records
 
     def list_runs(self, experiment_name: str) -> List[str]:
         """List all runs for an experiment."""

@@ -12,10 +12,17 @@
 
 import json
 import argparse
+import sys
 from pathlib import Path
 from collections import defaultdict
 
+import yaml
+
 ROOT = Path(__file__).parent.parent.parent
+if __package__ in (None, ""):
+    sys.path.insert(0, str(ROOT))
+
+from experiments.lib.result_schema import load_result_bundle, primary_metric
 
 
 def scan_results(result_dir):
@@ -30,13 +37,12 @@ def scan_results(result_dir):
         if '_config.json' in json_file.name or 'metadata.json' in json_file.name:
             continue
         try:
-            with open(json_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, IOError):
+            bundle = load_result_bundle(json_file)
+        except (json.JSONDecodeError, OSError, ValueError, yaml.YAMLError):
             continue
 
-        config = data.get('config', {})
-        results = data.get('results', [])
+        config = bundle.config
+        results = bundle.records
         if not results:
             continue
 
@@ -45,14 +51,20 @@ def scan_results(result_dir):
         prune_ratio = config.get('prune_ratio', 0)
 
         for r in results:
-            method = r.get('method', 'unknown')
+            method = r.get('method')
+            if not isinstance(method, str):
+                continue
+            record_ratio = r.get('prune_ratio', r.get('target_ratio', prune_ratio))
             records.append({
-                'model': model,
-                'dataset': dataset,
+                'model': r.get('model', model),
+                'dataset': r.get('dataset', dataset),
                 'method': method,
-                'prune_ratio': prune_ratio,
+                'prune_ratio': record_ratio,
                 'source_file': str(json_file),
-                **{k: v for k, v in r.items() if k != 'method'},
+                **{
+                    k: v for k, v in r.items()
+                    if k not in {'model', 'dataset', 'method', 'prune_ratio'}
+                },
             })
 
     return records
@@ -100,21 +112,11 @@ def aggregate_table3(records):
 
 def _extract_metric(record):
     """从记录中提取主要指标值和对应的 key。"""
-    for key in ['accuracy', 'top1_accuracy', 'perplexity',
-                'final_loss', 'val_loss', 'loss', 'metric_value']:
-        if key in record:
-            val = record[key]
-            if isinstance(val, float):
-                return f"{val:.4f}", key
-            return str(val), key
-    # 取 metrics 字典
-    metrics = record.get('metrics', {})
-    if isinstance(metrics, dict) and metrics:
-        first_key = next(iter(metrics))
-        val = metrics[first_key]
+    key, val = primary_metric(record)
+    if key is not None:
         if isinstance(val, float):
-            return f"{val:.4f}", first_key
-        return str(val), first_key
+            return f"{val:.4f}", key
+        return str(val), key
     return "—", None
 
 
