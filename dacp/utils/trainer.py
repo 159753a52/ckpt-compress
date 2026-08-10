@@ -4,14 +4,12 @@
 提供 BaseTrainer 基类和 CV/NLP 任务的训练器。
 """
 
-import os
 import time
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from typing import Optional, Dict, Any, List
 from pathlib import Path
-import json
 
 
 class BaseTrainer:

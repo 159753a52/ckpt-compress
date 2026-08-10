@@ -11,7 +11,6 @@
     # scores['first-order'] -> {param_name: score_tensor}
 """
 
-import gc
 from collections import defaultdict
 from typing import Dict, List, Optional
 
@@ -111,7 +110,7 @@ def _compute_hvp_scores(
         'full'  — 全局 HVP，需要保留整个模型的二阶计算图。
     """
     from dacp.tools.importance import (
-        compute_hvp_batched, compute_hvp,
+        compute_hvp_batched,
     )
 
     model.train()

@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 from typing import Any, Dict, Mapping, Tuple, Optional, List
 
-from .importance import ImportanceScorer, get_importance_scorer
-from .allocation import AllocationStrategy, get_allocation_strategy
+from .importance import get_importance_scorer
+from .allocation import get_allocation_strategy
 
 
 def exact_pruning_mask(score: torch.Tensor, prune_count: int) -> torch.Tensor:

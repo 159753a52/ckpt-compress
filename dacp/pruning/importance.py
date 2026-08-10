@@ -1,7 +1,6 @@
 """统一重要性得分计算接口。"""
 
 import torch
-import random as _random
 import math
 from typing import Dict, Optional
 from abc import ABC, abstractmethod

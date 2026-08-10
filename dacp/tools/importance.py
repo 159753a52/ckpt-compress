@@ -23,9 +23,8 @@ s_i = -g_i·θ_i + 0.5·θ_i·(H·θ)_i
 """
 
 import torch
-import torch.nn as nn
 from torch.nn.attention import sdpa_kernel, SDPBackend
-from typing import Dict, List, Tuple, Optional, Callable
+from typing import Dict, List, Callable
 
 
 def compute_importance_scores_magnitude(

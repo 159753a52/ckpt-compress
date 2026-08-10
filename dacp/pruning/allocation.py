@@ -2,7 +2,7 @@
 
 import torch
 import numpy as np
-from typing import Dict, Tuple, Optional, List
+from typing import Dict
 from abc import ABC, abstractmethod
 from scipy import stats
 from scipy.optimize import bisect
