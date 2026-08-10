@@ -78,7 +78,7 @@ def continue_training(
 def main() -> None:
     args = parse_args()
     validate_short_config(args)
-    if not torch.cuda.is_available() and args.device.startswith("cuda"):
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is unavailable")
 
     configure_hf_offline()

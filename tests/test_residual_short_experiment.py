@@ -187,7 +187,7 @@ class TestResidualShortExperiment(unittest.TestCase):
             stack.enter_context(
                 mock.patch.object(short_runner, "parse_args", return_value=args)
             )
-            stack.enter_context(
+            cuda_available = stack.enter_context(
                 mock.patch.object(
                     short_runner.torch.cuda,
                     "is_available",
@@ -313,6 +313,7 @@ class TestResidualShortExperiment(unittest.TestCase):
             "optimizer_state_calls": optimizer_state.call_count,
             "get_model_calls": get_model.call_args_list,
             "load_tokenizer_calls": load_tokenizer.call_count,
+            "cuda_available_calls": cuda_available.call_count,
         }
 
     def test_main_preserves_incremental_write_and_method_order_without_continuation(self) -> None:
@@ -338,6 +339,7 @@ class TestResidualShortExperiment(unittest.TestCase):
         self.assertEqual(run["evaluate_calls"], 2 + len(SHORT_GATE_METHODS))
         self.assertEqual(run["optimizer_state_calls"], 0)
         self.assertEqual(run["continue_calls"], [])
+        self.assertEqual(run["cuda_available_calls"], 0)
 
     def test_main_preserves_continuation_order_seed_and_trajectory_reset(self) -> None:
         run = self.run_gate(continuation_steps=1)
@@ -367,6 +369,22 @@ class TestResidualShortExperiment(unittest.TestCase):
             ]
             self.assertEqual(continued, list(SHORT_GATE_METHODS[:completed]))
         self.assertEqual(snapshots[-1]["status"], "complete")
+        self.assertEqual(run["cuda_available_calls"], 0)
+
+    def test_main_checks_cuda_only_when_requested(self) -> None:
+        args = short_runner.parse_args(["--device", "cuda"])
+        with mock.patch.object(short_runner, "parse_args", return_value=args):
+            with mock.patch.object(
+                short_runner.torch.cuda,
+                "is_available",
+                return_value=False,
+            ) as is_available:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "^CUDA was requested but is unavailable$",
+                ):
+                    short_runner.main()
+        is_available.assert_called_once_with()
 
 
 if __name__ == "__main__":
