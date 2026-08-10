@@ -177,6 +177,8 @@ def weibull_counts(
     ratio: float,
     max_layer_ratio: float,
 ) -> Tuple[List[int], Dict[str, object]]:
+    if len(fits) != len(layer_sizes):
+        raise ValueError("Fits and layer sizes must have the same length")
     capacities = [min(size, int(math.floor(max_layer_ratio * size))) for size in layer_sizes]
     if sum(capacities) < target:
         raise ValueError("max_layer_ratio makes the requested global ratio infeasible")
@@ -193,7 +195,11 @@ def weibull_counts(
 
     valid_scales = [float(fit["scale"]) for fit in fits if bool(fit["valid"])]
     if not valid_scales:
-        counts = uniform_counts(layer_sizes, target, ratio)
+        counts = largest_remainder_counts(
+            [ratio * size for size in layer_sizes],
+            target,
+            capacities,
+        )
         return counts, {"threshold": None, "fallback": "all Weibull fits invalid"}
 
     high = max(valid_scales)

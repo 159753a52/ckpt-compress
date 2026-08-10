@@ -69,6 +69,37 @@ class TestResidualAllocation(unittest.TestCase):
         self.assertEqual(counts, [3, 3])
         self.assertEqual(metadata["fallback"], "all Weibull fits invalid")
 
+    def test_weibull_fallback_respects_small_layer_cap(self) -> None:
+        fits = [
+            fit_weibull_mom(torch.zeros(1)),
+            fit_weibull_mom(torch.zeros(3)),
+        ]
+
+        counts, metadata = weibull_counts(
+            fits,
+            layer_sizes=[1, 3],
+            target=2,
+            ratio=0.5,
+            max_layer_ratio=0.75,
+        )
+
+        self.assertEqual(counts, [0, 2])
+        self.assertEqual(metadata["fallback"], "all Weibull fits invalid")
+
+    def test_weibull_counts_reject_misaligned_fit_list(self) -> None:
+        valid_fit = fit_weibull_mom(torch.tensor([0.1, 0.2, 0.4, 0.8]))
+
+        for fits, sizes in (([valid_fit], [4, 4]), ([valid_fit, valid_fit], [4])):
+            with self.subTest(fit_count=len(fits), layer_count=len(sizes)):
+                with self.assertRaisesRegex(ValueError, "same length"):
+                    weibull_counts(
+                        fits,
+                        layer_sizes=sizes,
+                        target=2,
+                        ratio=0.5,
+                        max_layer_ratio=0.75,
+                    )
+
     def test_trust_region_counts_preserve_budget_and_order(self) -> None:
         counts = trust_region_counts(
             marginal_losses=[3.0, 1.0, 2.0],
