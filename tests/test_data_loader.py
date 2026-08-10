@@ -45,6 +45,11 @@ class _RecordingDataset:
 
 
 class TestWikiText2Dataset(unittest.TestCase):
+    def test_tokenizer_reports_missing_huggingface_dependency(self) -> None:
+        with mock.patch.object(data_loader, "HAS_HF", False):
+            with self.assertRaisesRegex(ImportError, "transformers"):
+                data_loader._load_gpt2_tokenizer()
+
     def test_zero_max_samples_is_empty_without_encoding(self) -> None:
         tokenizer = _CountingTokenizer()
 

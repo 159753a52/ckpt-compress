@@ -61,6 +61,10 @@ def _apply_subset(dataset: Dataset, limit: Optional[int], name: str) -> Dataset:
 
 def _load_gpt2_tokenizer():
     """加载 GPT-2 tokenizer，支持多路径 fallback。"""
+    if not HAS_HF:
+        raise ImportError(
+            "HuggingFace transformers is required to load the GPT-2 tokenizer"
+        )
     import os
     # 优先从本地路径加载（避免在线版本兼容性问题）
     for path in _GPT2_TOKENIZER_FALLBACKS:
