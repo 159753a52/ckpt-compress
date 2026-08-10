@@ -2,6 +2,8 @@ import unittest
 
 import torch
 
+import experiments.lib.residual_allocation as residual_allocation
+import experiments.lib.residual_budget as residual_budget
 from experiments.lib.residual_allocation import (
     bounded_largest_remainder_counts,
     budget_tangent_dct_directions,
@@ -14,6 +16,14 @@ from experiments.lib.residual_allocation import (
 
 
 class TestResidualAllocation(unittest.TestCase):
+    def test_budget_facade_reexports_owner_functions(self) -> None:
+        for name in residual_budget.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(residual_allocation, name),
+                    getattr(residual_budget, name),
+                )
+
     def test_weibull_counts_preserve_exact_budget_and_caps(self) -> None:
         fits = [
             fit_weibull_mom(torch.tensor([0.1, 0.2, 0.4, 0.8, 1.6, 3.2])),

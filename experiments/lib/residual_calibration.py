@@ -14,8 +14,8 @@ from experiments.lib.residual_allocation import (
     budget_tangent_dct_directions,
     directional_layer_counts,
     reconstruct_directional_gradient,
-    trust_region_counts,
 )
+from experiments.lib.residual_budget import trust_region_counts
 from experiments.lib.residual_masks import (
     apply_layer_mask,
     apply_mask_from_device_states,

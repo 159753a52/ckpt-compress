@@ -9,9 +9,9 @@ import torch
 
 from experiments.lib.residual_allocation import (
     fit_weibull_mom,
-    uniform_counts,
     weibull_counts,
 )
+from experiments.lib.residual_budget import uniform_counts
 from experiments.lib.residual_masks import (
     MaskDict,
     TensorDict,
