@@ -20,18 +20,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.lib.residual_allocation import (  # noqa: E402
-    calibrate_quantile_smooth_allocation,
-)
-from experiments.lib.residual_calibration import (  # noqa: E402
-    calibrate_spectral_allocation,
-    calibrate_trust_region_allocation,
+from experiments.lib.residual_method_assembly import (  # noqa: E402
+    AdaptiveMethodConfig,
+    assemble_method_family,
 )
 from experiments.lib.residual_masks import (  # noqa: E402
     MaskDict,
-    layer_masks,
     layer_rates,
-    layer_score_orders,
     mask_metrics,
     mask_overlap,
     restore_with_mask,
@@ -39,14 +34,11 @@ from experiments.lib.residual_masks import (  # noqa: E402
 from experiments.lib.residual_methods import (  # noqa: E402
     build_masks,
     float_slug,
-    quantile_method_id,
     score_for_method,
-    spectral_method_id,
 )
 from experiments.lib.residual_protocol import (  # noqa: E402
     NO_COMPRESSION_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
-    TAYLOR_PROBE_TRUST_METHOD,
 )
 from experiments.lib.residual_runtime import (  # noqa: E402
     batch_hash,
@@ -91,9 +83,7 @@ class LongRunContext:
     eval_batches: Sequence[Mapping[str, torch.Tensor]]
     reference_state: Mapping[str, torch.Tensor]
     reference_optimizer_state: Mapping
-    trust_radii: Sequence[float]
-    spectral_ranks: Sequence[int]
-    quantile_smoothness_values: Sequence[float]
+    method_config: AdaptiveMethodConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -267,103 +257,16 @@ def run_seed(
     scoring_metrics["peak_gpu_memory_bytes"] = peak_memory_bytes(args.device)
     seed_result["scoring"] = scoring_metrics
 
-    allocation_started = time.perf_counter()
-    taylor_score_orders = None
-    score_order_seconds = 0.0
-    if context.spectral_ranks or context.quantile_smoothness_values:
-        score_order_started = time.perf_counter()
-        taylor_score_orders = layer_score_orders(
-            layers, components["taylor"], sort_device=args.device
-        )
-        score_order_seconds = time.perf_counter() - score_order_started
-    masks, allocation_metadata = build_masks(
-        layers,
-        magnitude_scores,
-        components,
-        args.prune_ratio,
-        args.max_layer_ratio,
-        taylor_score_orders,
-    )
-    probe_trust_counts, probe_trust_metadata = calibrate_trust_region_allocation(
+    masks, allocation_metadata = assemble_method_family(
         model,
         current_state,
         reference_state,
         layers,
-        components["taylor"],
-        allocation_metadata["uniform_layer_counts"],
-        allocation_metadata["target_pruned"],
-        args.prune_ratio,
-        args.max_layer_ratio,
+        magnitude_scores,
+        components,
         batches.allocation_probe,
         batches.allocation_selection,
-        args.allocation_probe_radius,
-        context.trust_radii,
-        args.device,
-        taylor_score_orders,
-    )
-    masks[TAYLOR_PROBE_TRUST_METHOD] = layer_masks(
-        layers, components["taylor"], probe_trust_counts, taylor_score_orders
-    )
-    allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
-    allocation_metadata["probe_trust"] = probe_trust_metadata
-    if context.spectral_ranks:
-        spectral_counts, spectral_metadata = calibrate_spectral_allocation(
-            model,
-            current_state,
-            reference_state,
-            layers,
-            components["taylor"],
-            allocation_metadata["target_pruned"],
-            args.prune_ratio,
-            args.max_layer_ratio,
-            batches.allocation_probe,
-            args.spectral_probe_radius,
-            context.spectral_ranks,
-            args.spectral_trust_radius,
-            args.device,
-            taylor_score_orders,
-        )
-        for rank, counts in spectral_counts.items():
-            masks[spectral_method_id(rank)] = layer_masks(
-                layers, components["taylor"], counts, taylor_score_orders
-            )
-        allocation_metadata["spectral_layer_counts"] = spectral_counts
-        allocation_metadata["spectral"] = spectral_metadata
-    if context.quantile_smoothness_values:
-        quantile_counts, quantile_metadata = calibrate_quantile_smooth_allocation(
-            layers,
-            components["taylor"],
-            taylor_score_orders,
-            allocation_metadata["target_pruned"],
-            args.prune_ratio,
-            args.max_layer_ratio,
-            args.quantile_trust_radius,
-            context.quantile_smoothness_values,
-            args.device,
-            args.quantile_cost_normalization,
-        )
-        for smoothness, counts in quantile_counts.items():
-            method = quantile_method_id(
-                args.quantile_cost_normalization,
-                smoothness,
-            )
-            masks[method] = layer_masks(
-                layers, components["taylor"], counts, taylor_score_orders
-            )
-        allocation_metadata["quantile_smooth_layer_counts"] = {
-            str(value): counts for value, counts in quantile_counts.items()
-        }
-        allocation_metadata["quantile_smooth"] = quantile_metadata
-    if taylor_score_orders is not None:
-        allocation_metadata["score_order_seconds"] = score_order_seconds
-        allocation_metadata["score_order_sort_device"] = args.device
-        allocation_metadata["score_order_bytes"] = sum(
-            order.numel() * order.element_size() for order in taylor_score_orders
-        )
-    del taylor_score_orders
-    allocation_metadata["seconds"] = time.perf_counter() - allocation_started
-    allocation_metadata["whole_model_parameters"] = sum(
-        parameter.numel() for parameter in model.parameters()
+        context.method_config,
     )
     seed_result["allocation"] = allocation_metadata
     exact_metrics = mask_metrics(
@@ -535,9 +438,19 @@ def main() -> None:
         eval_batches=eval_batches,
         reference_state=reference_state,
         reference_optimizer_state=reference_optimizer_state,
-        trust_radii=trust_radii,
-        spectral_ranks=spectral_ranks,
-        quantile_smoothness_values=quantile_smoothness_values,
+        method_config=AdaptiveMethodConfig(
+            prune_ratio=args.prune_ratio,
+            max_layer_ratio=args.max_layer_ratio,
+            probe_radius=args.allocation_probe_radius,
+            trust_radii=tuple(trust_radii),
+            spectral_ranks=tuple(spectral_ranks),
+            spectral_probe_radius=args.spectral_probe_radius,
+            spectral_trust_radius=args.spectral_trust_radius,
+            quantile_smoothness_values=tuple(quantile_smoothness_values),
+            quantile_trust_radius=args.quantile_trust_radius,
+            quantile_cost_normalization=args.quantile_cost_normalization,
+            device=args.device,
+        ),
     )
     wall_started = time.perf_counter()
 

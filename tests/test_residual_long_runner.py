@@ -11,6 +11,7 @@ from unittest import mock
 
 import torch
 
+import experiments.lib.residual_method_assembly as method_assembly
 import experiments.scripts.run_residual_recovery_long as long_runner
 from experiments.lib.residual_masks import layer_masks, layer_score_orders
 from experiments.lib.residual_methods import (
@@ -311,9 +312,19 @@ class TestResidualLongRunner(unittest.TestCase):
             eval_batches=eval_batches,
             reference_state=reference_state,
             reference_optimizer_state=reference_optimizer_state,
-            trust_radii=[0.1],
-            spectral_ranks=[1],
-            quantile_smoothness_values=[0.1],
+            method_config=method_assembly.AdaptiveMethodConfig(
+                prune_ratio=args.prune_ratio,
+                max_layer_ratio=args.max_layer_ratio,
+                probe_radius=args.allocation_probe_radius,
+                trust_radii=(0.1,),
+                spectral_ranks=(1,),
+                spectral_probe_radius=args.spectral_probe_radius,
+                spectral_trust_radius=args.spectral_trust_radius,
+                quantile_smoothness_values=(0.1,),
+                quantile_trust_radius=args.quantile_trust_radius,
+                quantile_cost_normalization=args.quantile_cost_normalization,
+                device=args.device,
+            ),
         )
 
         with mock.patch.object(
@@ -333,15 +344,15 @@ class TestResidualLongRunner(unittest.TestCase):
             "compute_block_taylor_scores",
             side_effect=scoring_side_effect,
         ), mock.patch.object(
-            long_runner,
+            method_assembly,
             "calibrate_trust_region_allocation",
             side_effect=trust_side_effect,
         ), mock.patch.object(
-            long_runner,
+            method_assembly,
             "calibrate_spectral_allocation",
             side_effect=spectral_side_effect,
         ), mock.patch.object(
-            long_runner,
+            method_assembly,
             "calibrate_quantile_smooth_allocation",
             side_effect=quantile_side_effect,
         ), mock.patch.object(
