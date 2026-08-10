@@ -1,6 +1,7 @@
 """Shared task-loss factories used by experiment scoring and training code."""
 
 from collections.abc import Mapping
+from functools import lru_cache
 from typing import Any, Callable
 
 import torch
@@ -16,6 +17,7 @@ def _extract_logits(outputs: object) -> torch.Tensor:
     return outputs.logits if hasattr(outputs, "logits") else outputs
 
 
+@lru_cache(maxsize=None)
 def make_task_loss(task_type: str) -> Callable:
     """Build a ``loss(model, batch) -> scalar`` function for a task type.
 

@@ -17,6 +17,10 @@ class _Classifier(torch.nn.Module):
 
 
 class TestTaskLossFactory(unittest.TestCase):
+    def test_factory_reuses_stateless_task_loss_closures(self) -> None:
+        self.assertIs(make_task_loss("lm"), make_task_loss("lm"))
+        self.assertIs(make_task_loss("cls"), make_task_loss("cls"))
+
     def test_rejects_unknown_task(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unknown task_type"):
             make_task_loss("unknown")
