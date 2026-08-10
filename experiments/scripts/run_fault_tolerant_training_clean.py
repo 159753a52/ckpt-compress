@@ -26,7 +26,6 @@ import sys
 from pathlib import Path
 import argparse
 import torch
-import torch.nn as nn
 import numpy as np
 from tqdm import tqdm
 from collections import defaultdict
@@ -41,6 +40,7 @@ from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate
 from experiments.lib.results import save_results
+from experiments.lib.losses import compute_task_loss
 from dacp.pruning import Pruner, filter_prunable_params
 from dacp.pruning.importance import (
     combine_scores_2d_with_protection,
@@ -62,32 +62,7 @@ METHODS = [
 def train_one_step(model, optimizer, batch, task_type, device):
     """Train one step and return loss."""
     model.train()
-    criterion = nn.CrossEntropyLoss()
-
-    if task_type == 'lm':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(input_ids)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-    elif task_type == 'cls':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        attn = batch.get('attention_mask')
-        if attn is not None:
-            attn = attn.to(device)
-        outputs = model(input_ids, attention_mask=attn)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-    elif task_type == 'cv':
-        images = batch['images'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(images)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-
+    loss = compute_task_loss(model, batch, task_type, device)
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
@@ -96,7 +71,6 @@ def train_one_step(model, optimizer, batch, task_type, device):
 
 def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, task_type):
     """Collect gradients inline for first-order importance scoring."""
-    criterion = nn.CrossEntropyLoss()
     accumulated_grads = defaultdict(lambda: 0)
 
     data_iter = iter(train_loader)
@@ -111,29 +85,7 @@ def collect_gradients_inline(model, optimizer, train_loader, device, num_steps, 
 
         optimizer.zero_grad()
 
-        if task_type == 'lm':
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device)
-            outputs = model(input_ids)
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = labels[..., 1:].contiguous()
-            loss = criterion(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-        elif task_type == 'cls':
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device)
-            attn = batch.get('attention_mask')
-            if attn is not None:
-                attn = attn.to(device)
-            outputs = model(input_ids, attention_mask=attn)
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-            loss = criterion(logits, labels)
-        elif task_type == 'cv':
-            images = batch['images'].to(device)
-            labels = batch['labels'].to(device)
-            outputs = model(images)
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-            loss = criterion(logits, labels)
+        loss = compute_task_loss(model, batch, task_type, device)
 
         loss.backward()
 

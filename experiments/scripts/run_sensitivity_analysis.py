@@ -24,7 +24,6 @@ import copy
 import time
 import json
 import torch
-import torch.nn as nn
 import numpy as np
 from datetime import datetime
 
@@ -40,6 +39,7 @@ from experiments.lib.gamma_sensitivity import (
     solve_gamma_mom_rates,
 )
 from experiments.lib.importance_compare.scoring import compute_scores_by_method
+from experiments.lib.losses import compute_task_loss
 from dacp.pruning import Pruner, apply_pruning, filter_prunable_params
 from dacp.pruning.allocation import (
     UniformAllocation,
@@ -53,34 +53,7 @@ from dacp.pruning.allocation import (
 
 def train_one_step(model, optimizer, batch, task_type, device):
     model.train()
-    criterion = nn.CrossEntropyLoss()
-
-    if task_type == 'lm':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(input_ids)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        loss = criterion(shift_logits.view(-1, shift_logits.size(-1)),
-                         shift_labels.view(-1))
-    elif task_type == 'cls':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        attn = batch.get('attention_mask')
-        if attn is not None:
-            attn = attn.to(device)
-        outputs = model(input_ids, attention_mask=attn)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-    elif task_type == 'cv':
-        images = batch['images'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(images)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-    else:
-        raise ValueError(f"Unknown task_type: {task_type}")
+    loss = compute_task_loss(model, batch, task_type, device)
 
     optimizer.zero_grad()
     loss.backward()

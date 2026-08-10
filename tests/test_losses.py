@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from experiments.lib.losses import make_task_loss
+from experiments.lib.losses import compute_task_loss, make_task_loss
 
 
 class _TensorOutput:
@@ -71,6 +71,25 @@ class TestTaskLossFactory(unittest.TestCase):
             loss,
             torch.nn.functional.cross_entropy(logits, labels),
         )
+
+    def test_compute_task_loss_normalizes_cv_tuple_batches(self) -> None:
+        model = _Classifier()
+        logits = torch.tensor([[2.0, -1.0], [-1.0, 2.0]])
+        labels = torch.tensor([0, 1])
+
+        loss = compute_task_loss(model, (logits, labels), "cv", "cpu")
+
+        torch.testing.assert_close(
+            loss,
+            torch.nn.functional.cross_entropy(logits, labels),
+        )
+
+    def test_compute_task_loss_rejects_unsupported_batch_and_task(self) -> None:
+        model = _Classifier()
+        with self.assertRaisesRegex(ValueError, "Unknown training task_type"):
+            compute_task_loss(model, {}, "reg", "cpu")
+        with self.assertRaisesRegex(TypeError, "mappings"):
+            compute_task_loss(model, torch.tensor([1.0]), "lm", "cpu")
 
 
 if __name__ == "__main__":

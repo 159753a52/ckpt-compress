@@ -1,12 +1,14 @@
 """Shared task-loss factories used by experiment scoring and training code."""
 
-from typing import Callable
+from collections.abc import Mapping
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
 
 
 SUPPORTED_TASK_TYPES = frozenset({"lm", "cls", "cv", "reg"})
+TRAINING_TASK_TYPES = frozenset({"lm", "cls", "cv"})
 
 
 def _extract_logits(outputs: object) -> torch.Tensor:
@@ -53,4 +55,65 @@ def make_task_loss(task_type: str) -> Callable:
     return {"lm": lm_loss, "cls": cls_loss, "cv": cv_loss, "reg": cls_loss}[task_type]
 
 
-__all__ = ["SUPPORTED_TASK_TYPES", "make_task_loss"]
+def move_batch_to_device(batch: Any, device: Any) -> Any:
+    """Move tensor values in mapping/sequence batches to ``device``."""
+    if isinstance(batch, Mapping):
+        return {
+            key: value.to(device) if isinstance(value, torch.Tensor) else value
+            for key, value in batch.items()
+        }
+    if isinstance(batch, tuple):
+        return tuple(
+            value.to(device) if isinstance(value, torch.Tensor) else value
+            for value in batch
+        )
+    if isinstance(batch, list):
+        return [
+            value.to(device) if isinstance(value, torch.Tensor) else value
+            for value in batch
+        ]
+    raise TypeError(
+        "batch must be a mapping, tuple, or list containing tensors; "
+        f"got {type(batch).__name__}"
+    )
+
+
+def compute_task_loss(
+    model: nn.Module,
+    batch: Any,
+    task_type: str,
+    device: Any,
+) -> torch.Tensor:
+    """Move a training batch and compute its supported task loss.
+
+    CV tuple batches from legacy DataLoaders are normalized to the mapping
+    schema consumed by :func:`make_task_loss`.
+    """
+    if task_type not in TRAINING_TASK_TYPES:
+        raise ValueError(
+            f"Unknown training task_type: {task_type}. "
+            f"Available: {sorted(TRAINING_TASK_TYPES)}"
+        )
+
+    if task_type == "cv" and isinstance(batch, (tuple, list)):
+        if len(batch) != 2:
+            raise ValueError(
+                "CV tuple/list batches must contain exactly (images, labels)"
+            )
+        batch = {"images": batch[0], "labels": batch[1]}
+    elif not isinstance(batch, Mapping):
+        raise TypeError(
+            f"{task_type} batches must be mappings, got {type(batch).__name__}"
+        )
+
+    batch_on_device = move_batch_to_device(batch, device)
+    return make_task_loss(task_type)(model, batch_on_device)
+
+
+__all__ = [
+    "SUPPORTED_TASK_TYPES",
+    "TRAINING_TASK_TYPES",
+    "compute_task_loss",
+    "make_task_loss",
+    "move_batch_to_device",
+]

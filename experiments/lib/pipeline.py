@@ -6,12 +6,12 @@
 
 import copy
 import torch
-import torch.nn as nn
 
 from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate
 from experiments.lib.importance_compare.scoring import compute_scores_by_method
+from experiments.lib.losses import compute_task_loss
 
 
 def setup_model_and_data(args, cache_eval=True):
@@ -110,34 +110,7 @@ def get_metric_key(task_type):
 def train_one_step(model, optimizer, batch, task_type, device):
     """训练一步，返回 loss。"""
     model.train()
-    criterion = nn.CrossEntropyLoss()
-
-    if task_type == 'lm':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(input_ids)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        loss = criterion(shift_logits.view(-1, shift_logits.size(-1)),
-                         shift_labels.view(-1))
-    elif task_type == 'cls':
-        input_ids = batch['input_ids'].to(device)
-        labels = batch['labels'].to(device)
-        attn = batch.get('attention_mask')
-        if attn is not None:
-            attn = attn.to(device)
-        outputs = model(input_ids, attention_mask=attn)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-    elif task_type == 'cv':
-        images = batch['images'].to(device)
-        labels = batch['labels'].to(device)
-        outputs = model(images)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        loss = criterion(logits, labels)
-    else:
-        raise ValueError(f"Unknown task_type: {task_type}")
+    loss = compute_task_loss(model, batch, task_type, device)
 
     optimizer.zero_grad()
     loss.backward()
