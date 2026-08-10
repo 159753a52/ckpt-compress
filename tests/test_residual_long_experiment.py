@@ -131,6 +131,88 @@ class TestResidualLongExperiment(unittest.TestCase):
                     expected,
                 )
 
+    def test_method_diagnostics_preserve_costs_rates_regret_and_overlap(self) -> None:
+        layers = [["layer0"], ["layer1"]]
+        components = {
+            "first_order": {
+                "layer0": torch.tensor([4.0, 3.0]),
+                "layer1": torch.tensor([2.0, 1.0]),
+            },
+            "second_order": {
+                "layer0": torch.tensor([1.0, 2.0]),
+                "layer1": torch.tensor([3.0, 4.0]),
+            },
+            "taylor": {
+                "layer0": torch.tensor([1.0, 2.0]),
+                "layer1": torch.tensor([3.0, 4.0]),
+            },
+        }
+        magnitude_scores = {
+            "layer0": torch.tensor([10.0, 20.0]),
+            "layer1": torch.tensor([30.0, 40.0]),
+        }
+        method_masks = {
+            "layer0": torch.tensor([True, False]),
+            "layer1": torch.tensor([False, True]),
+        }
+        exact_masks = {
+            "layer0": torch.tensor([False, False]),
+            "layer1": torch.tensor([True, True]),
+        }
+
+        metrics = residual_methods.compute_method_diagnostics(
+            "residual_magnitude_uniform",
+            method_masks,
+            exact_masks,
+            exact_taylor_proxy_cost=3.0,
+            layers=layers,
+            magnitude_scores=magnitude_scores,
+            components=components,
+            eligible_parameters=4,
+        )
+
+        self.assertEqual(
+            list(metrics),
+            [
+                "pruned",
+                "proxy_cost",
+                "selection_score_cost",
+                "eligible_sparsity",
+                "layer_rates",
+                "taylor_regret_vs_exact",
+                "overlap_with_taylor_exact",
+            ],
+        )
+        self.assertEqual(metrics["pruned"], 2)
+        self.assertEqual(metrics["proxy_cost"], 5.0)
+        self.assertEqual(metrics["selection_score_cost"], 50.0)
+        self.assertEqual(metrics["eligible_sparsity"], 0.5)
+        self.assertEqual(metrics["layer_rates"], [0.5, 0.5])
+        self.assertAlmostEqual(metrics["taylor_regret_vs_exact"], 2.0 / 3.0)
+        self.assertEqual(
+            metrics["overlap_with_taylor_exact"],
+            {"pruned_jaccard": 1.0 / 3.0, "mask_disagreements": 2},
+        )
+
+        zero_exact_metrics = residual_methods.compute_method_diagnostics(
+            "taylor_uniform",
+            method_masks={"layer0": torch.tensor([True, False])},
+            exact_masks={"layer0": torch.tensor([False, True])},
+            exact_taylor_proxy_cost=0.0,
+            layers=[["layer0"]],
+            magnitude_scores={"layer0": torch.tensor([0.0, 1.0])},
+            components={
+                "first_order": {"layer0": torch.tensor([0.0, 1.0])},
+                "second_order": {"layer0": torch.tensor([0.0, 1.0])},
+                "taylor": {"layer0": torch.tensor([0.0, 1.0])},
+            },
+            eligible_parameters=2,
+        )
+        self.assertEqual(
+            zero_exact_metrics["taylor_regret_vs_exact"],
+            1.0 / 1e-30,
+        )
+
     def test_aggregate_preserves_schema_seed_order_and_paired_deltas(self) -> None:
         methods = list(residual_protocol.FIXED_METHODS) + [
             "taylor_spectral_k1",

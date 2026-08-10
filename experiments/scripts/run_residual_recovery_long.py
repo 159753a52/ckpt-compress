@@ -26,13 +26,12 @@ from experiments.lib.residual_method_assembly import (  # noqa: E402
 )
 from experiments.lib.residual_masks import (  # noqa: E402
     MaskDict,
-    layer_rates,
     mask_metrics,
-    mask_overlap,
     restore_with_mask,
 )
 from experiments.lib.residual_methods import (  # noqa: E402
     build_masks,
+    compute_method_diagnostics,
     float_slug,
     score_for_method,
 )
@@ -274,21 +273,15 @@ def run_seed(
     )
 
     for method, method_masks in masks.items():
-        metrics = mask_metrics(method_masks, components["taylor"])
-        selection = mask_metrics(
-            method_masks, score_for_method(method, magnitude_scores, components)
-        )
-        metrics["selection_score_cost"] = selection["proxy_cost"]
-        metrics["eligible_sparsity"] = (
-            metrics["pruned"] / allocation_metadata["eligible_parameters"]
-        )
-        metrics["layer_rates"] = layer_rates(layers, method_masks)
-        metrics["taylor_regret_vs_exact"] = (
-            (metrics["proxy_cost"] - exact_metrics["proxy_cost"])
-            / max(abs(exact_metrics["proxy_cost"]), 1e-30)
-        )
-        metrics["overlap_with_taylor_exact"] = mask_overlap(
-            method_masks, masks[TAYLOR_EXACT_GLOBAL_METHOD]
+        metrics = compute_method_diagnostics(
+            method,
+            method_masks,
+            masks[TAYLOR_EXACT_GLOBAL_METHOD],
+            exact_metrics["proxy_cost"],
+            layers,
+            magnitude_scores,
+            components,
+            allocation_metadata["eligible_parameters"],
         )
         restore_with_mask(
             model, current_state, reference_state, method_masks, args.device

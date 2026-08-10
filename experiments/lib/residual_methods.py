@@ -12,7 +12,15 @@ from experiments.lib.residual_allocation import (
     uniform_counts,
     weibull_counts,
 )
-from experiments.lib.residual_masks import MaskDict, TensorDict, global_mask, layer_masks
+from experiments.lib.residual_masks import (
+    MaskDict,
+    TensorDict,
+    global_mask,
+    layer_masks,
+    layer_rates,
+    mask_metrics,
+    mask_overlap,
+)
 from experiments.lib.residual_protocol import (
     FIRST_ORDER_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
@@ -97,8 +105,37 @@ def score_for_method(
     return components["taylor"]
 
 
+def compute_method_diagnostics(
+    method: str,
+    method_masks: MaskDict,
+    exact_masks: MaskDict,
+    exact_taylor_proxy_cost: float,
+    layers: Sequence[Sequence[str]],
+    magnitude_scores: TensorDict,
+    components: Dict[str, TensorDict],
+    eligible_parameters: int,
+) -> Dict[str, object]:
+    """Compute mask-only diagnostics without evaluating or mutating the model."""
+    taylor_metrics = mask_metrics(method_masks, components["taylor"])
+    metrics: Dict[str, object] = dict(taylor_metrics)
+    selection = mask_metrics(
+        method_masks,
+        score_for_method(method, magnitude_scores, components),
+    )
+    metrics["selection_score_cost"] = selection["proxy_cost"]
+    metrics["eligible_sparsity"] = taylor_metrics["pruned"] / eligible_parameters
+    metrics["layer_rates"] = layer_rates(layers, method_masks)
+    metrics["taylor_regret_vs_exact"] = (
+        (taylor_metrics["proxy_cost"] - exact_taylor_proxy_cost)
+        / max(abs(exact_taylor_proxy_cost), 1e-30)
+    )
+    metrics["overlap_with_taylor_exact"] = mask_overlap(method_masks, exact_masks)
+    return metrics
+
+
 __all__ = [
     "build_masks",
+    "compute_method_diagnostics",
     "float_slug",
     "quantile_method_id",
     "score_for_method",
