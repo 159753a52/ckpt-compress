@@ -38,7 +38,14 @@ from experiments.lib.residual_masks import (  # noqa: E402
 from experiments.lib.residual_methods import (  # noqa: E402
     build_masks,
     float_slug,
+    quantile_method_id,
     score_for_method,
+    spectral_method_id,
+)
+from experiments.lib.residual_protocol import (  # noqa: E402
+    NO_COMPRESSION_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_PROBE_TRUST_METHOD,
 )
 from experiments.lib.residual_runtime import (  # noqa: E402
     batch_hash,
@@ -347,7 +354,7 @@ def main() -> None:
             args.device,
             taylor_score_orders,
         )
-        masks["taylor_probe_trust"] = layer_masks(
+        masks[TAYLOR_PROBE_TRUST_METHOD] = layer_masks(
             layers, components["taylor"], probe_trust_counts, taylor_score_orders
         )
         allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
@@ -370,7 +377,7 @@ def main() -> None:
                 taylor_score_orders,
             )
             for rank, counts in spectral_counts.items():
-                masks[f"taylor_spectral_k{rank}"] = layer_masks(
+                masks[spectral_method_id(rank)] = layer_masks(
                     layers, components["taylor"], counts, taylor_score_orders
                 )
             allocation_metadata["spectral_layer_counts"] = spectral_counts
@@ -389,14 +396,9 @@ def main() -> None:
                 args.quantile_cost_normalization,
             )
             for smoothness, counts in quantile_counts.items():
-                normalization_slug = (
-                    "relative"
-                    if args.quantile_cost_normalization == "layer_uniform_cost"
-                    else "global"
-                )
-                method = (
-                    f"taylor_quantile_{normalization_slug}_smooth_"
-                    f"l{float_slug(smoothness)}"
+                method = quantile_method_id(
+                    args.quantile_cost_normalization,
+                    smoothness,
                 )
                 masks[method] = layer_masks(
                     layers, components["taylor"], counts, taylor_score_orders
@@ -417,7 +419,9 @@ def main() -> None:
             parameter.numel() for parameter in model.parameters()
         )
         seed_result["allocation"] = allocation_metadata
-        exact_metrics = mask_metrics(masks["taylor_exact_global"], components["taylor"])
+        exact_metrics = mask_metrics(
+            masks[TAYLOR_EXACT_GLOBAL_METHOD], components["taylor"]
+        )
 
         for method, method_masks in masks.items():
             metrics = mask_metrics(method_masks, components["taylor"])
@@ -434,7 +438,7 @@ def main() -> None:
                 / max(abs(exact_metrics["proxy_cost"]), 1e-30)
             )
             metrics["overlap_with_taylor_exact"] = mask_overlap(
-                method_masks, masks["taylor_exact_global"]
+                method_masks, masks[TAYLOR_EXACT_GLOBAL_METHOD]
             )
             restore_with_mask(
                 model, current_state, reference_state, method_masks, args.device
@@ -448,7 +452,9 @@ def main() -> None:
                 flush=True,
             )
 
-        trajectories: List[Tuple[str, MaskDict | None]] = [("no_compression", None)]
+        trajectories: List[Tuple[str, MaskDict | None]] = [
+            (NO_COMPRESSION_METHOD, None)
+        ]
         trajectories.extend(masks.items())
         for method, method_masks in trajectories:
             if method_masks is None:
@@ -472,7 +478,7 @@ def main() -> None:
             )
             final_metrics = evaluate_lm(model, eval_batches, args.device)
             continuation_metrics["evaluation"] = final_metrics
-            if method == "no_compression":
+            if method == NO_COMPRESSION_METHOD:
                 seed_result["no_compression_continuation"] = continuation_metrics
                 seed_result["no_compression_final"] = final_metrics
             else:

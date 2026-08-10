@@ -8,6 +8,19 @@ from typing import Dict, Mapping, Sequence
 
 from scipy.stats import t as student_t
 
+from experiments.lib.residual_protocol import (
+    FIRST_ORDER_UNIFORM_METHOD,
+    QUANTILE_METHOD_PREFIX,
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    SECOND_ORDER_UNIFORM_METHOD,
+    SPECTRAL_METHOD_PREFIX,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_METHOD_PREFIX,
+    TAYLOR_PROBE_TRUST_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+)
+
 
 def summarize_values(values: Sequence[float]) -> Dict[str, object]:
     mean = statistics.mean(values)
@@ -46,13 +59,13 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
             for seed in seeds
         ]
         magnitude_immediate = [
-            seed_results[seed]["methods"]["residual_magnitude_uniform"]["immediate"][
-                "perplexity"
-            ]
+            seed_results[seed]["methods"][RESIDUAL_MAGNITUDE_UNIFORM_METHOD][
+                "immediate"
+            ]["perplexity"]
             for seed in seeds
         ]
         magnitude_final = [
-            seed_results[seed]["methods"]["residual_magnitude_uniform"]["final"][
+            seed_results[seed]["methods"][RESIDUAL_MAGNITUDE_UNIFORM_METHOD]["final"][
                 "perplexity"
             ]
             for seed in seeds
@@ -69,20 +82,32 @@ def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
         }
     output["paired_comparisons"] = {}
     comparisons = {
-        "taylor_vs_first_order": ("taylor_uniform", "first_order_uniform"),
-        "second_order_vs_first_order": ("second_order_uniform", "first_order_uniform"),
-        "weibull_vs_taylor_uniform": ("taylor_weibull_mom", "taylor_uniform"),
-        "exact_global_vs_taylor_uniform": ("taylor_exact_global", "taylor_uniform"),
-        "probe_trust_vs_taylor_uniform": ("taylor_probe_trust", "taylor_uniform"),
-        "probe_trust_vs_weibull": ("taylor_probe_trust", "taylor_weibull_mom"),
+        "taylor_vs_first_order": (TAYLOR_UNIFORM_METHOD, FIRST_ORDER_UNIFORM_METHOD),
+        "second_order_vs_first_order": (
+            SECOND_ORDER_UNIFORM_METHOD,
+            FIRST_ORDER_UNIFORM_METHOD,
+        ),
+        "weibull_vs_taylor_uniform": (TAYLOR_WEIBULL_MOM_METHOD, TAYLOR_UNIFORM_METHOD),
+        "exact_global_vs_taylor_uniform": (
+            TAYLOR_EXACT_GLOBAL_METHOD,
+            TAYLOR_UNIFORM_METHOD,
+        ),
+        "probe_trust_vs_taylor_uniform": (
+            TAYLOR_PROBE_TRUST_METHOD,
+            TAYLOR_UNIFORM_METHOD,
+        ),
+        "probe_trust_vs_weibull": (
+            TAYLOR_PROBE_TRUST_METHOD,
+            TAYLOR_WEIBULL_MOM_METHOD,
+        ),
     }
     for method in method_names:
-        if not method.startswith(("taylor_spectral_k", "taylor_quantile_")):
+        if not method.startswith((SPECTRAL_METHOD_PREFIX, QUANTILE_METHOD_PREFIX)):
             continue
-        label = method.removeprefix("taylor_")
-        comparisons[f"{label}_vs_taylor_uniform"] = (method, "taylor_uniform")
-        comparisons[f"{label}_vs_weibull"] = (method, "taylor_weibull_mom")
-        comparisons[f"{label}_vs_probe_trust"] = (method, "taylor_probe_trust")
+        label = method.removeprefix(TAYLOR_METHOD_PREFIX)
+        comparisons[f"{label}_vs_taylor_uniform"] = (method, TAYLOR_UNIFORM_METHOD)
+        comparisons[f"{label}_vs_weibull"] = (method, TAYLOR_WEIBULL_MOM_METHOD)
+        comparisons[f"{label}_vs_probe_trust"] = (method, TAYLOR_PROBE_TRUST_METHOD)
     for label, (left, right) in comparisons.items():
         comparison = {}
         for stage in ("immediate", "final"):

@@ -1,0 +1,62 @@
+"""Stable method identifiers for residual recovery results and comparisons."""
+
+from __future__ import annotations
+
+
+RESIDUAL_MAGNITUDE_UNIFORM_METHOD = "residual_magnitude_uniform"
+FIRST_ORDER_UNIFORM_METHOD = "first_order_uniform"
+SECOND_ORDER_UNIFORM_METHOD = "second_order_uniform"
+TAYLOR_UNIFORM_METHOD = "taylor_uniform"
+TAYLOR_WEIBULL_MOM_METHOD = "taylor_weibull_mom"
+TAYLOR_EXACT_GLOBAL_METHOD = "taylor_exact_global"
+TAYLOR_PROBE_TRUST_METHOD = "taylor_probe_trust"
+NO_COMPRESSION_METHOD = "no_compression"
+
+TAYLOR_METHOD_PREFIX = "taylor_"
+SPECTRAL_METHOD_PREFIX = "taylor_spectral_k"
+QUANTILE_METHOD_PREFIX = "taylor_quantile_"
+
+BASE_METHODS = (
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    FIRST_ORDER_UNIFORM_METHOD,
+    SECOND_ORDER_UNIFORM_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+)
+FIXED_METHODS = (*BASE_METHODS, TAYLOR_PROBE_TRUST_METHOD)
+
+
+def float_slug(value: float) -> str:
+    return f"{value:.8g}".replace("-", "m").replace(".", "p").replace("+", "")
+
+
+def spectral_method_id(rank: int) -> str:
+    return f"{SPECTRAL_METHOD_PREFIX}{rank}"
+
+
+def quantile_method_id(cost_normalization: str, smoothness: float) -> str:
+    normalization_slug = (
+        "relative" if cost_normalization == "layer_uniform_cost" else "global"
+    )
+    return f"{QUANTILE_METHOD_PREFIX}{normalization_slug}_smooth_l{float_slug(smoothness)}"
+
+
+__all__ = [
+    "BASE_METHODS",
+    "FIRST_ORDER_UNIFORM_METHOD",
+    "FIXED_METHODS",
+    "NO_COMPRESSION_METHOD",
+    "QUANTILE_METHOD_PREFIX",
+    "RESIDUAL_MAGNITUDE_UNIFORM_METHOD",
+    "SECOND_ORDER_UNIFORM_METHOD",
+    "SPECTRAL_METHOD_PREFIX",
+    "TAYLOR_EXACT_GLOBAL_METHOD",
+    "TAYLOR_METHOD_PREFIX",
+    "TAYLOR_PROBE_TRUST_METHOD",
+    "TAYLOR_UNIFORM_METHOD",
+    "TAYLOR_WEIBULL_MOM_METHOD",
+    "float_slug",
+    "quantile_method_id",
+    "spectral_method_id",
+]

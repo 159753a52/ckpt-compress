@@ -13,6 +13,17 @@ from experiments.lib.residual_allocation import (
     weibull_counts,
 )
 from experiments.lib.residual_masks import MaskDict, TensorDict, global_mask, layer_masks
+from experiments.lib.residual_protocol import (
+    FIRST_ORDER_UNIFORM_METHOD,
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    SECOND_ORDER_UNIFORM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+    float_slug,
+    quantile_method_id,
+    spectral_method_id,
+)
 
 
 def build_masks(
@@ -41,22 +52,22 @@ def build_masks(
     )
     eligible_names = [name for layer in layers for name in layer]
     masks = {
-        "residual_magnitude_uniform": layer_masks(
+        RESIDUAL_MAGNITUDE_UNIFORM_METHOD: layer_masks(
             layers, magnitude_scores, uniform_layer_counts
         ),
-        "first_order_uniform": layer_masks(
+        FIRST_ORDER_UNIFORM_METHOD: layer_masks(
             layers, components["first_order"], uniform_layer_counts
         ),
-        "second_order_uniform": layer_masks(
+        SECOND_ORDER_UNIFORM_METHOD: layer_masks(
             layers, components["second_order"], uniform_layer_counts
         ),
-        "taylor_uniform": layer_masks(
+        TAYLOR_UNIFORM_METHOD: layer_masks(
             layers, taylor_scores, uniform_layer_counts, taylor_score_orders
         ),
-        "taylor_weibull_mom": layer_masks(
+        TAYLOR_WEIBULL_MOM_METHOD: layer_masks(
             layers, taylor_scores, weibull_layer_counts, taylor_score_orders
         ),
-        "taylor_exact_global": global_mask(eligible_names, taylor_scores, target),
+        TAYLOR_EXACT_GLOBAL_METHOD: global_mask(eligible_names, taylor_scores, target),
     }
     metadata = {
         "eligible_parameters": eligible_count,
@@ -77,17 +88,19 @@ def score_for_method(
     components: Dict[str, TensorDict],
 ) -> TensorDict:
     """Return the selection score family associated with an experiment method."""
-    if method == "residual_magnitude_uniform":
+    if method == RESIDUAL_MAGNITUDE_UNIFORM_METHOD:
         return magnitude_scores
-    if method == "first_order_uniform":
+    if method == FIRST_ORDER_UNIFORM_METHOD:
         return components["first_order"]
-    if method == "second_order_uniform":
+    if method == SECOND_ORDER_UNIFORM_METHOD:
         return components["second_order"]
     return components["taylor"]
 
 
-def float_slug(value: float) -> str:
-    return f"{value:.8g}".replace("-", "m").replace(".", "p").replace("+", "")
-
-
-__all__ = ["build_masks", "float_slug", "score_for_method"]
+__all__ = [
+    "build_masks",
+    "float_slug",
+    "quantile_method_id",
+    "score_for_method",
+    "spectral_method_id",
+]

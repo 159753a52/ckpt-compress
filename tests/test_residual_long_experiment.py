@@ -5,21 +5,11 @@ import torch
 
 import experiments.lib.residual_masks as residual_masks
 import experiments.lib.residual_methods as residual_methods
+import experiments.lib.residual_protocol as residual_protocol
 import experiments.lib.residual_reporting as residual_reporting
 import experiments.lib.residual_runtime as residual_runtime
 import experiments.lib.residual_training as residual_training
 import experiments.scripts.run_residual_recovery_long as long_runner
-
-
-BASE_METHODS = [
-    "residual_magnitude_uniform",
-    "first_order_uniform",
-    "second_order_uniform",
-    "taylor_uniform",
-    "taylor_weibull_mom",
-    "taylor_exact_global",
-    "taylor_probe_trust",
-]
 
 
 class TestResidualLongExperiment(unittest.TestCase):
@@ -109,7 +99,7 @@ class TestResidualLongExperiment(unittest.TestCase):
             taylor_score_orders=orders,
         )
 
-        self.assertEqual(list(masks), BASE_METHODS[:-1])
+        self.assertEqual(tuple(masks), residual_protocol.BASE_METHODS)
         self.assertEqual(metadata["eligible_parameters"], 12)
         self.assertEqual(metadata["target_pruned"], 6)
         self.assertEqual(metadata["layer_sizes"], [6, 6])
@@ -118,7 +108,7 @@ class TestResidualLongExperiment(unittest.TestCase):
         for method, method_masks in masks.items():
             with self.subTest(method=method):
                 self.assertEqual(sum((~mask).sum().item() for mask in method_masks.values()), 6)
-        for method in BASE_METHODS[:4]:
+        for method in residual_protocol.BASE_METHODS[:4]:
             with self.subTest(method=method):
                 self.assertEqual(
                     [int((~masks[method][name]).sum().item()) for name in ("layer0", "layer1")],
@@ -142,7 +132,7 @@ class TestResidualLongExperiment(unittest.TestCase):
                 )
 
     def test_aggregate_preserves_schema_seed_order_and_paired_deltas(self) -> None:
-        methods = BASE_METHODS + [
+        methods = list(residual_protocol.FIXED_METHODS) + [
             "taylor_spectral_k1",
             "taylor_quantile_global_smooth_l0p1",
         ]
@@ -206,6 +196,30 @@ class TestResidualLongExperiment(unittest.TestCase):
         )
         self.assertIsNone(residual_reporting.summarize_values([3.0])["std"])
         json.dumps(aggregate, allow_nan=False)
+
+    def test_method_identifier_protocol_preserves_existing_strings(self) -> None:
+        self.assertEqual(
+            residual_protocol.FIXED_METHODS,
+            (
+                "residual_magnitude_uniform",
+                "first_order_uniform",
+                "second_order_uniform",
+                "taylor_uniform",
+                "taylor_weibull_mom",
+                "taylor_exact_global",
+                "taylor_probe_trust",
+            ),
+        )
+        self.assertEqual(residual_protocol.NO_COMPRESSION_METHOD, "no_compression")
+        self.assertEqual(residual_protocol.spectral_method_id(3), "taylor_spectral_k3")
+        self.assertEqual(
+            residual_protocol.quantile_method_id("global", 0.1),
+            "taylor_quantile_global_smooth_l0p1",
+        )
+        self.assertEqual(
+            residual_protocol.quantile_method_id("layer_uniform_cost", 0.1),
+            "taylor_quantile_relative_smooth_l0p1",
+        )
 
     def test_runner_reexports_moved_public_helpers(self) -> None:
         aliases = {
