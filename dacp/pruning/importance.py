@@ -2,8 +2,24 @@
 
 import torch
 import random as _random
+import math
 from typing import Dict, Optional
 from abc import ABC, abstractmethod
+
+
+def _validate_unit_interval(name: str, value: float) -> float:
+    """Validate a scalar hyperparameter constrained to the unit interval."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a finite number in [0, 1], got {value}")
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name} must be a finite number in [0, 1], got {value}"
+        ) from exc
+    if not math.isfinite(normalized) or not 0.0 <= normalized <= 1.0:
+        raise ValueError(f"{name} must be a finite number in [0, 1], got {value}")
+    return normalized
 
 
 class ImportanceScorer(ABC):
@@ -171,11 +187,19 @@ def combine_scores_2d_with_protection(
     返回:
         组合得分 {name: tensor} ∈ [0, 1]
     """
+    protection_ratio = _validate_unit_interval("protection_ratio", protection_ratio)
+    alpha = _validate_unit_interval("alpha", alpha)
     combined = {}
 
     for name in damage_scores:
         if name not in magnitude_scores:
             continue
+        if magnitude_scores[name].shape != damage_scores[name].shape:
+            raise ValueError(
+                f"Score shapes for {name!r} must match: "
+                f"{tuple(magnitude_scores[name].shape)} != "
+                f"{tuple(damage_scores[name].shape)}"
+            )
 
         mag = magnitude_scores[name].flatten().float()
         dam = damage_scores[name].flatten().float()
@@ -186,8 +210,12 @@ def combine_scores_2d_with_protection(
             continue
 
         # 百分位排名 ∈ [0, (n-1)/n]
-        mag_rank = torch.argsort(torch.argsort(mag)).float() / n
-        dam_rank = torch.argsort(torch.argsort(dam)).float() / n
+        mag_rank = torch.argsort(
+            torch.argsort(mag, stable=True), stable=True
+        ).float() / n
+        dam_rank = torch.argsort(
+            torch.argsort(dam, stable=True), stable=True
+        ).float() / n
 
         # 加权组合：α·magnitude + (1-α)·damage
         comb = alpha * mag_rank + (1.0 - alpha) * dam_rank
@@ -220,12 +248,18 @@ def apply_magnitude_protection(
     返回:
         修改后的得分 {name: tensor}，protected 参数得分极高
     """
+    protection_ratio = _validate_unit_interval("protection_ratio", protection_ratio)
     protected = {}
 
     for name, score in scores.items():
         if name not in weights:
             protected[name] = score.clone()
             continue
+        if score.shape != weights[name].shape:
+            raise ValueError(
+                f"Score and weight shapes for {name!r} must match: "
+                f"{tuple(score.shape)} != {tuple(weights[name].shape)}"
+            )
 
         s = score.clone().float()
         mag = weights[name].abs().flatten().float()
@@ -235,14 +269,16 @@ def apply_magnitude_protection(
             protected[name] = s
             continue
 
-        # 找 magnitude top protection_ratio 的阈值
-        k = max(1, int(n * (1.0 - protection_ratio)))
-        threshold = torch.kthvalue(mag, k).values.item()
+        if protection_ratio == 0.0:
+            protected[name] = s.reshape(score.shape)
+            continue
 
-        # 将高 magnitude 参数的 score 设为极高值
-        high_mag_mask = (weights[name].abs() >= threshold)
-        score_max = s.max().item()
-        s[high_mag_mask] = score_max * 100.0  # 确保不被剪
+        protect_count = min(n, max(1, math.ceil(n * protection_ratio)))
+        high_mag_order = torch.argsort(mag, descending=True, stable=True)
+        protected_indices = high_mag_order[:protect_count]
+
+        # Use a finite sentinel so protection works even when all damage scores are zero.
+        s.flatten()[protected_indices] = torch.finfo(s.dtype).max
 
         protected[name] = s.reshape(score.shape)
 

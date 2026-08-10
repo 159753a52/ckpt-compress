@@ -7,6 +7,8 @@ from dacp.pruning.importance import (
     IMPORTANCE_REGISTRY,
     ImportanceScorer,
     MagnitudeScorer,
+    apply_magnitude_protection,
+    combine_scores_2d_with_protection,
     get_importance_scorer,
 )
 from dacp.pruning.pruner import apply_pruning, exact_pruning_mask
@@ -128,6 +130,28 @@ class TestPrunerContracts(unittest.TestCase):
     def test_legacy_top_level_kwargs_are_not_silently_ignored(self) -> None:
         with self.assertRaises(TypeError):
             Pruner(importance="magnitude", alpha=0.5)
+
+    def test_magnitude_protection_uses_exact_top_k_and_handles_zero_scores(self) -> None:
+        weights = {"layer": torch.tensor([1.0, 2.0, 3.0, 4.0])}
+        scores = {"layer": torch.zeros(4)}
+
+        protected = apply_magnitude_protection(scores, weights, protection_ratio=0.1)
+
+        self.assertEqual(int((protected["layer"] == torch.finfo(torch.float32).max).sum()), 1)
+        self.assertEqual(protected["layer"][-1], torch.finfo(torch.float32).max)
+
+    def test_score_combination_validates_shape_and_hyperparameters(self) -> None:
+        with self.assertRaisesRegex(ValueError, "shapes"):
+            combine_scores_2d_with_protection(
+                {"layer": torch.ones(2)},
+                {"layer": torch.ones(3)},
+            )
+        with self.assertRaisesRegex(ValueError, "alpha"):
+            combine_scores_2d_with_protection(
+                {"layer": torch.ones(2)},
+                {"layer": torch.ones(2)},
+                alpha=1.1,
+            )
 
 
 if __name__ == "__main__":
