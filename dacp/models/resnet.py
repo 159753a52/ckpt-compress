@@ -11,8 +11,18 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet18
 
+from ._wrapper import DelegatingModel
 
-class ResNet18ForCIFAR10(nn.Module):
+
+class _ResNetWrapper(DelegatingModel):
+    """Apply the shared wrapper contract to the legacy ``resnet`` attribute."""
+
+    @property
+    def _wrapped_model(self) -> nn.Module:
+        return self.resnet
+
+
+class ResNet18ForCIFAR10(_ResNetWrapper):
     """
     适用于 CIFAR-10 的 ResNet18（32x32 图像，10 个类别）。
 
@@ -58,33 +68,6 @@ class ResNet18ForCIFAR10(nn.Module):
         """
         return self.resnet(x)
 
-    def parameters(self, recurse: bool = True):
-        """返回模型参数。"""
-        return self.resnet.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        """返回命名的模型参数。"""
-        return self.resnet.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        """返回模型状态字典。"""
-        return self.resnet.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        """加载模型状态字典。"""
-        return self.resnet.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        """设置训练模式。"""
-        self.resnet.train(mode)
-        return self
-
-    def eval(self):
-        """设置评估模式。"""
-        self.resnet.eval()
-        return self
-
-
 def get_resnet18_cifar10(
     num_classes: int = 10,
     pretrained: bool = False
@@ -107,7 +90,7 @@ def get_resnet18_cifar10(
 # ResNet-50 支持
 # ============================================================
 
-class ResNet50ForCIFAR(nn.Module):
+class ResNet50ForCIFAR(_ResNetWrapper):
     """
     适用于 CIFAR 的 ResNet50（32x32 图像）。
 
@@ -143,28 +126,7 @@ class ResNet50ForCIFAR(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.resnet(x)
 
-    def parameters(self, recurse: bool = True):
-        return self.resnet.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        return self.resnet.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        return self.resnet.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        return self.resnet.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        self.resnet.train(mode)
-        return self
-
-    def eval(self):
-        self.resnet.eval()
-        return self
-
-
-class ResNet50ForImageNet(nn.Module):
+class ResNet50ForImageNet(_ResNetWrapper):
     """
     标准 ResNet50 用于 ImageNet（224x224 图像）。
     """
@@ -193,27 +155,6 @@ class ResNet50ForImageNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.resnet(x)
-
-    def parameters(self, recurse: bool = True):
-        return self.resnet.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        return self.resnet.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        return self.resnet.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        return self.resnet.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        self.resnet.train(mode)
-        return self
-
-    def eval(self):
-        self.resnet.eval()
-        return self
-
 
 # ============================================================
 # 工厂函数

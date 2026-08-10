@@ -5,8 +5,9 @@ GPT-2 模型工具。
 """
 
 import torch
-import torch.nn as nn
 from typing import Optional
+
+from ._wrapper import DelegatingModel
 
 try:
     from transformers import GPT2LMHeadModel, GPT2Config
@@ -15,7 +16,7 @@ except ImportError:
     HAS_TRANSFORMERS = False
 
 
-class GPT2ForExperiment(nn.Module):
+class GPT2ForExperiment(DelegatingModel):
     """
     用于实验的 GPT-2 模型封装。
 
@@ -62,33 +63,6 @@ class GPT2ForExperiment(nn.Module):
         outputs = self.model(input_ids)
         return outputs.logits
 
-    def parameters(self, recurse: bool = True):
-        """返回模型参数。"""
-        return self.model.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        """返回命名的模型参数。"""
-        return self.model.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        """返回模型状态字典。"""
-        return self.model.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        """加载模型状态字典。"""
-        return self.model.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        """设置训练模式。"""
-        self.model.train(mode)
-        return self
-
-    def eval(self):
-        """设置评估模式。"""
-        self.model.eval()
-        return self
-
-
 def get_gpt2_small(pretrained: bool = False) -> GPT2ForExperiment:
     """
     创建 GPT-2 small 模型的工厂函数。
@@ -102,7 +76,7 @@ def get_gpt2_small(pretrained: bool = False) -> GPT2ForExperiment:
     return GPT2ForExperiment(pretrained=pretrained)
 
 
-class GPT2MediumForExperiment(nn.Module):
+class GPT2MediumForExperiment(DelegatingModel):
     """
     用于实验的 GPT-2 Medium 模型封装。
 
@@ -157,33 +131,6 @@ class GPT2MediumForExperiment(nn.Module):
             模型输出（包含 logits 和可选的 loss）
         """
         return self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
-
-    def parameters(self, recurse: bool = True):
-        """返回模型参数。"""
-        return self.model.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        """返回命名的模型参数。"""
-        return self.model.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        """返回模型状态字典。"""
-        return self.model.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        """加载模型状态字典。"""
-        return self.model.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        """设置训练模式。"""
-        self.model.train(mode)
-        return self
-
-    def eval(self):
-        """设置评估模式。"""
-        self.model.eval()
-        return self
-
 
 def get_gpt2_medium(pretrained: bool = False, local_files_only: bool = False) -> GPT2MediumForExperiment:
     """

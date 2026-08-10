@@ -6,8 +6,9 @@ BERT 模型工具。
 """
 
 import torch
-import torch.nn as nn
 from typing import Optional, Dict, Any
+
+from ._wrapper import DelegatingModel
 
 try:
     from transformers import BertForMaskedLM, BertConfig
@@ -16,7 +17,7 @@ except ImportError:
     HAS_TRANSFORMERS = False
 
 
-class BERTForExperiment(nn.Module):
+class BERTForExperiment(DelegatingModel):
     """
     用于实验的 BERT 模型封装。
 
@@ -109,32 +110,6 @@ class BERTForExperiment(nn.Module):
             token_type_ids=token_type_ids,
             labels=labels
         )
-
-    def parameters(self, recurse: bool = True):
-        """返回模型参数。"""
-        return self.model.parameters(recurse)
-
-    def named_parameters(self, prefix: str = '', recurse: bool = True):
-        """返回命名的模型参数。"""
-        return self.model.named_parameters(prefix, recurse)
-
-    def state_dict(self, *args, **kwargs):
-        """返回模型状态字典。"""
-        return self.model.state_dict(*args, **kwargs)
-
-    def load_state_dict(self, state_dict, strict: bool = True):
-        """加载模型状态字典。"""
-        return self.model.load_state_dict(state_dict, strict)
-
-    def train(self, mode: bool = True):
-        """设置训练模式。"""
-        self.model.train(mode)
-        return self
-
-    def eval(self):
-        """设置评估模式。"""
-        self.model.eval()
-        return self
 
     def get_model_info(self) -> Dict[str, Any]:
         """
