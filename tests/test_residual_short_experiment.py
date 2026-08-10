@@ -10,7 +10,8 @@ from unittest import mock
 import torch
 import torch.nn as nn
 
-import experiments.lib.residual_recovery as short_runner
+import experiments.lib.residual_recovery as residual_recovery
+import experiments.lib.residual_short_experiment as short_runner
 from experiments.lib.residual_protocol import SHORT_GATE_METHODS
 from experiments.lib.residual_short_methods import ShortResidualScope
 
@@ -28,6 +29,63 @@ class TrackingModel(nn.Module):
 
 
 class TestResidualShortExperiment(unittest.TestCase):
+    def test_recovery_facade_reexports_short_experiment_entrypoints(self) -> None:
+        self.assertIs(residual_recovery.main, short_runner.main)
+        self.assertIs(
+            residual_recovery.continue_training,
+            short_runner.continue_training,
+        )
+
+    def test_continue_training_restores_state_and_overrides_only_learning_rate(self) -> None:
+        model = TrackingModel()
+        source_optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=1e-3,
+            weight_decay=0.01,
+        )
+        optimizer_state = source_optimizer.state_dict()
+        real_adamw = torch.optim.AdamW
+        optimizers = []
+
+        def build_optimizer(*args, **kwargs):
+            optimizer = real_adamw(*args, **kwargs)
+            optimizers.append(optimizer)
+            return optimizer
+
+        def loss_for_batch(model_arg, batch, _device):
+            return ((model_arg.weight - batch["target"]) ** 2).mean()
+
+        batches = [
+            {"target": torch.ones(4)},
+            {"target": torch.full((4,), 2.0)},
+        ]
+        with mock.patch.object(short_runner, "set_seed") as set_seed:
+            with mock.patch.object(short_runner, "lm_loss", side_effect=loss_for_batch):
+                with mock.patch.object(
+                    short_runner.torch.optim,
+                    "AdamW",
+                    side_effect=build_optimizer,
+                ):
+                    result = short_runner.continue_training(
+                        model,
+                        optimizer_state,
+                        batches,
+                        learning_rate=2e-4,
+                        seed=1042,
+                        device="cpu",
+                    )
+
+        set_seed.assert_called_once_with(1042)
+        self.assertEqual(len(optimizers), 1)
+        self.assertEqual(optimizers[0].param_groups[0]["lr"], 2e-4)
+        self.assertNotIn("initial_lr", optimizers[0].param_groups[0])
+        self.assertEqual(result["steps"], 2)
+        self.assertEqual(result["learning_rate"], 2e-4)
+        self.assertEqual(len(result["train_losses"]), 2)
+        self.assertGreaterEqual(result["seconds"], 0.0)
+        self.assertTrue(model.training)
+        self.assertIsNone(model.weight.grad)
+
     def run_gate(self, continuation_steps: int):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
