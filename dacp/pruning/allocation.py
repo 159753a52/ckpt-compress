@@ -70,40 +70,73 @@ class GlobalTopKAllocation(AllocationStrategy):
         返回:
             {layer_name: prune_ratio} 字典
         """
+        if not 0.0 <= global_prune_ratio <= 1.0:
+            raise ValueError(
+                f"global_prune_ratio must be in [0, 1], got {global_prune_ratio}"
+            )
+
+        if not scores:
+            return {}
+
         # 1. 计算每层参数数量
         layer_sizes = {name: score.numel() for name, score in scores.items()}
         total_params = sum(layer_sizes.values())
+        if total_params == 0:
+            return {name: 0.0 for name in scores}
+
+        prune_count = int(total_params * global_prune_ratio)
         
-        # 2. 计算全局保留数量
-        keep_count = int(total_params * (1 - global_prune_ratio))
-        
-        # 3. 合并所有分数并排序（采样以节省内存）
+        # 2. 合并所有分数并排序（采样以节省内存）
         all_scores = []
         for name, score in scores.items():
             flat = score.flatten().float().cpu()
             all_scores.append(flat)
-        
-        # 如果总参数太多，使用采样
-        if total_params > 10_000_000:
-            # 每层采样 100k
-            sampled = []
-            for flat in all_scores:
-                n = flat.numel()
-                if n <= 100_000:
-                    sampled.append(flat)
-                else:
-                    idx = torch.randperm(n)[:100_000]
-                    sampled.append(flat[idx])
-            all_scores_flat = torch.cat(sampled)
-            # 从采样中估计阈值
-            threshold = torch.quantile(all_scores_flat, global_prune_ratio).item()
-        else:
-            all_scores_flat = torch.cat(all_scores)
-            threshold = torch.quantile(all_scores_flat, global_prune_ratio).item()
+
+        # 小规模路径保留全局排序的稳定顺序，并将精确的剪枝计数回填到各层。
+        # 这避免了分数并列时仅依赖 quantile 阈值造成的预算漂移。
+        if total_params <= 10_000_000:
+            merged = torch.cat(all_scores)
+            order = torch.argsort(merged, stable=True)
+            boundaries = torch.tensor(
+                np.cumsum(list(layer_sizes.values())[:-1]),
+                dtype=torch.long,
+            )
+            selected_layers = torch.bucketize(
+                order[:prune_count], boundaries, right=True
+            )
+            pruned_counts = torch.bincount(
+                selected_layers,
+                minlength=len(layer_sizes),
+            )
+            return {
+                name: (
+                    float(pruned_counts[index].item()) / layer_sizes[name]
+                    if layer_sizes[name] > 0
+                    else 0.0
+                )
+                for index, name in enumerate(layer_sizes)
+            }
+
+        # 如果总参数太多，使用固定种子的采样估计阈值。
+        generator = torch.Generator(device='cpu').manual_seed(42)
+        # 每层采样 100k，从采样中估计阈值。
+        sampled = []
+        for flat in all_scores:
+            n = flat.numel()
+            if n <= 100_000:
+                sampled.append(flat)
+            else:
+                idx = torch.randperm(n, generator=generator)[:100_000]
+                sampled.append(flat[idx])
+        all_scores_flat = torch.cat(sampled)
+        threshold = torch.quantile(all_scores_flat, global_prune_ratio).item()
         
         # 4. 计算每层剪枝率
         result = {}
         for name, score in scores.items():
+            if layer_sizes[name] == 0:
+                result[name] = 0.0
+                continue
             flat = score.flatten().float().cpu()
             below_threshold = (flat < threshold).sum().item()
             prune_ratio = below_threshold / layer_sizes[name]
