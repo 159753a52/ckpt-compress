@@ -70,90 +70,132 @@ def load_model(
 
 def _create_model(model_name: str, pretrained: bool, dataset_name: Optional[str] = None) -> nn.Module:
     """根据名称创建模型实例。"""
-    # GLUE 分类任务需要 BertForSequenceClassification
-    _GLUE_NUM_LABELS = {'sst2': 2, 'mnli': 3, 'stsb': 1}
-
-    if model_name == 'gpt2-small':
-        from dacp.models.gpt2 import get_gpt2_small
-        return get_gpt2_small(pretrained=pretrained)
-
-    elif model_name == 'gpt2-medium':
-        from dacp.models.gpt2 import get_gpt2_medium
-        return get_gpt2_medium(pretrained=pretrained)
-
-    elif model_name in ('bert-base', 'bert-large'):
-        if dataset_name in _GLUE_NUM_LABELS:
-            from transformers import BertForSequenceClassification, BertConfig
-            num_labels = _GLUE_NUM_LABELS[dataset_name]
-            if pretrained:
-                hf_name = 'bert-base-uncased' if model_name == 'bert-base' else 'bert-large-uncased'
-                model = BertForSequenceClassification.from_pretrained(
-                    hf_name, num_labels=num_labels)
-            else:
-                # 离线环境：从参数创建 config，避免联网
-                _BERT_CONFIGS = {
-                    'bert-base': dict(vocab_size=30522, hidden_size=768, num_hidden_layers=12,
-                                      num_attention_heads=12, intermediate_size=3072),
-                    'bert-large': dict(vocab_size=30522, hidden_size=1024, num_hidden_layers=24,
-                                       num_attention_heads=16, intermediate_size=4096),
-                }
-                config = BertConfig(**_BERT_CONFIGS[model_name], num_labels=num_labels)
-                model = BertForSequenceClassification(config)
-            if dataset_name == 'stsb':
-                model.config.problem_type = "regression"
-            return model
-        else:
-            if model_name == 'bert-base':
-                from dacp.models.bert import get_bert_base
-                return get_bert_base(pretrained=pretrained)
-            else:
-                from dacp.models.bert import get_bert_large
-                return get_bert_large(pretrained=pretrained)
-
-    elif model_name == 'resnet18':
-        from dacp.models.resnet import get_resnet18
-        return get_resnet18(pretrained=pretrained)
-
-    elif model_name == 'resnet50':
-        from dacp.models.resnet import get_resnet50
-        return get_resnet50(pretrained=pretrained)
-
-    elif model_name == 'pythia-410m':
+    if model_name in ('gpt2-small', 'gpt2-medium'):
+        return _create_gpt2(model_name, pretrained)
+    if model_name in ('bert-base', 'bert-large'):
+        return _create_bert(model_name, pretrained, dataset_name)
+    if model_name in ('resnet18', 'resnet50'):
+        return _create_resnet(model_name, pretrained)
+    if model_name == 'pythia-410m':
         return _create_pythia(pretrained)
-
-    elif model_name == 'gpt2-large':
-        import os
-        from transformers import GPT2LMHeadModel, GPT2Config
-        local = '/root/ckpt-compress/data/models/gpt2-large'
-        if pretrained:
-            src = local if os.path.isdir(local) else 'gpt2-large'
-            return GPT2LMHeadModel.from_pretrained(src)
-        if os.path.isdir(local):
-            cfg = GPT2Config.from_pretrained(local)
-        else:
-            cfg = GPT2Config(n_embd=1280, n_layer=36, n_head=20)
-        return GPT2LMHeadModel(cfg)
-
-    elif model_name == 'pythia-1b':
-        import os
-        from transformers import GPTNeoXForCausalLM, GPTNeoXConfig
-        local = '/root/ckpt-compress/data/models/pythia-1b'
-        if pretrained:
-            src = local if os.path.isdir(local) else 'EleutherAI/pythia-1b'
-            return GPTNeoXForCausalLM.from_pretrained(src)
-        if os.path.isdir(local):
-            cfg = GPTNeoXConfig.from_pretrained(local)
-        else:
-            cfg = GPTNeoXConfig(hidden_size=2048, num_hidden_layers=16,
-                                num_attention_heads=8, intermediate_size=8192,
-                                vocab_size=50304, max_position_embeddings=2048)
-        return GPTNeoXForCausalLM(cfg)
-
-    elif model_name in ('vit-l-32', 'vit-b-16'):
+    if model_name == 'gpt2-large':
+        return _create_gpt2_large(pretrained)
+    if model_name == 'pythia-1b':
+        return _create_pythia_1b(pretrained)
+    if model_name in ('vit-l-32', 'vit-b-16'):
         return _create_vit(model_name, pretrained)
+    raise ValueError(f"Unknown model: {model_name}")
 
+
+def _create_gpt2(model_name: str, pretrained: bool) -> nn.Module:
+    """Create one of the locally wrapped GPT-2 model variants."""
+    from dacp.models.gpt2 import get_gpt2_medium, get_gpt2_small
+
+    factories = {
+        'gpt2-small': get_gpt2_small,
+        'gpt2-medium': get_gpt2_medium,
+    }
+    return factories[model_name](pretrained=pretrained)
+
+
+def _create_bert(
+    model_name: str,
+    pretrained: bool,
+    dataset_name: Optional[str],
+) -> nn.Module:
+    """Create a BERT encoder or its GLUE classification head."""
+    glue_num_labels = {'sst2': 2, 'mnli': 3, 'stsb': 1}
+    if dataset_name not in glue_num_labels:
+        from dacp.models.bert import get_bert_base, get_bert_large
+
+        factory = get_bert_base if model_name == 'bert-base' else get_bert_large
+        return factory(pretrained=pretrained)
+
+    from transformers import BertConfig, BertForSequenceClassification
+
+    num_labels = glue_num_labels[dataset_name]
+    if pretrained:
+        hf_name = 'bert-base-uncased' if model_name == 'bert-base' else 'bert-large-uncased'
+        model = BertForSequenceClassification.from_pretrained(
+            hf_name,
+            num_labels=num_labels,
+        )
     else:
-        raise ValueError(f"Unknown model: {model_name}")
+        # Offline mode: create a matching config without a network request.
+        bert_configs = {
+            'bert-base': dict(
+                vocab_size=30522,
+                hidden_size=768,
+                num_hidden_layers=12,
+                num_attention_heads=12,
+                intermediate_size=3072,
+            ),
+            'bert-large': dict(
+                vocab_size=30522,
+                hidden_size=1024,
+                num_hidden_layers=24,
+                num_attention_heads=16,
+                intermediate_size=4096,
+            ),
+        }
+        model = BertForSequenceClassification(
+            BertConfig(**bert_configs[model_name], num_labels=num_labels)
+        )
+    if dataset_name == 'stsb':
+        model.config.problem_type = "regression"
+    return model
+
+
+def _create_resnet(model_name: str, pretrained: bool) -> nn.Module:
+    """Create one of the locally wrapped ResNet variants."""
+    from dacp.models.resnet import get_resnet18, get_resnet50
+
+    factories = {
+        'resnet18': get_resnet18,
+        'resnet50': get_resnet50,
+    }
+    return factories[model_name](pretrained=pretrained)
+
+
+def _create_gpt2_large(pretrained: bool) -> nn.Module:
+    """Create GPT-2 Large, preferring the repository's offline snapshot."""
+    import os
+
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    local = '/root/ckpt-compress/data/models/gpt2-large'
+    if pretrained:
+        src = local if os.path.isdir(local) else 'gpt2-large'
+        return GPT2LMHeadModel.from_pretrained(src)
+    if os.path.isdir(local):
+        config = GPT2Config.from_pretrained(local)
+    else:
+        config = GPT2Config(n_embd=1280, n_layer=36, n_head=20)
+    return GPT2LMHeadModel(config)
+
+
+def _create_pythia_1b(pretrained: bool) -> nn.Module:
+    """Create Pythia-1B, preferring the repository's offline snapshot."""
+    import os
+
+    from transformers import GPTNeoXConfig, GPTNeoXForCausalLM
+
+    local = '/root/ckpt-compress/data/models/pythia-1b'
+    if pretrained:
+        src = local if os.path.isdir(local) else 'EleutherAI/pythia-1b'
+        return GPTNeoXForCausalLM.from_pretrained(src)
+    if os.path.isdir(local):
+        config = GPTNeoXConfig.from_pretrained(local)
+    else:
+        config = GPTNeoXConfig(
+            hidden_size=2048,
+            num_hidden_layers=16,
+            num_attention_heads=8,
+            intermediate_size=8192,
+            vocab_size=50304,
+            max_position_embeddings=2048,
+        )
+    return GPTNeoXForCausalLM(config)
 
 
 def _create_pythia(pretrained: bool) -> nn.Module:
