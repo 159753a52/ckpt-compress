@@ -70,12 +70,32 @@ class TestGlobalTopKAllocation(unittest.TestCase):
             4,
         )
 
-    def test_nonfinite_scores_are_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "finite"):
-            GlobalTopKAllocation().allocate(
-                {"layer": torch.tensor([0.0, float("nan")])},
-                0.5,
-            )
+    def test_nonfinite_scores_are_rejected_by_data_dependent_allocators(self) -> None:
+        scores = {"layer": torch.tensor([0.0, float("nan")])}
+
+        for allocator in (
+            GlobalTopKAllocation(),
+            GammaAdaptiveAllocation(),
+            WeibullAdaptiveAllocation(),
+        ):
+            with self.subTest(allocator=allocator.name):
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    allocator.allocate(scores, 0.5)
+
+    def test_score_preparation_detaches_autograd_history(self) -> None:
+        scores = {
+            "layer": torch.arange(1.0, 13.0, requires_grad=True),
+        }
+
+        for allocator in (
+            GlobalTopKAllocation(),
+            GammaAdaptiveAllocation(),
+            WeibullAdaptiveAllocation(max_layer_ratio=1.0),
+        ):
+            with self.subTest(allocator=allocator.name):
+                rates = allocator.allocate(scores, 0.5)
+
+                self.assertEqual(set(rates), {"layer"})
 
     def test_ratio_is_validated_before_processing_scores(self) -> None:
         with self.assertRaisesRegex(ValueError, "global_prune_ratio"):

@@ -13,6 +13,19 @@ from .validation import validate_unit_interval
 _GLOBAL_SORT_MAX_PARAMS = 10_000_000
 
 
+def _flatten_finite_scores(
+    scores: Dict[str, torch.Tensor],
+) -> Dict[str, torch.Tensor]:
+    """Detach, flatten, and validate score tensors once per allocation call."""
+    flattened = {}
+    for name, score in scores.items():
+        flat = score.detach().flatten().float().cpu()
+        if not torch.isfinite(flat).all():
+            raise ValueError(f"Scores for {name!r} must contain finite values")
+        flattened[name] = flat
+    return flattened
+
+
 def _exact_counts_from_threshold(
     flat_layers: Dict[str, torch.Tensor],
     threshold: torch.Tensor,
@@ -30,6 +43,8 @@ def _exact_counts_from_threshold(
         assigned += below
 
     remaining = prune_count - assigned
+    if remaining < 0:
+        raise RuntimeError("Global pruning threshold exceeds the requested budget")
     for name in flat_layers:
         take = min(remaining, tie_capacity[name])
         counts[name] += take
@@ -123,14 +138,10 @@ class GlobalTopKAllocation(AllocationStrategy):
             }
 
         prune_count = int(total_params * global_prune_ratio)
+        flat_scores = _flatten_finite_scores(scores)
         
-        # 2. 将分数转到 CPU，供后续精确选择或稳定排序使用。
-        all_scores = []
-        for name, score in scores.items():
-            flat = score.flatten().float().cpu()
-            if not torch.isfinite(flat).all():
-                raise ValueError(f"Scores for {name!r} must contain finite values")
-            all_scores.append(flat)
+        # 2. 分数已统一转到 CPU，供后续精确选择或稳定排序使用。
+        all_scores = list(flat_scores.values())
 
         # 小规模路径保留全局排序的稳定顺序，并将精确的剪枝计数回填到各层。
         # 这避免了分数并列时仅依赖 quantile 阈值造成的预算漂移。
@@ -164,7 +175,7 @@ class GlobalTopKAllocation(AllocationStrategy):
         merged = torch.cat(all_scores)
         threshold = merged.kthvalue(prune_count).values
         pruned_counts = _exact_counts_from_threshold(
-            dict(zip(layer_sizes, all_scores)),
+            flat_scores,
             threshold,
             prune_count,
         )
@@ -206,10 +217,10 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         )
 
         # 1. 预排序每层 scores
+        flat_scores = _flatten_finite_scores(scores)
         sorted_layers = {}
         sizes = {}
-        for name, score in scores.items():
-            flat = score.flatten().float().cpu()
+        for name, flat in flat_scores.items():
             sorted_layers[name] = flat.sort().values
             sizes[name] = flat.numel()
         
@@ -219,7 +230,7 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         
         # 2. 用经验 CDF 做 bisection
         def objective(c: float) -> float:
-            c_tensor = torch.tensor(c)
+            c_tensor = torch.tensor(c, dtype=torch.float32)
             total_below = sum(
                 torch.searchsorted(sorted_layers[name], c_tensor).item()
                 for name in sorted_layers
@@ -239,7 +250,7 @@ class GammaAdaptiveAllocation(AllocationStrategy):
             return {name: global_prune_ratio for name in scores}
         
         # 3. 每层剪枝率
-        c_tensor = torch.tensor(c_star)
+        c_tensor = torch.tensor(c_star, dtype=torch.float32)
         result = {}
         for name in scores:
             if sizes[name] == 0:
@@ -280,21 +291,21 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         MAX_FIT_SAMPLES = 50000
         
         # 1. 对每层拟合 Weibull
+        flat_scores = _flatten_finite_scores(scores)
         layer_info = []
-        for name, score in scores.items():
-            data = score.flatten().float()
+        for name, data in flat_scores.items():
             data_pos = data[data > 0].cpu().numpy()
             if len(data_pos) < 10:
-                layer_info.append({'name': name, 'n': score.numel(), 'params': None})
+                layer_info.append({'name': name, 'n': data.numel(), 'params': None})
                 continue
             if len(data_pos) > MAX_FIT_SAMPLES:
                 rng = np.random.RandomState(42)
                 data_pos = rng.choice(data_pos, MAX_FIT_SAMPLES, replace=False)
             try:
                 params = stats.weibull_min.fit(data_pos, floc=0)
-                layer_info.append({'name': name, 'n': score.numel(), 'params': params})
+                layer_info.append({'name': name, 'n': data.numel(), 'params': params})
             except Exception:
-                layer_info.append({'name': name, 'n': score.numel(), 'params': None})
+                layer_info.append({'name': name, 'n': data.numel(), 'params': None})
         
         N = sum(info['n'] for info in layer_info)
         if N == 0:
@@ -315,8 +326,7 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         # 搜索范围（子采样估计 99.9% 分位数，避免大张量 quantile 溢出）
         generator = torch.Generator(device='cpu').manual_seed(42)
         sampled_for_quantile = []
-        for score in scores.values():
-            flat = score.flatten().float().cpu()
+        for flat in flat_scores.values():
             if flat.numel() == 0:
                 continue
             if flat.numel() > 100_000:
@@ -342,7 +352,7 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
             if info['n'] == 0:
                 result[name] = 0.0
                 continue
-            flat = scores[name].flatten().float()
+            flat = flat_scores[name]
             below = (flat <= c_star).sum().item()
             ratio = max(0.0, min(self.max_layer_ratio, below / info['n']))
             result[name] = ratio
