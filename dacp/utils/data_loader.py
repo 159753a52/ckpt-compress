@@ -88,6 +88,49 @@ def get_cifar10_transforms() -> Tuple[transforms.Compose, transforms.Compose]:
     return train_transform, test_transform
 
 
+def _get_cifar_loaders(
+    dataset_class,
+    batch_size: int,
+    data_dir: str,
+    download: bool,
+    num_workers: int,
+    train_subset: Optional[int],
+    test_subset: Optional[int],
+) -> Tuple[DataLoader, DataLoader]:
+    """Build CIFAR train/test loaders from one shared configuration."""
+    train_transform, test_transform = get_cifar10_transforms()
+    train_dataset = dataset_class(
+        root=data_dir,
+        train=True,
+        download=download,
+        transform=train_transform,
+    )
+    test_dataset = dataset_class(
+        root=data_dir,
+        train=False,
+        download=download,
+        transform=test_transform,
+    )
+    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
+    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
+    return (
+        DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+        ),
+        DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True,
+        ),
+    )
+
+
 def get_cifar10_loaders(
     batch_size: int = 128,
     data_dir: str = "./data",
@@ -110,45 +153,15 @@ def get_cifar10_loaders(
     返回:
         (train_loader, test_loader) 元组
     """
-    train_transform, test_transform = get_cifar10_transforms()
-
-    # 加载数据集
-    train_dataset = datasets.CIFAR10(
-        root=data_dir,
-        train=True,
-        download=download,
-        transform=train_transform,
+    return _get_cifar_loaders(
+        datasets.CIFAR10,
+        batch_size,
+        data_dir,
+        download,
+        num_workers,
+        train_subset,
+        test_subset,
     )
-
-    test_dataset = datasets.CIFAR10(
-        root=data_dir,
-        train=False,
-        download=download,
-        transform=test_transform,
-    )
-
-    # 如果指定则应用子集
-    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
-    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
-
-    # 创建数据加载器
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    return train_loader, test_loader
 
 
 def get_cifar100_loaders(
@@ -173,45 +186,15 @@ def get_cifar100_loaders(
     返回:
         (train_loader, test_loader) 元组
     """
-    train_transform, test_transform = get_cifar10_transforms()
-
-    # 加载数据集（CIFAR-100 使用相同的变换）
-    train_dataset = datasets.CIFAR100(
-        root=data_dir,
-        train=True,
-        download=download,
-        transform=train_transform,
+    return _get_cifar_loaders(
+        datasets.CIFAR100,
+        batch_size,
+        data_dir,
+        download,
+        num_workers,
+        train_subset,
+        test_subset,
     )
-
-    test_dataset = datasets.CIFAR100(
-        root=data_dir,
-        train=False,
-        download=download,
-        transform=test_transform,
-    )
-
-    # 如果指定则应用子集
-    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
-    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
-
-    # 创建数据加载器
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
-
-    return train_loader, test_loader
 
 
 class WikiText2Dataset(Dataset):

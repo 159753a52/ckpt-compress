@@ -33,6 +33,16 @@ class _RecordingTokenizer:
         }
 
 
+class _RecordingDataset:
+    calls = []
+
+    def __init__(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+    def __len__(self) -> int:
+        return 4
+
+
 class TestWikiText2Dataset(unittest.TestCase):
     def test_zero_max_samples_is_empty_without_encoding(self) -> None:
         tokenizer = _CountingTokenizer()
@@ -80,6 +90,40 @@ class TestWikiText2Dataset(unittest.TestCase):
         self.assertEqual(prefix.indices, [0, 1])
         self.assertEqual(empty.indices, [])
         self.assertIs(_apply_subset(dataset, None, "train_subset"), dataset)
+
+    def test_cifar_builder_reuses_dataset_and_loader_configuration(self) -> None:
+        _RecordingDataset.calls = []
+        with mock.patch.object(
+            data_loader,
+            'get_cifar10_transforms',
+            return_value=('train-transform', 'test-transform'),
+        ), mock.patch.object(
+            data_loader,
+            'DataLoader',
+            side_effect=lambda dataset, **kwargs: (dataset, kwargs),
+        ):
+            train_loader, test_loader = data_loader._get_cifar_loaders(
+                _RecordingDataset,
+                batch_size=8,
+                data_dir='/tmp/cifar',
+                download=False,
+                num_workers=2,
+                train_subset=None,
+                test_subset=None,
+            )
+
+        self.assertEqual(
+            [call['train'] for call in _RecordingDataset.calls],
+            [True, False],
+        )
+        self.assertEqual(
+            [call['transform'] for call in _RecordingDataset.calls],
+            ['train-transform', 'test-transform'],
+        )
+        self.assertTrue(train_loader[1]['shuffle'])
+        self.assertFalse(test_loader[1]['shuffle'])
+        self.assertEqual(train_loader[1]['batch_size'], 8)
+        self.assertEqual(test_loader[1]['num_workers'], 2)
 
 
 class TestGlueLoaders(unittest.TestCase):
