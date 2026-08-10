@@ -12,7 +12,7 @@ SUPPORTED_TASK_TYPES = frozenset({"lm", "cls", "cv", "reg"})
 TRAINING_TASK_TYPES = frozenset({"lm", "cls", "cv"})
 
 
-def _extract_logits(outputs: object) -> torch.Tensor:
+def extract_logits(outputs: object) -> torch.Tensor:
     """Return logits from either a tensor output or a model output object."""
     return outputs.logits if hasattr(outputs, "logits") else outputs
 
@@ -35,7 +35,7 @@ def make_task_loss(task_type: str) -> Callable:
 
     def lm_loss(model, batch):
         outputs = model(batch["input_ids"])
-        logits = _extract_logits(outputs)
+        logits = extract_logits(outputs)
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = batch["labels"][..., 1:].contiguous()
         return criterion(
@@ -46,11 +46,11 @@ def make_task_loss(task_type: str) -> Callable:
     def cls_loss(model, batch):
         attention_mask = batch.get("attention_mask")
         outputs = model(batch["input_ids"], attention_mask=attention_mask)
-        return criterion(_extract_logits(outputs), batch["labels"])
+        return criterion(extract_logits(outputs), batch["labels"])
 
     def cv_loss(model, batch):
         outputs = model(batch["images"])
-        return criterion(_extract_logits(outputs), batch["labels"])
+        return criterion(extract_logits(outputs), batch["labels"])
 
     # Preserve the historical scoring behavior until scoring and regression
     # evaluation are migrated to an explicitly shared MSE contract.
@@ -116,6 +116,7 @@ __all__ = [
     "SUPPORTED_TASK_TYPES",
     "TRAINING_TASK_TYPES",
     "compute_task_loss",
+    "extract_logits",
     "make_task_loss",
     "move_batch_to_device",
 ]

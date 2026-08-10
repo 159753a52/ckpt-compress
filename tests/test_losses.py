@@ -2,7 +2,7 @@ import unittest
 
 import torch
 
-from experiments.lib.losses import compute_task_loss, make_task_loss
+from experiments.lib.losses import compute_task_loss, extract_logits, make_task_loss
 
 
 class _TensorOutput:
@@ -17,6 +17,12 @@ class _Classifier(torch.nn.Module):
 
 
 class TestTaskLossFactory(unittest.TestCase):
+    def test_extract_logits_supports_tensor_and_model_output_contracts(self) -> None:
+        logits = torch.tensor([[1.0, 2.0]])
+
+        self.assertIs(extract_logits(logits), logits)
+        self.assertIs(extract_logits(_TensorOutput(logits)), logits)
+
     def test_factory_reuses_stateless_task_loss_closures(self) -> None:
         self.assertIs(make_task_loss("lm"), make_task_loss("lm"))
         self.assertIs(make_task_loss("cls"), make_task_loss("cls"))

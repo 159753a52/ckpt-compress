@@ -5,9 +5,12 @@
 """
 
 import math
+from typing import Dict, List
+
 import torch
 import torch.nn as nn
-from typing import Dict, List
+
+from experiments.lib.losses import extract_logits, move_batch_to_device
 
 
 def evaluate(
@@ -96,11 +99,12 @@ def _evaluate_lm(model, cached_eval, device):
 
     with torch.no_grad():
         for batch in cached_eval:
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device)
+            batch = move_batch_to_device(batch, device)
+            input_ids = batch['input_ids']
+            labels = batch['labels']
 
             outputs = model(input_ids)
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+            logits = extract_logits(outputs)
 
             shift_logits = logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
@@ -124,19 +128,17 @@ def _evaluate_classification(model, cached_eval, device, task_type):
 
     with torch.no_grad():
         for batch in cached_eval:
+            batch = move_batch_to_device(batch, device)
+            labels = batch['labels']
             if task_type == 'cv':
-                inputs = batch['images'].to(device)
-                labels = batch['labels'].to(device)
-                outputs = model(inputs)
+                outputs = model(batch['images'])
             else:
-                input_ids = batch['input_ids'].to(device)
-                labels = batch['labels'].to(device)
-                attn = batch.get('attention_mask')
-                if attn is not None:
-                    attn = attn.to(device)
-                outputs = model(input_ids, attention_mask=attn)
+                outputs = model(
+                    batch['input_ids'],
+                    attention_mask=batch.get('attention_mask'),
+                )
 
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+            logits = extract_logits(outputs)
             loss = criterion(logits, labels)
             total_loss += loss.item()
 
@@ -164,13 +166,13 @@ def _evaluate_regression(model, cached_eval, device):
 
     with torch.no_grad():
         for batch in cached_eval:
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device).float()
-            attn = batch.get('attention_mask')
-            if attn is not None:
-                attn = attn.to(device)
-            outputs = model(input_ids, attention_mask=attn)
-            logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+            batch = move_batch_to_device(batch, device)
+            labels = batch['labels'].float()
+            outputs = model(
+                batch['input_ids'],
+                attention_mask=batch.get('attention_mask'),
+            )
+            logits = extract_logits(outputs)
             preds = logits.squeeze(-1)
             loss = nn.MSELoss()(preds, labels)
             total_loss += loss.item()
