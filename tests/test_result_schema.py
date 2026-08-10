@@ -46,6 +46,36 @@ class TestResultSchema(unittest.TestCase):
             )
             self.assertEqual(bundle.config, {"model": "tiny"})
 
+    def test_inline_config_supplements_companion_config_and_wins_on_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result_path = Path(temp_dir) / "run.json"
+            result_path.write_text(
+                json.dumps({
+                    "results": [{"method": "uniform"}],
+                    "config": {"model": "inline", "seed": 7},
+                }),
+                encoding="utf-8",
+            )
+            result_path.with_name("config.yaml").write_text(
+                yaml.safe_dump({
+                    "model": "companion",
+                    "dataset": "wikitext103",
+                    "seed": 1,
+                }),
+                encoding="utf-8",
+            )
+
+            bundle = load_result_bundle(result_path)
+
+            self.assertEqual(
+                bundle.config,
+                {
+                    "model": "inline",
+                    "dataset": "wikitext103",
+                    "seed": 7,
+                },
+            )
+
     def test_primary_metric_ignores_language_model_accuracy_placeholder(self) -> None:
         self.assertEqual(
             primary_metric({"accuracy": 0, "perplexity": 12.5, "loss": 2.5}),

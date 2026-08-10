@@ -100,7 +100,8 @@ def load_result_bundle(path: Any) -> ResultBundle:
         payload = json.load(handle)
 
     bundle = normalize_result_payload(payload)
-    config = bundle.config or _load_companion_config(result_path)
+    companion_config = _load_companion_config(result_path)
+    config = {**companion_config, **bundle.config}
     return ResultBundle(bundle.records, config, bundle.schema, result_path)
 
 
