@@ -4,6 +4,8 @@ INT4 量化器
 将权重量化为 4-bit 整数（16 个量化级别）。
 """
 
+import math
+
 import torch
 from typing import Tuple, Dict, Any
 
@@ -27,6 +29,8 @@ class INT4Quantizer:
         Args:
             quant_range: 量化范围（对称量化，范围为 [-range, range-1]）
         """
+        if not isinstance(quant_range, int) or isinstance(quant_range, bool) or quant_range < 2:
+            raise ValueError(f"quant_range must be an integer >= 2, got {quant_range}")
         self.quant_range = quant_range
         self.n_levels = 2 * quant_range  # 16 levels for 4-bit
     
@@ -48,12 +52,15 @@ class INT4Quantizer:
                 - shape: 原始形状
                 - dtype: 原始数据类型
         """
+        if weight.numel() == 0:
+            raise ValueError("cannot quantize an empty tensor")
+
         # 保存原始形状和数据类型
         shape = weight.shape
         dtype = weight.dtype
         
         # 计算量化参数（对称量化）
-        weight_flat = weight.flatten()
+        weight_flat = weight.detach().flatten()
         max_abs = torch.max(torch.abs(weight_flat))
         
         # 对称量化：scale = max_abs / (quant_range - 1)，映射 [-max_abs, max_abs] → [-7, 7]
@@ -139,4 +146,5 @@ class INT4Quantizer:
             - 理论压缩比：32 / 4 = 8×
             - 实际压缩比略低（需要存储 scale 等元数据）
         """
-        return 8.0  # 理论压缩比
+        bits_per_value = math.ceil(math.log2(self.n_levels))
+        return 32.0 / bits_per_value

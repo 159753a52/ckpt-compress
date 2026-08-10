@@ -49,6 +49,8 @@ def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
         bucket_counts: 每个桶的元素数量
         zero_count: 零值（含极小值）数量
     """
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     gamma = (1 + alpha) / (1 - alpha)
     log_gamma = np.log(gamma)
 
@@ -188,6 +190,14 @@ class KMeansQuantizer:
             alpha: DDSketch 相对误差界（默认 1%）
             sigma: 权重混合系数，σ·频率 + (1-σ)·幅度（默认 0.2）
         """
+        if not isinstance(n_clusters, int) or isinstance(n_clusters, bool) or n_clusters < 1:
+            raise ValueError(f"n_clusters must be a positive integer, got {n_clusters}")
+        if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
+            raise ValueError(f"max_iter must be a positive integer, got {max_iter}")
+        if not 0.0 < alpha < 1.0:
+            raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+        if not 0.0 <= sigma <= 1.0:
+            raise ValueError(f"sigma must be in [0, 1], got {sigma}")
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.seed = seed
@@ -215,12 +225,20 @@ class KMeansQuantizer:
         """
         if shape is None:
             shape = weight.shape
+        if int(np.prod(shape)) != weight.numel():
+            raise ValueError(
+                f"shape {tuple(shape)} does not match weight with {weight.numel()} values"
+            )
 
-        weight_flat = weight.flatten().cpu().numpy().astype(np.float64)
+        weight_flat = weight.detach().flatten().cpu().numpy().astype(np.float64)
 
         # mask-aware: 仅对非零/非剪枝位置聚类
         if mask is not None:
-            mask_flat = mask.flatten().cpu().numpy().astype(bool)
+            if mask.shape != weight.shape:
+                raise ValueError(
+                    f"mask shape {tuple(mask.shape)} must match weight shape {tuple(weight.shape)}"
+                )
+            mask_flat = mask.detach().flatten().cpu().numpy().astype(bool)
         else:
             # 无 mask 时，排除精确零值（可能来自之前的剪枝）
             mask_flat = np.abs(weight_flat) > 1e-30
