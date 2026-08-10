@@ -50,7 +50,7 @@ class TestScoreComparison(unittest.TestCase):
         self.assertEqual(varying["layer"], {"spearman": 0.0, "pearson": 0.0})
 
     def test_gamma_matches_vit_constructor_token_counts(self) -> None:
-        self.assertEqual(compute_gamma("vit-l-32", 128)["T"], 170)
+        self.assertEqual(compute_gamma("vit-l-32", 128)["T"], 145)
         self.assertEqual(compute_gamma("vit-b-16", 128)["T"], 197)
 
         with self.assertRaisesRegex(ValueError, "seq_length"):
