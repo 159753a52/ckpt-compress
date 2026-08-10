@@ -7,7 +7,7 @@ from typing import Dict, Sequence, Tuple
 
 import torch
 
-from experiments.lib.residual_allocation import (
+from experiments.lib.residual_weibull import (
     fit_weibull_mom,
     weibull_counts,
 )

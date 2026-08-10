@@ -5,6 +5,7 @@ import torch
 import experiments.lib.residual_allocation as residual_allocation
 import experiments.lib.residual_budget as residual_budget
 import experiments.lib.residual_spectral as residual_spectral
+import experiments.lib.residual_weibull as residual_weibull
 from experiments.lib.residual_allocation import (
     bounded_largest_remainder_counts,
     budget_tangent_dct_directions,
@@ -31,6 +32,14 @@ class TestResidualAllocation(unittest.TestCase):
                 self.assertIs(
                     getattr(residual_allocation, name),
                     getattr(residual_spectral, name),
+                )
+
+    def test_weibull_facade_reexports_owner_functions(self) -> None:
+        for name in residual_weibull.__all__:
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(residual_allocation, name),
+                    getattr(residual_weibull, name),
                 )
 
     def test_weibull_counts_preserve_exact_budget_and_caps(self) -> None:
