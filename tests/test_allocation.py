@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -53,6 +54,28 @@ class TestGlobalTopKAllocation(unittest.TestCase):
 
         self.assertEqual(rates["empty"], 0.0)
         self.assertEqual(rates["active"], 0.5)
+
+    def test_large_path_keeps_exact_budget_with_tied_scores(self) -> None:
+        scores = {
+            "left": torch.zeros(3),
+            "right": torch.tensor([0.0, 1.0]),
+        }
+
+        with patch("dacp.pruning.allocation._GLOBAL_SORT_MAX_PARAMS", 4):
+            rates = GlobalTopKAllocation().allocate(scores, 0.8)
+
+        self.assertEqual(rates, {"left": 1.0, "right": 0.5})
+        self.assertEqual(
+            sum(round(scores[name].numel() * rates[name]) for name in scores),
+            4,
+        )
+
+    def test_nonfinite_scores_are_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "finite"):
+            GlobalTopKAllocation().allocate(
+                {"layer": torch.tensor([0.0, float("nan")])},
+                0.5,
+            )
 
     def test_ratio_is_validated_before_processing_scores(self) -> None:
         with self.assertRaisesRegex(ValueError, "global_prune_ratio"):

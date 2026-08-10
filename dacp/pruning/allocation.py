@@ -10,6 +10,35 @@ from scipy.optimize import bisect
 from .validation import validate_unit_interval
 
 
+_GLOBAL_SORT_MAX_PARAMS = 10_000_000
+
+
+def _exact_counts_from_threshold(
+    flat_layers: Dict[str, torch.Tensor],
+    threshold: torch.Tensor,
+    prune_count: int,
+) -> Dict[str, int]:
+    """Distribute values below a threshold and then resolve ties deterministically."""
+    counts = {name: 0 for name in flat_layers}
+    tie_capacity = {}
+    assigned = 0
+    for name, values in flat_layers.items():
+        below = int((values < threshold).sum().item())
+        at_or_below = int((values <= threshold).sum().item())
+        counts[name] = below
+        tie_capacity[name] = at_or_below - below
+        assigned += below
+
+    remaining = prune_count - assigned
+    for name in flat_layers:
+        take = min(remaining, tie_capacity[name])
+        counts[name] += take
+        remaining -= take
+    if remaining:
+        raise RuntimeError("Unable to satisfy the exact global pruning budget")
+    return counts
+
+
 class AllocationStrategy(ABC):
     """剪枝率分配策略的抽象基类。"""
     
@@ -52,7 +81,7 @@ class GlobalTopKAllocation(AllocationStrategy):
     3. 计算每层应保留的数量，反推剪枝率
     
     优点：精确控制全局稀疏度
-    缺点：需要 O(N log N) 排序，N 为总参数数
+    小规模使用稳定全局排序；大规模使用线性 kth-value 阈值选择。
     """
     
     @property
@@ -95,15 +124,17 @@ class GlobalTopKAllocation(AllocationStrategy):
 
         prune_count = int(total_params * global_prune_ratio)
         
-        # 2. 合并所有分数并排序（采样以节省内存）
+        # 2. 将分数转到 CPU，供后续精确选择或稳定排序使用。
         all_scores = []
         for name, score in scores.items():
             flat = score.flatten().float().cpu()
+            if not torch.isfinite(flat).all():
+                raise ValueError(f"Scores for {name!r} must contain finite values")
             all_scores.append(flat)
 
         # 小规模路径保留全局排序的稳定顺序，并将精确的剪枝计数回填到各层。
         # 这避免了分数并列时仅依赖 quantile 阈值造成的预算漂移。
-        if total_params <= 10_000_000:
+        if total_params <= _GLOBAL_SORT_MAX_PARAMS:
             merged = torch.cat(all_scores)
             order = torch.argsort(merged, stable=True)
             boundaries = torch.tensor(
@@ -126,32 +157,27 @@ class GlobalTopKAllocation(AllocationStrategy):
                 for index, name in enumerate(layer_sizes)
             }
 
-        # 如果总参数太多，使用固定种子的采样估计阈值。
-        generator = torch.Generator(device='cpu').manual_seed(42)
-        # 每层采样 100k，从采样中估计阈值。
-        sampled = []
-        for flat in all_scores:
-            n = flat.numel()
-            if n <= 100_000:
-                sampled.append(flat)
-            else:
-                idx = torch.randperm(n, generator=generator)[:100_000]
-                sampled.append(flat[idx])
-        all_scores_flat = torch.cat(sampled)
-        threshold = torch.quantile(all_scores_flat, global_prune_ratio).item()
-        
-        # 4. 计算每层剪枝率
-        result = {}
-        for name, score in scores.items():
-            if layer_sizes[name] == 0:
-                result[name] = 0.0
-                continue
-            flat = score.flatten().float().cpu()
-            below_threshold = (flat < threshold).sum().item()
-            prune_ratio = below_threshold / layer_sizes[name]
-            result[name] = max(0.0, min(1.0, prune_ratio))
-        
-        return result
+        # 大规模路径用全局 kth-value 找阈值，再逐层统计并列值。
+        # 这避免了全局排序索引和逐层 O(n log n) 排序，同时保持精确预算。
+        if prune_count == 0:
+            return {name: 0.0 for name in scores}
+        merged = torch.cat(all_scores)
+        threshold = merged.kthvalue(prune_count).values
+        pruned_counts = _exact_counts_from_threshold(
+            dict(zip(layer_sizes, all_scores)),
+            threshold,
+            prune_count,
+        )
+        del merged
+        del all_scores
+        return {
+            name: (
+                pruned_counts[name] / layer_sizes[name]
+                if layer_sizes[name] > 0
+                else 0.0
+            )
+            for name in layer_sizes
+        }
 
 
 class GammaAdaptiveAllocation(AllocationStrategy):

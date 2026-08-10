@@ -42,6 +42,10 @@ class TestExactPruningMask(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "prune_count"):
             exact_pruning_mask(scores, 5)
+        with self.assertRaisesRegex(ValueError, "integer"):
+            exact_pruning_mask(scores, 1.5)
+        with self.assertRaisesRegex(ValueError, "integer"):
+            exact_pruning_mask(scores, True)
 
     def test_apply_pruning_counts_zero_budget_layers(self) -> None:
         model = _TwoParameterModel()

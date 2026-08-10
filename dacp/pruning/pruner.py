@@ -11,6 +11,8 @@ from .validation import validate_unit_interval
 
 def exact_pruning_mask(score: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Build a deterministic float mask that prunes exactly ``prune_count`` values."""
+    if isinstance(prune_count, bool) or not isinstance(prune_count, int):
+        raise ValueError(f"prune_count must be an integer, got {prune_count}")
     if not 0 <= prune_count <= score.numel():
         raise ValueError(
             f"prune_count must be in [0, {score.numel()}], got {prune_count}"
