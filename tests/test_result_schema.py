@@ -9,6 +9,7 @@ from experiments.lib.result_schema import (
     load_result_bundle,
     normalize_result_payload,
     primary_metric,
+    result_metrics,
 )
 from experiments.lib.results import ResultManager
 from experiments.runners.collect_results import scan_results
@@ -146,6 +147,17 @@ class TestResultSchema(unittest.TestCase):
                 "metrics": {"accuracy": 0.8},
             }),
             ("accuracy", 0.8),
+        )
+
+    def test_result_metrics_centralizes_nested_override_semantics(self) -> None:
+        self.assertEqual(
+            result_metrics({
+                "method": "example",
+                "loss": 9.0,
+                "perplexity": 12.5,
+                "metrics": {"loss": 2.5, "seconds": 0.4},
+            }),
+            {"loss": 2.5, "perplexity": 12.5, "seconds": 0.4},
         )
 
     def test_collect_and_aggregate_share_normalized_records(self) -> None:

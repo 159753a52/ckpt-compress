@@ -8,6 +8,18 @@ from typing import Any, Dict, List, Mapping, Optional
 import yaml
 
 
+TOP_LEVEL_METRIC_KEYS = (
+    "loss",
+    "perplexity",
+    "accuracy",
+    "top1_accuracy",
+    "pearson",
+    "final_loss",
+    "val_loss",
+    "metric_value",
+)
+
+
 @dataclass(frozen=True)
 class ResultBundle:
     """Normalized records and configuration loaded from one result file."""
@@ -109,14 +121,22 @@ def load_result_bundle(path: Any) -> ResultBundle:
     return ResultBundle(bundle.records, config, bundle.schema, result_path)
 
 
+def result_metrics(record: Mapping[str, Any]) -> Dict[str, Any]:
+    """Merge supported top-level metrics with the optional nested block."""
+    merged = {
+        key: record[key]
+        for key in TOP_LEVEL_METRIC_KEYS
+        if key in record
+    }
+    nested = record.get("metrics")
+    if isinstance(nested, Mapping):
+        merged.update(nested)
+    return merged
+
+
 def primary_metric(record: Mapping[str, Any]) -> tuple[Optional[str], Any]:
     """Return the primary metric key and value from one normalized record."""
-    candidates = dict(record)
-    metrics = record.get("metrics")
-    if isinstance(metrics, Mapping):
-        # Records from different runners use both layouts.  Treat top-level
-        # values as defaults and let the normalized nested block override them.
-        candidates.update(metrics)
+    candidates = result_metrics(record)
 
     accuracy = candidates.get("accuracy")
     if "perplexity" in candidates and accuracy in (None, 0):

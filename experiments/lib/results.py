@@ -17,19 +17,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import yaml
 
-from .result_schema import load_result_bundle
-
-
-_TOP_LEVEL_METRIC_KEYS = (
-    "loss",
-    "perplexity",
-    "accuracy",
-    "top1_accuracy",
-    "pearson",
-    "final_loss",
-    "val_loss",
-    "metric_value",
-)
+from .result_schema import load_result_bundle, result_metrics
 
 
 pd = None  # lazy import of pandas
@@ -200,14 +188,8 @@ class ResultManager:
                 'actual_ratio': r.get('actual_ratio', 0),
             }
 
-            for key in _TOP_LEVEL_METRIC_KEYS:
-                if key in r:
-                    row[f'metric_{key}'] = r[key]
-
-            metrics = r.get('metrics', {})
-            if isinstance(metrics, dict):
-                for key, value in metrics.items():
-                    row[f'metric_{key}'] = value
+            for key, value in result_metrics(r).items():
+                row[f'metric_{key}'] = value
 
             baseline = r.get('baseline', {})
             if isinstance(baseline, dict):
