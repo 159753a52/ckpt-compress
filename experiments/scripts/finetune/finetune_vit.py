@@ -24,7 +24,6 @@ import os
 os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 
 import torch
-import torch.nn as nn
 from pathlib import Path
 import sys
 from tqdm import tqdm

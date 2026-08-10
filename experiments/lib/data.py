@@ -9,7 +9,7 @@
 """
 
 import torch
-from typing import Tuple, List, Dict, Optional, Any
+from typing import Tuple, List, Dict
 from torch.utils.data import DataLoader
 
 

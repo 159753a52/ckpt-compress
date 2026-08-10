@@ -10,7 +10,6 @@ CIFAR-10 图像为 32x32，因此需要修改标准 ResNet:
 import torch
 import torch.nn as nn
 from torchvision.models import resnet18
-from typing import Optional
 
 
 class ResNet18ForCIFAR10(nn.Module):

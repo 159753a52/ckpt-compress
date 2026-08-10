@@ -11,7 +11,7 @@
   - 一阶梯度从单 batch 改为多 batch 累积平均
   - 默认值 grad_accumulation_batches=None 表示使用所有 cached batches
 """
-import re, shutil, sys
+import shutil, sys
 from pathlib import Path
 
 TARGET = Path(__file__).parent.parent.parent / "dacp" / "tools" / "importance.py"

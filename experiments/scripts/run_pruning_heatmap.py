@@ -40,8 +40,6 @@ os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 
 import sys
 from pathlib import Path
-import torch
-import numpy as np
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')

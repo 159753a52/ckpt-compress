@@ -19,16 +19,14 @@ import json
 import os
 os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 import sys
-import time
 from pathlib import Path
 
-import numpy as np
 import torch
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dacp.pruning import apply_pruning, filter_prunable_params
+from dacp.pruning import apply_pruning
 from dacp.pruning.allocation import get_allocation_strategy
 from dacp.pruning.importance import combine_scores_2d_with_protection
 from dacp.tools.checkpoint_io import (

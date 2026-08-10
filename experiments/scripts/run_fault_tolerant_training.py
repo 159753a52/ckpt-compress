@@ -28,7 +28,6 @@ from pathlib import Path
 import argparse
 import torch
 import numpy as np
-from tqdm import tqdm
 from collections import defaultdict
 import matplotlib
 matplotlib.use('Agg')
@@ -43,10 +42,6 @@ from experiments.lib.evaluation import evaluate
 from experiments.lib.results import save_results
 from experiments.lib.losses import compute_task_loss
 from dacp.pruning import Pruner, filter_prunable_params
-from dacp.pruning.importance import (
-    combine_scores_2d_with_protection,
-    get_importance_scorer,
-)
 from dacp.quantization.kmeans import KMeansQuantizer
 from dacp.quantization.int4 import INT4Quantizer
 

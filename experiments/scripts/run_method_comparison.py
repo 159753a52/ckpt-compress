@@ -53,7 +53,7 @@ import torch
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from experiments.lib.models import load_model, get_model_type
+from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate
 from experiments.lib.results import save_results, print_results_table

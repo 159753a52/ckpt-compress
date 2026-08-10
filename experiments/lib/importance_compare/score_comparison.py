@@ -4,10 +4,9 @@
 对比度量，用于验证 block-diagonal HVP 近似的精度。
 """
 
-import sys
 import torch
 import numpy as np
-from typing import Dict, List
+from typing import Dict
 from scipy import stats as scipy_stats
 
 # 超过此阈值时使用随机采样（全局 + 逐层通用）

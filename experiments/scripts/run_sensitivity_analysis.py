@@ -24,7 +24,6 @@ import copy
 import time
 import json
 import torch
-import numpy as np
 from datetime import datetime
 
 ROOT = Path(__file__).parent.parent.parent
@@ -33,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate
-from experiments.lib.results import save_results, print_results_table
+from experiments.lib.results import print_results_table
 from experiments.lib.gamma_sensitivity import (
     fit_gamma_mom_problem,
     solve_gamma_mom_rates,
@@ -42,7 +41,6 @@ from experiments.lib.importance_compare.scoring import compute_scores_by_method
 from experiments.lib.losses import compute_task_loss
 from dacp.pruning import Pruner, apply_pruning, filter_prunable_params
 from dacp.pruning.allocation import (
-    UniformAllocation,
     GammaAdaptiveAllocation,
 )
 
