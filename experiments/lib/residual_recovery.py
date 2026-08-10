@@ -87,6 +87,14 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     synchronize_device,
     write_json,
 )
+from experiments.lib.residual_training import (  # noqa: E402
+    SeedBatchPartition,
+    build_optimizer,
+    clone_model_state_to_cpu,
+    partition_seed_batches,
+    seeded_training_batches,
+    train_segment,
+)
 from experiments.lib.residual_scoring import (  # noqa: E402
     compute_block_taylor_scores,
     eligible_layers,

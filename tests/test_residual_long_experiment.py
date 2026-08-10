@@ -1,0 +1,228 @@
+import json
+import unittest
+
+import torch
+
+import experiments.lib.residual_masks as residual_masks
+import experiments.lib.residual_methods as residual_methods
+import experiments.lib.residual_reporting as residual_reporting
+import experiments.lib.residual_runtime as residual_runtime
+import experiments.lib.residual_training as residual_training
+import experiments.scripts.run_residual_recovery_long as long_runner
+
+
+BASE_METHODS = [
+    "residual_magnitude_uniform",
+    "first_order_uniform",
+    "second_order_uniform",
+    "taylor_uniform",
+    "taylor_weibull_mom",
+    "taylor_exact_global",
+    "taylor_probe_trust",
+]
+
+
+class TestResidualLongExperiment(unittest.TestCase):
+    def test_partition_is_deterministic_disjoint_and_rng_local(self) -> None:
+        pool = [
+            {
+                "input_ids": torch.tensor([[index, index + 1]]),
+                "labels": torch.tensor([[index, index + 1]]),
+            }
+            for index in range(10)
+        ]
+        rng_before = torch.get_rng_state().clone()
+
+        partition = residual_training.partition_seed_batches(
+            pool,
+            total_steps=4,
+            recovery_step=2,
+            hvp_batches=2,
+            allocation_probe_batches=1,
+            allocation_selection_batches=1,
+            seed=42,
+        )
+
+        self.assertTrue(torch.equal(rng_before, torch.get_rng_state()))
+        generator = torch.Generator().manual_seed(42)
+        expected_indices = torch.randperm(len(pool), generator=generator)[:8].tolist()
+        self.assertEqual(partition.selected_pool_indices, expected_indices)
+        self.assertEqual(
+            [
+                len(partition.pre_recovery),
+                len(partition.scoring),
+                len(partition.allocation_probe),
+                len(partition.allocation_selection),
+                len(partition.continuation),
+            ],
+            [2, 2, 1, 1, 2],
+        )
+        combined = (
+            partition.pre_recovery
+            + partition.scoring
+            + partition.allocation_probe
+            + partition.allocation_selection
+            + partition.continuation
+        )
+        self.assertEqual([id(batch) for batch in combined], [id(pool[i]) for i in expected_indices])
+        self.assertEqual(
+            partition.data_hashes(),
+            {
+                "pre_recovery": residual_runtime.batch_hash(partition.pre_recovery),
+                "scoring": residual_runtime.batch_hash(partition.scoring),
+                "allocation_probe": residual_runtime.batch_hash(partition.allocation_probe),
+                "allocation_selection": residual_runtime.batch_hash(
+                    partition.allocation_selection
+                ),
+                "continuation": residual_runtime.batch_hash(partition.continuation),
+            },
+        )
+
+    def test_base_masks_preserve_method_order_budget_and_score_routing(self) -> None:
+        layers = [["layer0"], ["layer1"]]
+        magnitude_scores = {
+            "layer0": torch.tensor([6.0, 5.0, 4.0, 3.0, 2.0, 1.0]),
+            "layer1": torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0]),
+        }
+        components = {
+            "first_order": {
+                "layer0": torch.tensor([1.0, 3.0, 5.0, 2.0, 4.0, 6.0]),
+                "layer1": torch.tensor([6.0, 4.0, 2.0, 5.0, 3.0, 1.0]),
+            },
+            "second_order": {
+                "layer0": torch.tensor([2.0, 1.0, 4.0, 3.0, 6.0, 5.0]),
+                "layer1": torch.tensor([5.0, 6.0, 3.0, 4.0, 1.0, 2.0]),
+            },
+            "taylor": {
+                "layer0": torch.tensor([0.1, 0.2, 0.4, 0.8, 1.6, 3.2]),
+                "layer1": torch.tensor([0.5, 0.6, 0.8, 1.1, 1.5, 2.0]),
+            },
+        }
+        orders = residual_masks.layer_score_orders(layers, components["taylor"])
+
+        masks, metadata = residual_methods.build_masks(
+            layers,
+            magnitude_scores,
+            components,
+            prune_ratio=0.5,
+            max_layer_ratio=0.8,
+            taylor_score_orders=orders,
+        )
+
+        self.assertEqual(list(masks), BASE_METHODS[:-1])
+        self.assertEqual(metadata["eligible_parameters"], 12)
+        self.assertEqual(metadata["target_pruned"], 6)
+        self.assertEqual(metadata["layer_sizes"], [6, 6])
+        self.assertEqual(metadata["uniform_layer_counts"], [3, 3])
+        self.assertEqual(sum(metadata["weibull_layer_counts"]), 6)
+        for method, method_masks in masks.items():
+            with self.subTest(method=method):
+                self.assertEqual(sum((~mask).sum().item() for mask in method_masks.values()), 6)
+        for method in BASE_METHODS[:4]:
+            with self.subTest(method=method):
+                self.assertEqual(
+                    [int((~masks[method][name]).sum().item()) for name in ("layer0", "layer1")],
+                    [3, 3],
+                )
+
+        expected_scores = {
+            "residual_magnitude_uniform": magnitude_scores,
+            "first_order_uniform": components["first_order"],
+            "second_order_uniform": components["second_order"],
+            "taylor_uniform": components["taylor"],
+            "taylor_probe_trust": components["taylor"],
+            "taylor_spectral_k1": components["taylor"],
+            "taylor_quantile_global_smooth_l0p1": components["taylor"],
+        }
+        for method, expected in expected_scores.items():
+            with self.subTest(method=method):
+                self.assertIs(
+                    residual_methods.score_for_method(method, magnitude_scores, components),
+                    expected,
+                )
+
+    def test_aggregate_preserves_schema_seed_order_and_paired_deltas(self) -> None:
+        methods = BASE_METHODS + [
+            "taylor_spectral_k1",
+            "taylor_quantile_global_smooth_l0p1",
+        ]
+
+        def seed_result(offset: float) -> dict:
+            method_results = {}
+            for index, method in enumerate(methods):
+                immediate = 10.0 - index + offset
+                method_results[method] = {
+                    "immediate": {"perplexity": immediate},
+                    "final": {"perplexity": immediate - 2.0},
+                }
+            return {
+                "current": {"perplexity": 20.0 + offset},
+                "no_compression_final": {"perplexity": 18.0 + offset},
+                "methods": method_results,
+            }
+
+        aggregate = residual_reporting.aggregate(
+            {"43": seed_result(1.0), "42": seed_result(0.0)}
+        )
+
+        self.assertEqual(
+            list(aggregate),
+            [
+                "current_perplexity",
+                "no_compression_final_perplexity",
+                "methods",
+                "paired_comparisons",
+            ],
+        )
+        self.assertEqual(aggregate["current_perplexity"]["values"], [20.0, 21.0])
+        self.assertEqual(
+            aggregate["methods"]["taylor_uniform"]["immediate_perplexity"]["values"],
+            [7.0, 8.0],
+        )
+        self.assertEqual(
+            aggregate["methods"]["taylor_uniform"][
+                "paired_immediate_delta_vs_magnitude"
+            ]["values"],
+            [-3.0, -3.0],
+        )
+        comparisons = aggregate["paired_comparisons"]
+        self.assertEqual(
+            comparisons["taylor_vs_first_order"]["immediate_perplexity_delta"]["values"],
+            [-2.0, -2.0],
+        )
+        self.assertEqual(
+            comparisons["spectral_k1_vs_probe_trust"]["immediate_perplexity_delta"]
+            ["values"],
+            [-1.0, -1.0],
+        )
+        self.assertEqual(
+            comparisons["quantile_global_smooth_l0p1_vs_weibull"]
+            ["immediate_perplexity_delta"]["values"],
+            [-4.0, -4.0],
+        )
+        self.assertEqual(
+            list(residual_reporting.summarize_values([3.0])),
+            ["values", "mean", "std", "ci95"],
+        )
+        self.assertIsNone(residual_reporting.summarize_values([3.0])["std"])
+        json.dumps(aggregate, allow_nan=False)
+
+    def test_runner_reexports_moved_public_helpers(self) -> None:
+        aliases = {
+            "clone_model_state_to_cpu": residual_training.clone_model_state_to_cpu,
+            "seeded_training_batches": residual_training.seeded_training_batches,
+            "build_optimizer": residual_training.build_optimizer,
+            "train_segment": residual_training.train_segment,
+            "build_masks": residual_methods.build_masks,
+            "score_for_method": residual_methods.score_for_method,
+            "summarize_values": residual_reporting.summarize_values,
+            "float_slug": residual_methods.float_slug,
+            "aggregate": residual_reporting.aggregate,
+        }
+        for name, owner in aliases.items():
+            with self.subTest(name=name):
+                self.assertIs(getattr(long_runner, name), owner)
+
+
+if __name__ == "__main__":
+    unittest.main()

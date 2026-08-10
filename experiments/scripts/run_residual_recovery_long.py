@@ -6,15 +6,13 @@ import argparse
 import copy
 import gc
 import math
-import statistics
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Mapping, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import torch
-from scipy.stats import t as student_t
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,9 +21,6 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 
 from experiments.lib.residual_allocation import (  # noqa: E402
     calibrate_quantile_smooth_allocation,
-    fit_weibull_mom,
-    uniform_counts,
-    weibull_counts,
 )
 from experiments.lib.residual_calibration import (  # noqa: E402
     calibrate_spectral_allocation,
@@ -33,14 +28,17 @@ from experiments.lib.residual_calibration import (  # noqa: E402
 )
 from experiments.lib.residual_masks import (  # noqa: E402
     MaskDict,
-    TensorDict,
-    global_mask,
     layer_masks,
     layer_rates,
     layer_score_orders,
     mask_metrics,
     mask_overlap,
     restore_with_mask,
+)
+from experiments.lib.residual_methods import (  # noqa: E402
+    build_masks,
+    float_slug,
+    score_for_method,
 )
 from experiments.lib.residual_runtime import (  # noqa: E402
     batch_hash,
@@ -53,13 +51,23 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     optimizer_state_to_cpu,
     peak_memory_bytes,
     reset_peak_memory,
-    set_seed,
     sha256_file,
     write_json,
+)
+from experiments.lib.residual_reporting import (  # noqa: E402
+    aggregate,
+    summarize_values,
 )
 from experiments.lib.residual_scoring import (  # noqa: E402
     compute_block_taylor_scores,
     eligible_layers,
+)
+from experiments.lib.residual_training import (  # noqa: E402
+    build_optimizer,
+    clone_model_state_to_cpu,
+    partition_seed_batches,
+    seeded_training_batches,
+    train_segment,
 )
 
 
@@ -148,221 +156,6 @@ def validate_args(args: argparse.Namespace, seeds: Sequence[int]) -> None:
         raise RuntimeError("CUDA was requested but is unavailable")
 
 
-def clone_model_state_to_cpu(model: torch.nn.Module) -> TensorDict:
-    return {
-        name: value.detach().cpu().clone()
-        for name, value in model.state_dict().items()
-    }
-
-
-def seeded_training_batches(
-    pool: Sequence[Mapping[str, torch.Tensor]],
-    count: int,
-    seed: int,
-) -> Tuple[List[Mapping[str, torch.Tensor]], List[int]]:
-    generator = torch.Generator().manual_seed(seed)
-    indices = torch.randperm(len(pool), generator=generator)[:count].tolist()
-    return [pool[index] for index in indices], indices
-
-
-def build_optimizer(
-    model: torch.nn.Module,
-    state: Mapping,
-    learning_rate: float | None = None,
-) -> torch.optim.Optimizer:
-    optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=0.01)
-    optimizer.load_state_dict(state)
-    if learning_rate is not None:
-        for group in optimizer.param_groups:
-            group["lr"] = learning_rate
-            group["initial_lr"] = learning_rate
-    return optimizer
-
-
-def train_segment(
-    model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.LRScheduler,
-    batches: Sequence[Mapping[str, torch.Tensor]],
-    seed: int,
-    device: str,
-) -> Dict[str, object]:
-    set_seed(seed)
-    model.train()
-    losses = []
-    learning_rates = []
-    started = time.perf_counter()
-    for batch in batches:
-        learning_rates.append(float(optimizer.param_groups[0]["lr"]))
-        optimizer.zero_grad(set_to_none=True)
-        loss = lm_loss(model, batch, device)
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
-        losses.append(loss.item())
-    return {
-        "steps": len(batches),
-        "seconds": time.perf_counter() - started,
-        "train_losses": losses,
-        "learning_rates": learning_rates,
-    }
-
-
-def build_masks(
-    layers: Sequence[Sequence[str]],
-    magnitude_scores: TensorDict,
-    components: Dict[str, TensorDict],
-    prune_ratio: float,
-    max_layer_ratio: float,
-    taylor_score_orders: Sequence[torch.Tensor] | None = None,
-) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
-    taylor_scores = components["taylor"]
-    layer_sizes = [sum(taylor_scores[name].numel() for name in layer) for layer in layers]
-    eligible_count = sum(layer_sizes)
-    target = int(math.floor(prune_ratio * eligible_count))
-    uniform_layer_counts = uniform_counts(layer_sizes, target, prune_ratio)
-
-    fits = []
-    for index, layer in enumerate(layers):
-        values = torch.cat([taylor_scores[name].flatten() for name in layer])
-        fit = fit_weibull_mom(values)
-        fit["layer"] = index
-        fits.append(fit)
-    weibull_layer_counts, weibull_metadata = weibull_counts(
-        fits, layer_sizes, target, prune_ratio, max_layer_ratio
-    )
-    eligible_names = [name for layer in layers for name in layer]
-    masks = {
-        "residual_magnitude_uniform": layer_masks(
-            layers, magnitude_scores, uniform_layer_counts
-        ),
-        "first_order_uniform": layer_masks(
-            layers, components["first_order"], uniform_layer_counts
-        ),
-        "second_order_uniform": layer_masks(
-            layers, components["second_order"], uniform_layer_counts
-        ),
-        "taylor_uniform": layer_masks(
-            layers, taylor_scores, uniform_layer_counts, taylor_score_orders
-        ),
-        "taylor_weibull_mom": layer_masks(
-            layers, taylor_scores, weibull_layer_counts, taylor_score_orders
-        ),
-        "taylor_exact_global": global_mask(eligible_names, taylor_scores, target),
-    }
-    metadata = {
-        "eligible_parameters": eligible_count,
-        "target_pruned": target,
-        "target_eligible_sparsity": prune_ratio,
-        "layer_sizes": layer_sizes,
-        "uniform_layer_counts": uniform_layer_counts,
-        "weibull_layer_counts": weibull_layer_counts,
-        "weibull_fits": fits,
-        "weibull": weibull_metadata,
-    }
-    return masks, metadata
-
-
-def score_for_method(
-    method: str,
-    magnitude_scores: TensorDict,
-    components: Dict[str, TensorDict],
-) -> TensorDict:
-    if method == "residual_magnitude_uniform":
-        return magnitude_scores
-    if method == "first_order_uniform":
-        return components["first_order"]
-    if method == "second_order_uniform":
-        return components["second_order"]
-    return components["taylor"]
-
-
-def summarize_values(values: Sequence[float]) -> Dict[str, object]:
-    mean = statistics.mean(values)
-    if len(values) < 2:
-        return {"values": list(values), "mean": mean, "std": None, "ci95": None}
-    std = statistics.stdev(values)
-    half_width = float(student_t.ppf(0.975, len(values) - 1)) * std / math.sqrt(len(values))
-    return {
-        "values": list(values),
-        "mean": mean,
-        "std": std,
-        "ci95": [mean - half_width, mean + half_width],
-    }
-
-
-def float_slug(value: float) -> str:
-    return f"{value:.8g}".replace("-", "m").replace(".", "p").replace("+", "")
-
-
-def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
-    seeds = sorted(seed_results, key=int)
-    method_names = list(seed_results[seeds[0]]["methods"])
-    output: Dict[str, object] = {
-        "current_perplexity": summarize_values(
-            [seed_results[seed]["current"]["perplexity"] for seed in seeds]
-        ),
-        "no_compression_final_perplexity": summarize_values(
-            [seed_results[seed]["no_compression_final"]["perplexity"] for seed in seeds]
-        ),
-        "methods": {},
-    }
-    for method in method_names:
-        immediate = [
-            seed_results[seed]["methods"][method]["immediate"]["perplexity"]
-            for seed in seeds
-        ]
-        final = [
-            seed_results[seed]["methods"][method]["final"]["perplexity"]
-            for seed in seeds
-        ]
-        magnitude_immediate = [
-            seed_results[seed]["methods"]["residual_magnitude_uniform"]["immediate"]["perplexity"]
-            for seed in seeds
-        ]
-        magnitude_final = [
-            seed_results[seed]["methods"]["residual_magnitude_uniform"]["final"]["perplexity"]
-            for seed in seeds
-        ]
-        output["methods"][method] = {
-            "immediate_perplexity": summarize_values(immediate),
-            "final_perplexity": summarize_values(final),
-            "paired_immediate_delta_vs_magnitude": summarize_values(
-                [value - baseline for value, baseline in zip(immediate, magnitude_immediate)]
-            ),
-            "paired_final_delta_vs_magnitude": summarize_values(
-                [value - baseline for value, baseline in zip(final, magnitude_final)]
-            ),
-        }
-    output["paired_comparisons"] = {}
-    comparisons = {
-        "taylor_vs_first_order": ("taylor_uniform", "first_order_uniform"),
-        "second_order_vs_first_order": ("second_order_uniform", "first_order_uniform"),
-        "weibull_vs_taylor_uniform": ("taylor_weibull_mom", "taylor_uniform"),
-        "exact_global_vs_taylor_uniform": ("taylor_exact_global", "taylor_uniform"),
-        "probe_trust_vs_taylor_uniform": ("taylor_probe_trust", "taylor_uniform"),
-        "probe_trust_vs_weibull": ("taylor_probe_trust", "taylor_weibull_mom"),
-    }
-    for method in method_names:
-        if not method.startswith(("taylor_spectral_k", "taylor_quantile_")):
-            continue
-        label = method.removeprefix("taylor_")
-        comparisons[f"{label}_vs_taylor_uniform"] = (method, "taylor_uniform")
-        comparisons[f"{label}_vs_weibull"] = (method, "taylor_weibull_mom")
-        comparisons[f"{label}_vs_probe_trust"] = (method, "taylor_probe_trust")
-    for label, (left, right) in comparisons.items():
-        comparison = {}
-        for stage in ("immediate", "final"):
-            deltas = [
-                seed_results[seed]["methods"][left][stage]["perplexity"]
-                - seed_results[seed]["methods"][right][stage]["perplexity"]
-                for seed in seeds
-            ]
-            comparison[f"{stage}_perplexity_delta"] = summarize_values(deltas)
-        output["paired_comparisons"][label] = comparison
-    return output
-
-
 def main() -> None:
     args = parse_args()
     seeds = [int(value) for value in args.seeds.split(",") if value.strip()]
@@ -399,12 +192,6 @@ def main() -> None:
     from dacp.utils.data_loader import _load_gpt2_tokenizer
 
     continuation_steps = args.total_steps - args.recovery_step
-    selected_batch_count = (
-        args.total_steps
-        + args.hvp_batches
-        + args.allocation_probe_batches
-        + args.allocation_selection_batches
-    )
     started_at = datetime.now(timezone.utc)
     run_name = started_at.strftime("%Y%m%d_%H%M%S") + "_gpt2m_recovery_long"
     output_path = args.output_dir / f"{run_name}.json"
@@ -457,31 +244,20 @@ def main() -> None:
     for seed_index, seed in enumerate(seeds, start=1):
         print(f"\n=== Seed {seed} ({seed_index}/{len(seeds)}) ===", flush=True)
         seed_started = time.perf_counter()
-        selected, selected_indices = seeded_training_batches(
-            training_pool, selected_batch_count, seed
+        batches = partition_seed_batches(
+            training_pool,
+            args.total_steps,
+            args.recovery_step,
+            args.hvp_batches,
+            args.allocation_probe_batches,
+            args.allocation_selection_batches,
+            seed,
         )
-        pre_batches = selected[: args.recovery_step]
-        score_start = args.recovery_step
-        probe_start = score_start + args.hvp_batches
-        selection_start = probe_start + args.allocation_probe_batches
-        continuation_start = selection_start + args.allocation_selection_batches
-        score_batches = selected[score_start:probe_start]
-        probe_batches = selected[probe_start:selection_start]
-        selection_batches = selected[selection_start:continuation_start]
-        continuation_batches = selected[continuation_start:]
-        if len(continuation_batches) != continuation_steps:
-            raise RuntimeError("Internal batch partition does not match continuation steps")
 
         seed_result: Dict[str, object] = {
             "seed": seed,
-            "selected_pool_indices": selected_indices,
-            "data_hashes": {
-                "pre_recovery": batch_hash(pre_batches),
-                "scoring": batch_hash(score_batches),
-                "allocation_probe": batch_hash(probe_batches),
-                "allocation_selection": batch_hash(selection_batches),
-                "continuation": batch_hash(continuation_batches),
-            },
+            "selected_pool_indices": batches.selected_pool_indices,
+            "data_hashes": batches.data_hashes(),
             "methods": {},
         }
         results["seed_results"][str(seed)] = seed_result
@@ -500,7 +276,7 @@ def main() -> None:
             optimizer, T_max=args.total_steps, eta_min=0.0
         )
         pre_metrics = train_segment(
-            model, optimizer, scheduler, pre_batches, seed, args.device
+            model, optimizer, scheduler, batches.pre_recovery, seed, args.device
         )
         current_state = clone_model_state_to_cpu(model)
         current_optimizer_state = optimizer_state_to_cpu(optimizer.state_dict())
@@ -527,7 +303,7 @@ def main() -> None:
         reset_peak_memory(args.device)
         components_raw, scoring_metrics = compute_block_taylor_scores(
             model,
-            score_batches,
+            batches.scoring,
             layers,
             delta,
             args.device,
@@ -564,8 +340,8 @@ def main() -> None:
             allocation_metadata["target_pruned"],
             args.prune_ratio,
             args.max_layer_ratio,
-            probe_batches,
-            selection_batches,
+            batches.allocation_probe,
+            batches.allocation_selection,
             args.allocation_probe_radius,
             trust_radii,
             args.device,
@@ -586,7 +362,7 @@ def main() -> None:
                 allocation_metadata["target_pruned"],
                 args.prune_ratio,
                 args.max_layer_ratio,
-                probe_batches,
+                batches.allocation_probe,
                 args.spectral_probe_radius,
                 spectral_ranks,
                 args.spectral_trust_radius,
@@ -690,7 +466,7 @@ def main() -> None:
                 model,
                 optimizer,
                 scheduler,
-                continuation_batches,
+                batches.continuation,
                 seed + 1_000_000,
                 args.device,
             )
