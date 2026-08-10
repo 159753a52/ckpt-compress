@@ -269,6 +269,73 @@ class WikiText2Dataset(Dataset):
         }
 
 
+def _get_wikitext_dataloader(
+    dataset_config: str,
+    split: str = 'train',
+    batch_size: int = 8,
+    seq_length: int = 512,
+    max_samples: Optional[int] = None,
+    num_workers: int = 0,
+    shuffle: Optional[bool] = None,
+    local_path: Optional[str] = None,
+) -> DataLoader:
+    """Build either WikiText loader from one shared data path."""
+    if not HAS_HF:
+        raise ImportError(
+            "需要安装 transformers 和 datasets 库。"
+            "请运行: pip install transformers datasets"
+        )
+
+    valid_splits = ('train', 'validation', 'test')
+    if split not in valid_splits:
+        raise ValueError(
+            f"Invalid split: {split}. Must be one of {valid_splits}"
+        )
+
+    tokenizer = _load_gpt2_tokenizer()
+
+    if local_path is not None:
+        import os
+
+        if os.path.isfile(local_path):
+            file_path = local_path
+        else:
+            split_file_map = {
+                'train': 'train.txt',
+                'validation': 'valid.txt',
+                'test': 'test.txt',
+            }
+            file_path = os.path.join(local_path, split_file_map[split])
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Local data file not found: {file_path}")
+
+        with open(file_path, 'r', encoding='utf-8') as f:
+            texts = f.readlines()
+        print(f"Loaded {len(texts)} lines from local file: {file_path}")
+    else:
+        dataset = load_dataset('wikitext', dataset_config, split=split)
+        texts = dataset['text']
+
+    wiki_dataset = WikiText2Dataset(
+        texts=texts,
+        tokenizer=tokenizer,
+        seq_length=seq_length,
+        max_samples=max_samples,
+    )
+
+    if shuffle is None:
+        shuffle = (split == 'train')
+
+    return DataLoader(
+        wiki_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=True,
+    )
+
+
 def get_wikitext2_dataloader(
     split: str = 'train',
     batch_size: int = 8,
@@ -297,67 +364,16 @@ def get_wikitext2_dataloader(
         ValueError: 如果 split 无效
         ImportError: 如果 transformers 或 datasets 未安装
     """
-    if not HAS_HF:
-        raise ImportError(
-            "需要安装 transformers 和 datasets 库。"
-            "请运行: pip install transformers datasets"
-        )
-
-    valid_splits = ('train', 'validation', 'test')
-    if split not in valid_splits:
-        raise ValueError(
-            f"Invalid split: {split}. Must be one of {valid_splits}"
-        )
-
-    tokenizer = _load_gpt2_tokenizer()
-
-    # 加载数据集
-    if local_path is not None:
-        # 从本地文件加载
-        import os
-        if os.path.isfile(local_path):
-            file_path = local_path
-        else:
-            # 尝试根据 split 构建文件路径
-            split_file_map = {
-                'train': 'train.txt',
-                'validation': 'valid.txt',
-                'test': 'test.txt',
-            }
-            file_path = os.path.join(local_path, split_file_map[split])
-
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Local data file not found: {file_path}")
-
-        with open(file_path, 'r', encoding='utf-8') as f:
-            texts = f.readlines()
-        print(f"Loaded {len(texts)} lines from local file: {file_path}")
-    else:
-        dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split=split)
-        texts = dataset['text']
-
-    # 创建数据集
-    wiki_dataset = WikiText2Dataset(
-        texts=texts,
-        tokenizer=tokenizer,
+    return _get_wikitext_dataloader(
+        dataset_config='wikitext-2-raw-v1',
+        split=split,
+        batch_size=batch_size,
         seq_length=seq_length,
         max_samples=max_samples,
-    )
-
-    # 默认 shuffle 设置
-    if shuffle is None:
-        shuffle = (split == 'train')
-
-    # 创建数据加载器
-    loader = DataLoader(
-        wiki_dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=True,
+        shuffle=shuffle,
+        local_path=local_path,
     )
-
-    return loader
 
 
 def get_wikitext103_dataloader(
@@ -393,68 +409,16 @@ def get_wikitext103_dataloader(
         ValueError: 如果 split 无效
         ImportError: 如果 transformers 或 datasets 未安装
     """
-    if not HAS_HF:
-        raise ImportError(
-            "需要安装 transformers 和 datasets 库。"
-            "请运行: pip install transformers datasets"
-        )
-
-    valid_splits = ('train', 'validation', 'test')
-    if split not in valid_splits:
-        raise ValueError(
-            f"Invalid split: {split}. Must be one of {valid_splits}"
-        )
-
-    tokenizer = _load_gpt2_tokenizer()
-
-    # 加载数据集
-    if local_path is not None:
-        # 从本地文件加载
-        import os
-        if os.path.isfile(local_path):
-            file_path = local_path
-        else:
-            # 尝试根据 split 构建文件路径
-            split_file_map = {
-                'train': 'train.txt',
-                'validation': 'valid.txt',
-                'test': 'test.txt',
-            }
-            file_path = os.path.join(local_path, split_file_map[split])
-
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Local data file not found: {file_path}")
-
-        with open(file_path, 'r', encoding='utf-8') as f:
-            texts = f.readlines()
-        print(f"Loaded {len(texts)} lines from local file: {file_path}")
-    else:
-        # 从 HuggingFace 加载 WikiText-103
-        dataset = load_dataset('wikitext', 'wikitext-103-raw-v1', split=split)
-        texts = dataset['text']
-
-    # 创建数据集（复用 WikiText2Dataset 类）
-    wiki_dataset = WikiText2Dataset(
-        texts=texts,
-        tokenizer=tokenizer,
+    return _get_wikitext_dataloader(
+        dataset_config='wikitext-103-raw-v1',
+        split=split,
+        batch_size=batch_size,
         seq_length=seq_length,
         max_samples=max_samples,
-    )
-
-    # 默认 shuffle 设置
-    if shuffle is None:
-        shuffle = (split == 'train')
-
-    # 创建数据加载器
-    loader = DataLoader(
-        wiki_dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=True,
+        shuffle=shuffle,
+        local_path=local_path,
     )
-
-    return loader
 
 
 class TinyImageNetDataset(Dataset):
