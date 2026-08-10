@@ -7,7 +7,7 @@
 import torch
 from torch.utils.data import DataLoader, Subset, Dataset
 from torchvision import datasets, transforms
-from typing import Tuple, Optional, Dict
+from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 try:
     from datasets import load_dataset
@@ -706,6 +706,80 @@ def get_tiny_imagenet_loaders(
 # GLUE 数据集加载器
 # =============================================================================
 
+_GLUE_TEXT_FIELDS = {
+    'cola': ('sentence',),
+    'sst2': ('sentence',),
+    'mrpc': ('sentence1', 'sentence2'),
+    'qqp': ('question1', 'question2'),
+    'stsb': ('sentence1', 'sentence2'),
+    'mnli': ('premise', 'hypothesis'),
+    'qnli': ('question', 'sentence'),
+    'rte': ('sentence1', 'sentence2'),
+    'wnli': ('sentence1', 'sentence2'),
+}
+
+
+def _glue_text_values(item: Mapping, dataset_name: str) -> Tuple[str, ...]:
+    """Resolve the tokenizer inputs for one GLUE record."""
+    fields = _GLUE_TEXT_FIELDS.get(dataset_name)
+    if fields is not None:
+        return tuple(item[field] for field in fields)
+    if 'sentence1' in item and 'sentence2' in item:
+        return item['sentence1'], item['sentence2']
+    if 'premise' in item and 'hypothesis' in item:
+        return item['premise'], item['hypothesis']
+    return (item.get('sentence', ''),)
+
+
+class GLUEDataset(Dataset):
+    """Tokenize one HuggingFace GLUE split on demand."""
+
+    def __init__(self, dataset, tokenizer, dataset_name: str, max_length: int = 128):
+        self.dataset = dataset
+        self.tokenizer = tokenizer
+        self.dataset_name = dataset_name
+        self.max_length = max_length
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        item = self.dataset[idx]
+        inputs = self.tokenizer(
+            *_glue_text_values(item, self.dataset_name),
+            padding='max_length',
+            truncation=True,
+            max_length=self.max_length,
+            return_tensors='pt',
+        )
+        label_dtype = torch.float32 if self.dataset_name == 'stsb' else torch.long
+        encoded = {key: value.squeeze(0) for key, value in inputs.items()}
+        encoded['labels'] = torch.tensor(item['label'], dtype=label_dtype)
+        return encoded
+
+
+def _get_glue_split_loaders(
+    dataset_name: str,
+    split_subsets: Sequence[Tuple[str, Optional[int]]],
+    batch_size: int,
+    data_dir: str,
+    max_length: int,
+    num_workers: int,
+) -> Tuple[DataLoader, ...]:
+    """Build an ordered set of loaders with one shared GLUE configuration."""
+    return tuple(
+        get_glue_dataloader(
+            dataset_name=dataset_name,
+            split=split,
+            batch_size=batch_size,
+            data_dir=data_dir,
+            max_length=max_length,
+            num_workers=num_workers,
+            subset=subset,
+        )
+        for split, subset in split_subsets
+    )
+
 
 def get_glue_dataloader(
     dataset_name: str,
@@ -750,95 +824,8 @@ def get_glue_dataloader(
     # 加载 tokenizer（使用 BERT tokenizer）
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
 
-    class GLUEDataset(Dataset):
-        """GLUE 数据集包装器。"""
-
-        def __init__(self, dataset, tokenizer, max_length: int = 128):
-            self.dataset = dataset
-            self.tokenizer = tokenizer
-            self.max_length = max_length
-
-        def __len__(self):
-            return len(self.dataset)
-
-        def __getitem__(self, idx):
-            item = self.dataset[idx]
-
-            # 根据不同任务处理输入
-            if dataset_name == 'stsb':
-                # STS-B: 句子对 + 回归标签 (sentence1, sentence2)
-                inputs = self.tokenizer(
-                    item['sentence1'],
-                    item['sentence2'],
-                    padding='max_length',
-                    truncation=True,
-                    max_length=self.max_length,
-                    return_tensors='pt',
-                )
-                label = torch.tensor(item['label'], dtype=torch.float32)
-            elif dataset_name == 'mnli':
-                # MNLI: 句子对 + 三分类标签 (premise, hypothesis)
-                inputs = self.tokenizer(
-                    item['premise'],
-                    item['hypothesis'],
-                    padding='max_length',
-                    truncation=True,
-                    max_length=self.max_length,
-                    return_tensors='pt',
-                )
-                label = torch.tensor(item['label'], dtype=torch.long)
-            elif dataset_name == 'sst2':
-                # SST-2: 单句子 + 二分类标签
-                inputs = self.tokenizer(
-                    item['sentence'],
-                    padding='max_length',
-                    truncation=True,
-                    max_length=self.max_length,
-                    return_tensors='pt',
-                )
-                label = torch.tensor(item['label'], dtype=torch.long)
-            else:
-                # 通用处理：尝试自动检测
-                if 'sentence1' in item and 'sentence2' in item:
-                    inputs = self.tokenizer(
-                        item['sentence1'],
-                        item['sentence2'],
-                        padding='max_length',
-                        truncation=True,
-                        max_length=self.max_length,
-                        return_tensors='pt',
-                    )
-                elif 'premise' in item and 'hypothesis' in item:
-                    inputs = self.tokenizer(
-                        item['premise'],
-                        item['hypothesis'],
-                        padding='max_length',
-                        truncation=True,
-                        max_length=self.max_length,
-                        return_tensors='pt',
-                    )
-                else:
-                    inputs = self.tokenizer(
-                        item.get('sentence', ''),
-                        padding='max_length',
-                        truncation=True,
-                        max_length=self.max_length,
-                        return_tensors='pt',
-                    )
-                # 根据任务类型确定标签类型
-                if dataset_name == 'stsb':
-                    label = torch.tensor(item['label'], dtype=torch.float32)
-                else:
-                    label = torch.tensor(item['label'], dtype=torch.long)
-
-            # 移除 batch 维度
-            inputs = {k: v.squeeze(0) for k, v in inputs.items()}
-            inputs['labels'] = label
-
-            return inputs
-
     # 创建数据集
-    glue_dataset = GLUEDataset(dataset, tokenizer, max_length)
+    glue_dataset = GLUEDataset(dataset, tokenizer, dataset_name, max_length)
 
     # 应用子集
     glue_dataset = _apply_subset(glue_dataset, subset, 'subset')
@@ -879,24 +866,13 @@ def get_sst2_loaders(
     返回:
         (train_loader, val_loader) 元组
     """
-    train_loader = get_glue_dataloader(
-        dataset_name='sst2',
-        split='train',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=train_subset,
-    )
-
-    val_loader = get_glue_dataloader(
-        dataset_name='sst2',
-        split='validation',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=val_subset,
+    train_loader, val_loader = _get_glue_split_loaders(
+        'sst2',
+        (('train', train_subset), ('validation', val_subset)),
+        batch_size,
+        data_dir,
+        max_length,
+        num_workers,
     )
 
     return train_loader, val_loader
@@ -929,34 +905,19 @@ def get_mnli_loaders(
     返回:
         (train_loader, val_matched_loader, val_mismatched_loader) 元组
     """
-    train_loader = get_glue_dataloader(
-        dataset_name='mnli',
-        split='train',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=train_subset,
-    )
-
-    val_matched_loader = get_glue_dataloader(
-        dataset_name='mnli',
-        split='validation_matched',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=val_matched_subset,
-    )
-
-    val_mismatched_loader = get_glue_dataloader(
-        dataset_name='mnli',
-        split='validation_mismatched',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=val_mismatched_subset,
+    train_loader, val_matched_loader, val_mismatched_loader = (
+        _get_glue_split_loaders(
+            'mnli',
+            (
+                ('train', train_subset),
+                ('validation_matched', val_matched_subset),
+                ('validation_mismatched', val_mismatched_subset),
+            ),
+            batch_size,
+            data_dir,
+            max_length,
+            num_workers,
+        )
     )
 
     return train_loader, val_matched_loader, val_mismatched_loader
@@ -986,24 +947,13 @@ def get_stsb_loaders(
     返回:
         (train_loader, val_loader) 元组
     """
-    train_loader = get_glue_dataloader(
-        dataset_name='stsb',
-        split='train',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=train_subset,
-    )
-
-    val_loader = get_glue_dataloader(
-        dataset_name='stsb',
-        split='validation',
-        batch_size=batch_size,
-        data_dir=data_dir,
-        max_length=max_length,
-        num_workers=num_workers,
-        subset=val_subset,
+    train_loader, val_loader = _get_glue_split_loaders(
+        'stsb',
+        (('train', train_subset), ('validation', val_subset)),
+        batch_size,
+        data_dir,
+        max_length,
+        num_workers,
     )
 
     return train_loader, val_loader
