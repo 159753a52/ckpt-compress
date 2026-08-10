@@ -28,6 +28,7 @@ class TestResidualShortMethods(unittest.TestCase):
             eligible_count=8,
             model_count=10,
             target_pruned=4,
+            prune_ratio=0.5,
             delta=delta,
             magnitude_scores={name: value.abs() for name, value in delta.items()},
         )
@@ -60,7 +61,7 @@ class TestResidualShortMethods(unittest.TestCase):
         self.assertEqual(scope.target_pruned, 3)
         self.assertEqual(scope.delta["first"].dtype, torch.float32)
         torch.testing.assert_close(scope.magnitude_scores["first"], scope.delta["first"].abs())
-        result = scope.to_result_dict(0.375)
+        result = scope.to_result_dict()
         self.assertEqual(
             list(result),
             [
@@ -87,7 +88,6 @@ class TestResidualShortMethods(unittest.TestCase):
         masks, allocation = short_methods.build_short_gate_masks(
             scope,
             taylor_scores,
-            prune_ratio=0.5,
             max_layer_ratio=0.75,
         )
         diagnostics = short_methods.diagnose_short_gate_masks(

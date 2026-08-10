@@ -12,6 +12,7 @@ import torch.nn as nn
 
 import experiments.lib.residual_recovery as residual_recovery
 import experiments.lib.residual_short_experiment as short_runner
+import experiments.scripts.run_v100_allocation_gate as short_cli
 from experiments.lib.residual_protocol import SHORT_GATE_METHODS
 from experiments.lib.residual_short_methods import ShortResidualScope
 
@@ -31,6 +32,7 @@ class TrackingModel(nn.Module):
 class TestResidualShortExperiment(unittest.TestCase):
     def test_recovery_facade_reexports_short_experiment_entrypoints(self) -> None:
         self.assertIs(residual_recovery.main, short_runner.main)
+        self.assertIs(short_cli.main, short_runner.main)
         self.assertIs(
             residual_recovery.continue_training,
             short_runner.continue_training,
@@ -122,6 +124,7 @@ class TestResidualShortExperiment(unittest.TestCase):
             eligible_count=4,
             model_count=4,
             target_pruned=1,
+            prune_ratio=0.30,
             delta=delta,
             magnitude_scores=delta,
         )

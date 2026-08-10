@@ -41,17 +41,18 @@ class ShortResidualScope:
     eligible_count: int
     model_count: int
     target_pruned: int
+    prune_ratio: float
     delta: TensorDict
     magnitude_scores: TensorDict
 
-    def to_result_dict(self, prune_ratio: float) -> Dict[str, object]:
+    def to_result_dict(self) -> Dict[str, object]:
         return {
             "transformer_layers": len(self.layers),
             "eligible_tensors": len(self.eligible_names),
             "eligible_parameters": self.eligible_count,
             "whole_model_parameters": self.model_count,
             "target_pruned": self.target_pruned,
-            "target_eligible_sparsity": prune_ratio,
+            "target_eligible_sparsity": self.prune_ratio,
             "target_whole_model_sparsity": self.target_pruned / self.model_count,
             "layer_sizes": self.layer_sizes,
             "eligible_names": self.eligible_names,
@@ -82,6 +83,7 @@ def build_short_residual_scope(
         eligible_count=eligible_count,
         model_count=model_count,
         target_pruned=target_pruned,
+        prune_ratio=prune_ratio,
         delta=delta,
         magnitude_scores={name: values.abs() for name, values in delta.items()},
     )
@@ -90,7 +92,6 @@ def build_short_residual_scope(
 def build_short_gate_masks(
     scope: ShortResidualScope,
     taylor_scores: Mapping[str, torch.Tensor],
-    prune_ratio: float,
     max_layer_ratio: float,
 ) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
     """Fit allocations and construct the short gate's four equal-budget masks."""
@@ -105,13 +106,13 @@ def build_short_gate_masks(
     uniform_layer_counts = uniform_counts(
         scope.layer_sizes,
         scope.target_pruned,
-        prune_ratio,
+        scope.prune_ratio,
     )
     weibull_layer_counts, weibull_allocation = weibull_counts(
         fits,
         scope.layer_sizes,
         scope.target_pruned,
-        prune_ratio,
+        scope.prune_ratio,
         max_layer_ratio,
     )
     masks = {

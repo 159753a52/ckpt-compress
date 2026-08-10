@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 
 from experiments.lib.residual_masks import MaskDict, restore_with_mask
+from experiments.lib.residual_protocol import NO_COMPRESSION_METHOD
 from experiments.lib.residual_runtime import (
     batch_hash,
     checkpoint_optimizer_state,
@@ -157,7 +158,7 @@ def main() -> None:
     )
     layers = scope.layers
     delta = scope.delta
-    results["parameter_scope"] = scope.to_result_dict(args.prune_ratio)
+    results["parameter_scope"] = scope.to_result_dict()
     write_json(output_path, results)
 
     print("[3/6] Evaluating pristine reference and current snapshots", flush=True)
@@ -190,7 +191,6 @@ def main() -> None:
     masks, allocation = build_short_gate_masks(
         scope,
         taylor_scores,
-        args.prune_ratio,
         args.max_layer_ratio,
     )
     results["allocation"] = allocation
@@ -225,7 +225,9 @@ def main() -> None:
             flush=True,
         )
         optimizer_state = checkpoint_optimizer_state(args.current_checkpoint)
-        trajectories: List[Tuple[str, MaskDict | None]] = [("no_compression", None)]
+        trajectories: List[Tuple[str, MaskDict | None]] = [
+            (NO_COMPRESSION_METHOD, None)
+        ]
         trajectories.extend(masks.items())
         for method, method_masks in trajectories:
             if method_masks is None:
@@ -247,7 +249,7 @@ def main() -> None:
                 args.device,
             )
             continuation["evaluation"] = evaluate_lm(model, eval_batches, args.device)
-            if method == "no_compression":
+            if method == NO_COMPRESSION_METHOD:
                 results["continuation_no_compression"] = continuation
             else:
                 results["methods"][method]["continuation"] = continuation
