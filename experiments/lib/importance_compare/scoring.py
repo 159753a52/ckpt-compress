@@ -25,12 +25,25 @@ from dacp.pruning.importance import (
 from dacp.pruning.pruner import filter_prunable_params
 
 
+_SUPPORTED_METHODS = frozenset(
+    {"magnitude", "first-order", "second-order-hvp", "residual-magnitude"}
+)
+_SUPPORTED_TASK_TYPES = frozenset({"lm", "cls", "cv", "reg"})
+_SUPPORTED_HVP_MODES = frozenset({"full", "block"})
+
+
 # ------------------------------------------------------------------ #
 #  核心: 梯度 & HVP 收集
 # ------------------------------------------------------------------ #
 
 def _make_loss_fn(task_type: str):
     """返回 loss_fn(model, batch) -> scalar 的闭包。"""
+    if task_type not in _SUPPORTED_TASK_TYPES:
+        raise ValueError(
+            f"Unknown task_type: {task_type}. "
+            f"Available: {sorted(_SUPPORTED_TASK_TYPES)}"
+        )
+
     criterion = nn.CrossEntropyLoss()
 
     def lm_loss(model, batch):
@@ -40,8 +53,10 @@ def _make_loss_fn(task_type: str):
         logits = outputs.logits if hasattr(outputs, 'logits') else outputs
         shift_logits = logits[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
-        return criterion(shift_logits.view(-1, shift_logits.size(-1)),
-                         shift_labels.view(-1))
+        return criterion(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1),
+        )
 
     def cls_loss(model, batch):
         input_ids = batch['input_ids']
@@ -58,6 +73,8 @@ def _make_loss_fn(task_type: str):
         logits = outputs.logits if hasattr(outputs, 'logits') else outputs
         return criterion(logits, labels)
 
+    # Keep the historical regression contract until a dedicated loss migration
+    # can update scoring and evaluation together.
     return {'lm': lm_loss, 'cls': cls_loss, 'cv': cv_loss, 'reg': cls_loss}[task_type]
 
 
@@ -69,6 +86,12 @@ def _collect_gradients(
     device: str,
 ) -> Dict[str, torch.Tensor]:
     """累积梯度并平均。"""
+    if (not isinstance(num_batches, int) or isinstance(num_batches, bool)
+            or num_batches < 1):
+        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
+    if not cached_train:
+        raise ValueError("cached_train must contain at least one batch")
+
     model.train()
     loss_fn = _make_loss_fn(task_type)
     accumulated = defaultdict(lambda: 0)
@@ -200,6 +223,39 @@ def compute_scores_by_method(
     返回:
         {method_name: {param_name: score_tensor}} 字典
     """
+    if isinstance(methods, str):
+        raise ValueError("methods must be a sequence of method names, not a string")
+    methods = list(dict.fromkeys(methods))
+    unknown_methods = sorted(set(methods) - _SUPPORTED_METHODS)
+    if unknown_methods:
+        raise ValueError(
+            f"Unknown importance method(s): {unknown_methods}. "
+            f"Available: {sorted(_SUPPORTED_METHODS)}"
+        )
+    if not methods:
+        return {}
+    if task_type not in _SUPPORTED_TASK_TYPES:
+        raise ValueError(
+            f"Unknown task_type: {task_type}. "
+            f"Available: {sorted(_SUPPORTED_TASK_TYPES)}"
+        )
+    if hvp_mode not in _SUPPORTED_HVP_MODES:
+        raise ValueError(
+            f"Unknown hvp_mode: {hvp_mode}. "
+            f"Available: {sorted(_SUPPORTED_HVP_MODES)}"
+        )
+    if not isinstance(hvp_batches, int) or isinstance(hvp_batches, bool) or hvp_batches < 1:
+        raise ValueError(f"hvp_batches must be a positive integer, got {hvp_batches}")
+    if grad_batches_first_order is not None and (
+        not isinstance(grad_batches_first_order, int)
+        or isinstance(grad_batches_first_order, bool)
+        or grad_batches_first_order < 1
+    ):
+        raise ValueError(
+            "grad_batches_first_order must be a positive integer or None, "
+            f"got {grad_batches_first_order}"
+        )
+
     device = next(model.parameters()).device
     results: Dict[str, Dict[str, torch.Tensor]] = {}
 
