@@ -22,6 +22,16 @@ class TestResidualLongExperiment(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pool size"):
             residual_training.seeded_training_batches(pool, 2, seed=0)
 
+    def test_partition_rejects_negative_counts_and_step_overflow(self) -> None:
+        with self.assertRaisesRegex(ValueError, "hvp_batches"):
+            residual_training.partition_seed_batches(
+                [], 1, 0, -1, 0, 0, seed=0
+            )
+        with self.assertRaisesRegex(ValueError, "recovery_step cannot"):
+            residual_training.partition_seed_batches(
+                [], 1, 2, 0, 0, 0, seed=0
+            )
+
     def test_partition_is_deterministic_disjoint_and_rng_local(self) -> None:
         pool = [
             {

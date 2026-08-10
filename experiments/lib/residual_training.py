@@ -56,6 +56,12 @@ def seeded_training_batches(
     return [pool[index] for index in indices], indices
 
 
+def _validate_non_negative_count(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer, got {value}")
+    return value
+
+
 def partition_seed_batches(
     pool: Sequence[Mapping[str, torch.Tensor]],
     total_steps: int,
@@ -65,6 +71,20 @@ def partition_seed_batches(
     allocation_selection_batches: int,
     seed: int,
 ) -> SeedBatchPartition:
+    total_steps = _validate_non_negative_count("total_steps", total_steps)
+    recovery_step = _validate_non_negative_count("recovery_step", recovery_step)
+    hvp_batches = _validate_non_negative_count("hvp_batches", hvp_batches)
+    allocation_probe_batches = _validate_non_negative_count(
+        "allocation_probe_batches", allocation_probe_batches
+    )
+    allocation_selection_batches = _validate_non_negative_count(
+        "allocation_selection_batches", allocation_selection_batches
+    )
+    if recovery_step > total_steps:
+        raise ValueError(
+            f"recovery_step cannot exceed total_steps: "
+            f"recovery_step={recovery_step}, total_steps={total_steps}"
+        )
     selected_count = (
         total_steps
         + hvp_batches
