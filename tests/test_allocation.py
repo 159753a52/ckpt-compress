@@ -28,6 +28,21 @@ class TestGlobalTopKAllocation(unittest.TestCase):
         )
         self.assertEqual(rates, {"left": 2 / 3, "right": 0.0})
 
+    def test_boundary_ratios_do_not_use_the_approximate_path(self) -> None:
+        scores = {
+            "empty": torch.empty(0),
+            "active": torch.ones(3),
+        }
+
+        self.assertEqual(
+            GlobalTopKAllocation().allocate(scores, 0.0),
+            {"empty": 0.0, "active": 0.0},
+        )
+        self.assertEqual(
+            GlobalTopKAllocation().allocate(scores, 1.0),
+            {"empty": 0.0, "active": 1.0},
+        )
+
     def test_empty_layers_do_not_divide_by_zero(self) -> None:
         scores = {
             "empty": torch.empty(0),

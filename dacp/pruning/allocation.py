@@ -103,6 +103,13 @@ class GlobalTopKAllocation(AllocationStrategy):
         total_params = sum(layer_sizes.values())
         if total_params == 0:
             return {name: 0.0 for name in scores}
+        if global_prune_ratio == 0.0:
+            return {name: 0.0 for name in scores}
+        if global_prune_ratio == 1.0:
+            return {
+                name: 1.0 if layer_sizes[name] else 0.0
+                for name in scores
+            }
 
         prune_count = int(total_params * global_prune_ratio)
         
