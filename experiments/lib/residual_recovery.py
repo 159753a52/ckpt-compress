@@ -17,7 +17,6 @@ full model weight.
 from __future__ import annotations
 
 import gc
-import math
 import sys
 import time
 from datetime import datetime, timezone
@@ -102,6 +101,11 @@ from experiments.lib.residual_scoring import (  # noqa: E402
 from experiments.lib.residual_short_config import (  # noqa: E402
     parse_args,
     validate_short_config,
+)
+from experiments.lib.residual_short_methods import (  # noqa: E402
+    build_short_gate_masks,
+    build_short_residual_scope,
+    diagnose_short_gate_masks,
 )
 
 
@@ -215,28 +219,15 @@ def main() -> None:
         "eval_batches_sha256": batch_hash(eval_batches),
     }
 
-    layers = eligible_layers(model)
-    eligible_names = [name for layer in layers for name in layer]
-    layer_sizes = [sum(current_state[name].numel() for name in layer) for layer in layers]
-    eligible_count = sum(layer_sizes)
-    model_count = sum(parameter.numel() for parameter in model.parameters())
-    target_pruned = int(math.floor(args.prune_ratio * eligible_count))
-    delta = {
-        name: current_state[name].detach().float() - reference_state[name].detach().float()
-        for name in eligible_names
-    }
-    magnitude_scores = {name: values.abs() for name, values in delta.items()}
-    results["parameter_scope"] = {
-        "transformer_layers": len(layers),
-        "eligible_tensors": len(eligible_names),
-        "eligible_parameters": eligible_count,
-        "whole_model_parameters": model_count,
-        "target_pruned": target_pruned,
-        "target_eligible_sparsity": args.prune_ratio,
-        "target_whole_model_sparsity": target_pruned / model_count,
-        "layer_sizes": layer_sizes,
-        "eligible_names": eligible_names,
-    }
+    scope = build_short_residual_scope(
+        model,
+        current_state,
+        reference_state,
+        args.prune_ratio,
+    )
+    layers = scope.layers
+    delta = scope.delta
+    results["parameter_scope"] = scope.to_result_dict(args.prune_ratio)
     write_json(output_path, results)
 
     print("[3/6] Evaluating pristine reference and current snapshots", flush=True)
@@ -262,52 +253,14 @@ def main() -> None:
     write_json(output_path, results)
 
     print("[5/6] Fitting layer Weibulls and constructing equal-budget masks", flush=True)
-    allocation_started = time.perf_counter()
-    fits = []
-    for index, layer in enumerate(layers):
-        values = torch.cat([taylor_scores[name].flatten() for name in layer])
-        fit = fit_weibull_mom(values)
-        fit["layer"] = index
-        fits.append(fit)
-    uniform_layer_counts = uniform_counts(layer_sizes, target_pruned, args.prune_ratio)
-    weibull_layer_counts, weibull_allocation = weibull_counts(
-        fits,
-        layer_sizes,
-        target_pruned,
+    masks, allocation = build_short_gate_masks(
+        scope,
+        taylor_scores,
         args.prune_ratio,
         args.max_layer_ratio,
     )
-
-    masks = {
-        "residual_magnitude_uniform": layer_masks(
-            layers, magnitude_scores, uniform_layer_counts
-        ),
-        "taylor_uniform": layer_masks(layers, taylor_scores, uniform_layer_counts),
-        "taylor_weibull_mom": layer_masks(layers, taylor_scores, weibull_layer_counts),
-        "taylor_exact_global": global_mask(eligible_names, taylor_scores, target_pruned),
-    }
-    results["allocation"] = {
-        "seconds": time.perf_counter() - allocation_started,
-        "weibull_fits": fits,
-        "uniform_layer_counts": uniform_layer_counts,
-        "weibull_layer_counts": weibull_layer_counts,
-        "weibull": weibull_allocation,
-    }
-
-    exact_metrics = mask_metrics(masks["taylor_exact_global"], taylor_scores)
-    for method, method_masks in masks.items():
-        metrics = mask_metrics(method_masks, taylor_scores)
-        metrics["eligible_sparsity"] = metrics["pruned"] / eligible_count
-        metrics["whole_model_sparsity"] = metrics["pruned"] / model_count
-        metrics["layer_rates"] = layer_rates(layers, method_masks)
-        metrics["additive_regret_vs_exact"] = (
-            (metrics["proxy_cost"] - exact_metrics["proxy_cost"])
-            / max(abs(exact_metrics["proxy_cost"]), 1e-30)
-        )
-        metrics["overlap_with_exact"] = mask_overlap(
-            method_masks, masks["taylor_exact_global"]
-        )
-        results["methods"][method] = metrics
+    results["allocation"] = allocation
+    results["methods"] = diagnose_short_gate_masks(scope, masks, taylor_scores)
     write_json(output_path, results)
 
     print("[6/6] Evaluating four restored snapshots", flush=True)
@@ -369,7 +322,7 @@ def main() -> None:
     write_json(output_path, results)
     print(f"Complete in {results['wall_seconds']:.1f}s: {output_path}", flush=True)
 
-    del masks, taylor_scores, magnitude_scores, delta
+    del masks, taylor_scores, scope, delta
     gc.collect()
     empty_device_cache(args.device)
 
