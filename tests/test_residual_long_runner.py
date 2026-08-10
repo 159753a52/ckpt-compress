@@ -11,6 +11,7 @@ from unittest import mock
 
 import torch
 
+import experiments.lib.residual_long_config as long_config
 import experiments.lib.residual_method_assembly as method_assembly
 import experiments.scripts.run_residual_recovery_long as long_runner
 from experiments.lib.residual_masks import layer_masks, layer_score_orders
@@ -93,6 +94,10 @@ class TestResidualLongRunner(unittest.TestCase):
     def test_run_seed_preserves_stage_order_state_isolation_and_schema(self) -> None:
         seed = 42
         args = argparse.Namespace(
+            checkpoint=Path("checkpoint.pt"),
+            data_dir=Path("data"),
+            output_dir=Path("results"),
+            seeds=str(seed),
             total_steps=2,
             recovery_step=1,
             hvp_batches=1,
@@ -100,14 +105,22 @@ class TestResidualLongRunner(unittest.TestCase):
             allocation_selection_batches=1,
             prune_ratio=0.5,
             max_layer_ratio=0.8,
+            batch_size=1,
+            seq_length=2,
             allocation_probe_radius=0.1,
+            allocation_trust_radii="0.1",
+            spectral_ranks="1",
             spectral_probe_radius=0.1,
             spectral_trust_radius=0.1,
+            quantile_smoothness_values="0.1",
             quantile_trust_radius=0.1,
             quantile_cost_normalization="global",
+            eval_batches=1,
+            train_pool_batches=5,
             learning_rate=1e-3,
             device="cpu",
         )
+        config = long_config.normalize_long_config(args)
         training_pool = [
             {
                 "input_ids": torch.tensor([[index, index + 1]]),
@@ -304,7 +317,7 @@ class TestResidualLongRunner(unittest.TestCase):
             writes.append(copy.deepcopy(payload))
 
         context = long_runner.LongRunContext(
-            args=args,
+            config=config,
             output_path=output_path,
             results=results,
             model_factory=model_factory,
@@ -312,19 +325,6 @@ class TestResidualLongRunner(unittest.TestCase):
             eval_batches=eval_batches,
             reference_state=reference_state,
             reference_optimizer_state=reference_optimizer_state,
-            method_config=method_assembly.AdaptiveMethodConfig(
-                prune_ratio=args.prune_ratio,
-                max_layer_ratio=args.max_layer_ratio,
-                probe_radius=args.allocation_probe_radius,
-                trust_radii=(0.1,),
-                spectral_ranks=(1,),
-                spectral_probe_radius=args.spectral_probe_radius,
-                spectral_trust_radius=args.spectral_trust_radius,
-                quantile_smoothness_values=(0.1,),
-                quantile_trust_radius=args.quantile_trust_radius,
-                quantile_cost_normalization=args.quantile_cost_normalization,
-                device=args.device,
-            ),
         )
 
         with mock.patch.object(

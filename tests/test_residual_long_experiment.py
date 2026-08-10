@@ -4,6 +4,7 @@ import unittest
 import torch
 
 import experiments.lib.residual_masks as residual_masks
+import experiments.lib.residual_method_assembly as residual_method_assembly
 import experiments.lib.residual_methods as residual_methods
 import experiments.lib.residual_protocol as residual_protocol
 import experiments.lib.residual_reporting as residual_reporting
@@ -305,6 +306,7 @@ class TestResidualLongExperiment(unittest.TestCase):
 
     def test_runner_reexports_moved_public_helpers(self) -> None:
         aliases = {
+            "AdaptiveMethodConfig": residual_method_assembly.AdaptiveMethodConfig,
             "clone_model_state_to_cpu": residual_training.clone_model_state_to_cpu,
             "seeded_training_batches": residual_training.seeded_training_batches,
             "build_optimizer": residual_training.build_optimizer,

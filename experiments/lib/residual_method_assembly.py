@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Dict, Mapping, Sequence, Tuple
 
 import torch
@@ -19,29 +18,13 @@ from experiments.lib.residual_masks import (
     layer_masks,
     layer_score_orders,
 )
+from experiments.lib.residual_method_config import AdaptiveMethodConfig
 from experiments.lib.residual_methods import build_masks
 from experiments.lib.residual_protocol import (
     TAYLOR_PROBE_TRUST_METHOD,
     quantile_method_id,
     spectral_method_id,
 )
-
-
-@dataclass(frozen=True)
-class AdaptiveMethodConfig:
-    """Allocation settings shared by one assembled method family."""
-
-    prune_ratio: float
-    max_layer_ratio: float
-    probe_radius: float
-    trust_radii: Tuple[float, ...]
-    spectral_ranks: Tuple[int, ...]
-    spectral_probe_radius: float
-    spectral_trust_radius: float
-    quantile_smoothness_values: Tuple[float, ...]
-    quantile_trust_radius: float
-    quantile_cost_normalization: str
-    device: str
 
 
 def assemble_method_family(
