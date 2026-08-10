@@ -76,6 +76,28 @@ class TestResultSchema(unittest.TestCase):
                 },
             )
 
+    def test_result_manager_dataframe_keeps_top_level_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = ResultManager(temp_dir)
+            frame = manager._results_to_dataframe([
+                {
+                    "method": "top-level",
+                    "loss": 1.5,
+                    "perplexity": 4.5,
+                    "accuracy": 0.0,
+                },
+                {
+                    "method": "nested",
+                    "loss": 99.0,
+                    "metrics": {"loss": 2.5},
+                },
+            ])
+
+            self.assertEqual(frame.loc[0, "metric_loss"], 1.5)
+            self.assertEqual(frame.loc[0, "metric_perplexity"], 4.5)
+            self.assertEqual(frame.loc[0, "metric_accuracy"], 0.0)
+            self.assertEqual(frame.loc[1, "metric_loss"], 2.5)
+
     def test_primary_metric_ignores_language_model_accuracy_placeholder(self) -> None:
         self.assertEqual(
             primary_metric({"accuracy": 0, "perplexity": 12.5, "loss": 2.5}),

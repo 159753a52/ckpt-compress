@@ -19,6 +19,19 @@ import yaml
 
 from .result_schema import load_result_bundle
 
+
+_TOP_LEVEL_METRIC_KEYS = (
+    "loss",
+    "perplexity",
+    "accuracy",
+    "top1_accuracy",
+    "pearson",
+    "final_loss",
+    "val_loss",
+    "metric_value",
+)
+
+
 pd = None  # lazy import of pandas
 def _get_pd():
     global pd
@@ -186,6 +199,10 @@ class ResultManager:
                 'prune_ratio': r.get('prune_ratio', 0),
                 'actual_ratio': r.get('actual_ratio', 0),
             }
+
+            for key in _TOP_LEVEL_METRIC_KEYS:
+                if key in r:
+                    row[f'metric_{key}'] = r[key]
 
             metrics = r.get('metrics', {})
             if isinstance(metrics, dict):
