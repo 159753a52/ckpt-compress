@@ -15,6 +15,7 @@ from experiments.lib.residual_masks import (
     MaskDict,
     TensorDict,
     global_mask,
+    layer_mask_at_count,
     layer_masks,
     layer_rates,
     mask_metrics,
@@ -43,7 +44,6 @@ class ShortResidualScope:
     target_pruned: int
     prune_ratio: float
     delta: TensorDict
-    magnitude_scores: TensorDict
 
     def to_result_dict(self) -> Dict[str, object]:
         return {
@@ -85,8 +85,19 @@ def build_short_residual_scope(
         target_pruned=target_pruned,
         prune_ratio=prune_ratio,
         delta=delta,
-        magnitude_scores={name: values.abs() for name, values in delta.items()},
     )
+
+
+def _magnitude_uniform_masks(
+    scope: ShortResidualScope,
+    layer_counts: List[int],
+) -> MaskDict:
+    """Build magnitude masks while retaining scores for only one layer at a time."""
+    masks: MaskDict = {}
+    for layer, count in zip(scope.layers, layer_counts):
+        layer_scores = {name: scope.delta[name].abs() for name in layer}
+        masks.update(layer_mask_at_count(layer, layer_scores, count))
+    return masks
 
 
 def build_short_gate_masks(
@@ -115,12 +126,12 @@ def build_short_gate_masks(
         scope.prune_ratio,
         max_layer_ratio,
     )
+    magnitude_uniform_masks = _magnitude_uniform_masks(
+        scope,
+        uniform_layer_counts,
+    )
     masks = {
-        RESIDUAL_MAGNITUDE_UNIFORM_METHOD: layer_masks(
-            scope.layers,
-            scope.magnitude_scores,
-            uniform_layer_counts,
-        ),
+        RESIDUAL_MAGNITUDE_UNIFORM_METHOD: magnitude_uniform_masks,
         TAYLOR_UNIFORM_METHOD: layer_masks(
             scope.layers,
             taylor_scores,

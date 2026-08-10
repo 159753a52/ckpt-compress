@@ -4,7 +4,9 @@ from unittest import mock
 import torch
 import torch.nn as nn
 
+import experiments.lib.residual_recovery as residual_recovery
 import experiments.lib.residual_short_methods as short_methods
+from experiments.lib.residual_masks import layer_masks
 from experiments.lib.residual_protocol import SHORT_GATE_METHODS
 
 
@@ -30,8 +32,19 @@ class TestResidualShortMethods(unittest.TestCase):
             target_pruned=4,
             prune_ratio=0.5,
             delta=delta,
-            magnitude_scores={name: value.abs() for name, value in delta.items()},
         )
+
+    def test_recovery_facade_reexports_short_method_helpers(self) -> None:
+        for name in (
+            "build_short_gate_masks",
+            "build_short_residual_scope",
+            "diagnose_short_gate_masks",
+        ):
+            with self.subTest(name=name):
+                self.assertIs(
+                    getattr(residual_recovery, name),
+                    getattr(short_methods, name),
+                )
 
     def test_scope_preserves_residual_and_result_schema(self) -> None:
         model = TinyModel()
@@ -60,7 +73,7 @@ class TestResidualShortMethods(unittest.TestCase):
         self.assertEqual(scope.model_count, 8)
         self.assertEqual(scope.target_pruned, 3)
         self.assertEqual(scope.delta["first"].dtype, torch.float32)
-        torch.testing.assert_close(scope.magnitude_scores["first"], scope.delta["first"].abs())
+        self.assertFalse(hasattr(scope, "magnitude_scores"))
         result = scope.to_result_dict()
         self.assertEqual(
             list(result),
@@ -110,6 +123,13 @@ class TestResidualShortMethods(unittest.TestCase):
         )
         self.assertEqual(allocation["uniform_layer_counts"], [2, 2])
         self.assertEqual(sum(allocation["weibull_layer_counts"]), 4)
+        expected_magnitude_masks = layer_masks(
+            scope.layers,
+            {name: value.abs() for name, value in scope.delta.items()},
+            allocation["uniform_layer_counts"],
+        )
+        for name, keep in expected_magnitude_masks.items():
+            torch.testing.assert_close(masks[SHORT_GATE_METHODS[0]][name], keep)
         for index, fit in enumerate(allocation["weibull_fits"]):
             self.assertEqual(fit["layer"], index)
         for metrics in diagnostics.values():

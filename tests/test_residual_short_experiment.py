@@ -126,7 +126,6 @@ class TestResidualShortExperiment(unittest.TestCase):
             target_pruned=1,
             prune_ratio=0.30,
             delta=delta,
-            magnitude_scores=delta,
         )
         taylor_scores = {"weight": torch.arange(1.0, 5.0)}
         masks = {
