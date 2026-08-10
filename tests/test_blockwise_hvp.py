@@ -6,6 +6,8 @@ from dacp.tools.importance import (
     compute_hvp_batched,
     compute_hvp_blockwise,
     compute_hvp_blockwise_batched,
+    compute_importance_scores_hvp,
+    compute_importance_scores_hvp_abs,
     compute_importance_scores_hvp_blockwise,
 )
 
@@ -48,6 +50,26 @@ class TestBlockwiseHvp(unittest.TestCase):
                 model_family="gpt2",
                 grad_accumulation_batches=0,
             )
+
+    def test_signed_and_absolute_hvp_scores_share_the_same_taylor_terms(self) -> None:
+        model = _QuadraticModel()
+
+        signed = compute_importance_scores_hvp(
+            model,
+            _quadratic_loss,
+            [None],
+        )
+        absolute = compute_importance_scores_hvp_abs(
+            model,
+            _quadratic_loss,
+            [None],
+        )
+
+        torch.testing.assert_close(
+            signed["left"],
+            torch.tensor([-0.5, -2.0]),
+        )
+        torch.testing.assert_close(absolute["left"], signed["left"].abs())
 
     def test_matches_quadratic_hessian_vector_product(self) -> None:
         model = _QuadraticModel()

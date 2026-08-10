@@ -219,6 +219,41 @@ def compute_hvp_batched(
     return hvp_avg
 
 
+def _compute_importance_scores_hvp(
+    model: torch.nn.Module,
+    loss_fn: Callable,
+    data_batches: list,
+    num_batches: int,
+    absolute: bool,
+) -> Dict[str, torch.Tensor]:
+    """Compute the shared first- and second-order HVP score pipeline."""
+    _validate_hvp_batch_request(data_batches, num_batches)
+
+    params = {name: p for name, p in model.named_parameters() if p.requires_grad}
+    weights = {name: p.data.clone() for name, p in params.items()}
+
+    model.zero_grad()
+    loss = loss_fn(model, data_batches[0])
+    loss.backward()
+    gradients = {
+        name: p.grad.clone() if p.grad is not None else torch.zeros_like(p)
+        for name, p in params.items()
+    }
+
+    print("[HVP] 计算 Hessian-Vector Product...")
+    hvp_result = compute_hvp_batched(
+        model, loss_fn, data_batches, weights, num_batches
+    )
+
+    scores = {}
+    for name, theta in weights.items():
+        grad = gradients.get(name, torch.zeros_like(theta))
+        hvp = hvp_result.get(name, torch.zeros_like(theta))
+        score = -grad * theta + 0.5 * theta * hvp
+        scores[name] = torch.abs(score) if absolute else score
+    return scores
+
+
 def compute_importance_scores_hvp(
     model: torch.nn.Module,
     loss_fn: Callable,
@@ -255,44 +290,13 @@ def compute_importance_scores_hvp(
         ...     return outputs.loss
         >>> scores = compute_importance_scores_hvp(model, loss_fn, batches, num_batches=5)
     """
-    _validate_hvp_batch_request(data_batches, num_batches)
-
-    # 收集模型参数（作为向量 v = θ）
-    params = {name: p for name, p in model.named_parameters() if p.requires_grad}
-    weights = {name: p.data.clone() for name, p in params.items()}
-
-    # 计算梯度（用于一阶项）
-    model.zero_grad()
-    loss = loss_fn(model, data_batches[0])
-    loss.backward()
-
-    gradients = {
-        name: p.grad.clone() if p.grad is not None else torch.zeros_like(p)
-        for name, p in params.items()
-    }
-
-    # 计算 HVP: H * θ
-    print("[HVP] 计算 Hessian-Vector Product...")
-    hvp_result = compute_hvp_batched(
-        model, loss_fn, data_batches, weights, num_batches
+    return _compute_importance_scores_hvp(
+        model,
+        loss_fn,
+        data_batches,
+        num_batches,
+        absolute=False,
     )
-
-    # 计算重要性得分: s_i = -g_i * θ_i + 0.5 * θ_i * (H * θ)_i
-    scores = {}
-    for name in weights:
-        theta = weights[name]
-        grad = gradients.get(name, torch.zeros_like(theta))
-        hvp = hvp_result.get(name, torch.zeros_like(theta))
-
-        # 一阶项: -g * θ
-        first_order = -grad * theta
-
-        # 二阶项: 0.5 * θ * (H * θ)
-        second_order = 0.5 * theta * hvp
-
-        scores[name] = first_order + second_order
-
-    return scores
 
 
 def compute_importance_scores_hvp_abs(
@@ -324,45 +328,13 @@ def compute_importance_scores_hvp_abs(
         ...     return outputs.loss
         >>> scores = compute_importance_scores_hvp_abs(model, loss_fn, batches, num_batches=5)
     """
-    _validate_hvp_batch_request(data_batches, num_batches)
-
-    # 收集模型参数（作为向量 v = θ）
-    params = {name: p for name, p in model.named_parameters() if p.requires_grad}
-    weights = {name: p.data.clone() for name, p in params.items()}
-
-    # 计算梯度（用于一阶项）
-    model.zero_grad()
-    loss = loss_fn(model, data_batches[0])
-    loss.backward()
-
-    gradients = {
-        name: p.grad.clone() if p.grad is not None else torch.zeros_like(p)
-        for name, p in params.items()
-    }
-
-    # 计算 HVP: H * θ
-    print("[HVP] 计算 Hessian-Vector Product...")
-    hvp_result = compute_hvp_batched(
-        model, loss_fn, data_batches, weights, num_batches
+    return _compute_importance_scores_hvp(
+        model,
+        loss_fn,
+        data_batches,
+        num_batches,
+        absolute=True,
     )
-
-    # 计算重要性得分: d_i = |g_i * θ_i - 0.5 * θ_i * (H * θ)_i|
-    scores = {}
-    for name in weights:
-        theta = weights[name]
-        grad = gradients.get(name, torch.zeros_like(theta))
-        hvp = hvp_result.get(name, torch.zeros_like(theta))
-
-        # 一阶项: -g * θ
-        first_order = -grad * theta
-
-        # 二阶项: 0.5 * θ * (H * θ)
-        second_order = 0.5 * theta * hvp
-
-        # 使用绝对值
-        scores[name] = torch.abs(first_order + second_order)
-
-    return scores
 
 
 def build_transformer_blocks(
