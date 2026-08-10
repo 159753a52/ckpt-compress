@@ -35,6 +35,10 @@ from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.evaluation import evaluate
 from experiments.lib.results import save_results, print_results_table
+from experiments.lib.gamma_sensitivity import (
+    fit_gamma_mom_problem,
+    solve_gamma_mom_rates,
+)
 from experiments.lib.importance_compare.scoring import compute_scores_by_method
 from dacp.pruning import Pruner, apply_pruning, filter_prunable_params
 from dacp.pruning.allocation import (
@@ -189,13 +193,7 @@ def sweep_hvp_batch(args, model_init, cached_train, cached_eval, task_type,
 
 def sweep_bisection_tol(args, model_init, cached_train, cached_eval, task_type,
                         model_family='gpt2'):
-    """不同 bisection 容差对结果和速度的影响。
-
-    GammaAdaptiveAllocation 内部 xtol 固定，此处直接 monkey-patch
-    allocate 中的 bisect 调用来注入不同容差。
-    """
-    from scipy.optimize import bisect
-    from scipy import stats as sp_stats
+    """不同 bisection 容差对结果和速度的影响。"""
     tols = [float(t) for t in args.sweep_tol.split(',')]
     results = []
 
@@ -211,54 +209,15 @@ def sweep_bisection_tol(args, model_init, cached_train, cached_eval, task_type,
     scores = score_cache['second-order-hvp']
     del model
 
-    # 预拟合 layer_info
-    layer_info = []
-    for name, score in scores.items():
-        data = score.flatten().float()
-        data_pos = data[data > 0]
-        if len(data_pos) < 10:
-            layer_info.append({'name': name, 'n': score.numel(), 'k': None, 'theta': None})
-            continue
-        mean_val = data_pos.mean().item()
-        var_val = data_pos.var().item()
-        if var_val < 1e-12 or mean_val < 1e-12:
-            layer_info.append({'name': name, 'n': score.numel(), 'k': None, 'theta': None})
-            continue
-        k = max(0.01, min(mean_val ** 2 / var_val, 1000))
-        theta = max(0.01, min(var_val / mean_val, 1000))
-        layer_info.append({'name': name, 'n': score.numel(), 'k': k, 'theta': theta})
-
-    N = sum(info['n'] for info in layer_info)
-    allocator = GammaAdaptiveAllocation()
-    c_min = allocator._estimate_quantile_from_scores(scores, 0.001)
-    c_max = allocator._estimate_quantile_from_scores(scores, 0.999)
-    if c_min <= 0:
-        c_min = 1e-10
-    if c_max <= c_min:
-        c_max = c_min * 10 + 1e-6
-
-    def objective(c):
-        total = 0
-        for info in layer_info:
-            if info['k'] is None:
-                total += info['n'] * args.prune_ratio
-            else:
-                total += info['n'] * sp_stats.gamma.cdf(c, info['k'], scale=info['theta'])
-        return total / N - args.prune_ratio
+    problem = fit_gamma_mom_problem(scores)
 
     for tol in tols:
         t0 = time.perf_counter()
-        try:
-            c_star = bisect(objective, c_min, c_max, xtol=tol, maxiter=200)
-        except ValueError:
-            c_star = (c_min + c_max) / 2
-        layer_ratios = {}
-        for info in layer_info:
-            if info['k'] is None:
-                layer_ratios[info['name']] = args.prune_ratio
-            else:
-                layer_ratios[info['name']] = max(0.0, min(1.0,
-                    sp_stats.gamma.cdf(c_star, info['k'], scale=info['theta'])))
+        layer_ratios, _ = solve_gamma_mom_rates(
+            problem,
+            args.prune_ratio,
+            xtol=tol,
+        )
         alloc_time = time.perf_counter() - t0
 
         model_prune = copy.deepcopy(model_init).to(args.device)
@@ -284,9 +243,6 @@ def sweep_bisection_tol(args, model_init, cached_train, cached_eval, task_type,
 def timing_breakdown(args, model_init, cached_train, cached_eval, task_type,
                      model_family='gpt2'):
     """逐阶段计时：gradient/HVP → Gamma MoM fitting → bisection → mask application。"""
-    from scipy.optimize import bisect
-    from scipy import stats as sp_stats
-
     model = copy.deepcopy(model_init).to(args.device)
 
     # Phase 1: Gradient collection + score computation (HVP)
@@ -308,57 +264,18 @@ def timing_breakdown(args, model_init, cached_train, cached_eval, task_type,
 
     # Phase 2: Gamma MoM fitting (per-layer)
     t_fit_start = time.perf_counter()
-    layer_info = []
-    for name, score in scores.items():
-        data = score.flatten().float()
-        data_pos = data[data > 0]
-        if len(data_pos) < 10:
-            layer_info.append({'name': name, 'n': score.numel(), 'k': None, 'theta': None})
-            continue
-        mean_val = data_pos.mean().item()
-        var_val = data_pos.var().item()
-        if var_val < 1e-12 or mean_val < 1e-12:
-            layer_info.append({'name': name, 'n': score.numel(), 'k': None, 'theta': None})
-            continue
-        k = max(0.01, min(mean_val ** 2 / var_val, 1000))
-        theta = max(0.01, min(var_val / mean_val, 1000))
-        layer_info.append({'name': name, 'n': score.numel(), 'k': k, 'theta': theta})
+    problem = fit_gamma_mom_problem(scores)
     t_fit = time.perf_counter() - t_fit_start
 
     # Phase 3: Bisection for c*
-    N = sum(info['n'] for info in layer_info)
-    allocator = GammaAdaptiveAllocation()
-    c_min = allocator._estimate_quantile_from_scores(scores, 0.001)
-    c_max = allocator._estimate_quantile_from_scores(scores, 0.999)
-    if c_min <= 0:
-        c_min = 1e-10
-    if c_max <= c_min:
-        c_max = c_min * 10 + 1e-6
-
-    def objective(c):
-        total = 0
-        for info in layer_info:
-            if info['k'] is None:
-                total += info['n'] * args.prune_ratio
-            else:
-                total += info['n'] * sp_stats.gamma.cdf(c, info['k'], scale=info['theta'])
-        return total / N - args.prune_ratio
-
     t_bisect_start = time.perf_counter()
-    try:
-        c_star = bisect(objective, c_min, c_max, xtol=1e-10, maxiter=200)
-    except ValueError:
-        c_star = (c_min + c_max) / 2
+    layer_ratios, _ = solve_gamma_mom_rates(
+        problem,
+        args.prune_ratio,
+        xtol=1e-10,
+    )
     t_bisect = time.perf_counter() - t_bisect_start
-
-    # Compute layer ratios
-    layer_ratios = {}
-    for info in layer_info:
-        if info['k'] is None:
-            layer_ratios[info['name']] = args.prune_ratio
-        else:
-            layer_ratios[info['name']] = max(0.0, min(1.0,
-                sp_stats.gamma.cdf(c_star, info['k'], scale=info['theta'])))
+    layer_ratios = solution.layer_ratios
 
     # Phase 4: Mask application
     model_prune = copy.deepcopy(model_init).to(args.device)
@@ -382,7 +299,7 @@ def timing_breakdown(args, model_init, cached_train, cached_eval, task_type,
         'gamma_pct': round(100 * t_fit / total, 1),
         'bisect_pct': round(100 * t_bisect / total, 1),
         'mask_pct': round(100 * t_mask / total, 1),
-        'num_layers': len(layer_info),
+        'num_layers': len(problem.layers),
         'actual_ratio': actual,
     }
     print(f"  Score (grad+HVP): {t_score:.3f}s ({breakdown['score_pct']}%)")
