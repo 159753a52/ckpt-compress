@@ -7,6 +7,7 @@ from experiments.lib.residual_masks import (
     apply_mask_from_device_states,
     cache_mask_states_on_device,
     exact_keep_mask,
+    exact_keep_mask_from_order,
     global_mask,
     layer_mask_at_count,
     layer_masks,
@@ -32,6 +33,21 @@ class TestResidualMasks(unittest.TestCase):
         self.assertTrue(torch.equal(exact_keep_mask(scores, 3), torch.zeros(3).bool()))
         with self.assertRaisesRegex(ValueError, "Invalid prune count"):
             exact_keep_mask(scores, 4)
+
+    def test_order_mask_uses_the_same_prune_count_boundaries(self) -> None:
+        order = torch.tensor([2, 0, 1])
+
+        self.assertTrue(
+            torch.equal(
+                exact_keep_mask_from_order(order, 2),
+                torch.tensor([False, True, False]),
+            )
+        )
+        for invalid_count in (-1, 4):
+            with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
+                ValueError, "Invalid prune count"
+            ):
+                exact_keep_mask_from_order(order, invalid_count)
 
     def test_cached_score_orders_match_direct_masks_with_ties(self) -> None:
         layers = [["left", "right"], ["last"]]

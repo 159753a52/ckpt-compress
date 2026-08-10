@@ -12,12 +12,18 @@ TensorDict = Dict[str, torch.Tensor]
 MaskDict = Dict[str, torch.Tensor]
 
 
+def _validate_prune_count(prune_count: int, score_count: int) -> None:
+    if prune_count < 0 or prune_count > score_count:
+        raise ValueError(
+            f"Invalid prune count {prune_count} for {score_count} scores"
+        )
+
+
 def exact_keep_mask(values: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Return a deterministic mask with exactly ``prune_count`` false entries."""
     flat = values.detach().float().flatten().cpu()
     count = flat.numel()
-    if prune_count < 0 or prune_count > count:
-        raise ValueError(f"Invalid prune count {prune_count} for {count} scores")
+    _validate_prune_count(prune_count, count)
     if prune_count == 0:
         return torch.ones(count, dtype=torch.bool)
     if prune_count == count:
@@ -42,8 +48,7 @@ def exact_keep_mask_from_order(
     if order.ndim != 1:
         raise ValueError("Score order must be one-dimensional")
     count = order.numel()
-    if prune_count < 0 or prune_count > count:
-        raise ValueError(f"Invalid prune count {prune_count} for {count} scores")
+    _validate_prune_count(prune_count, count)
     keep = torch.ones(count, dtype=torch.bool)
     keep[order[:prune_count]] = False
     return keep

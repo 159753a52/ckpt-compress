@@ -17,8 +17,13 @@ class TestResidualLongExperiment(unittest.TestCase):
     def test_seeded_batch_sampling_rejects_invalid_counts(self) -> None:
         pool = [{"input_ids": torch.tensor([[0]]), "labels": torch.tensor([[0]])}]
 
-        with self.assertRaisesRegex(ValueError, "non-negative"):
-            residual_training.seeded_training_batches(pool, -1, seed=0)
+        for invalid_count in (-1, True, 1.5):
+            with self.subTest(count=invalid_count), self.assertRaisesRegex(
+                ValueError, "non-negative"
+            ):
+                residual_training.seeded_training_batches(
+                    pool, invalid_count, seed=0
+                )
         with self.assertRaisesRegex(ValueError, "pool size"):
             residual_training.seeded_training_batches(pool, 2, seed=0)
 

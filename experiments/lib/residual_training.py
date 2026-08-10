@@ -40,13 +40,18 @@ def clone_model_state_to_cpu(model: nn.Module) -> Dict[str, torch.Tensor]:
     }
 
 
+def _validate_non_negative_count(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer, got {value}")
+    return value
+
+
 def seeded_training_batches(
     pool: Sequence[Mapping[str, torch.Tensor]],
     count: int,
     seed: int,
 ) -> Tuple[List[Mapping[str, torch.Tensor]], List[int]]:
-    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-        raise ValueError(f"count must be a non-negative integer, got {count}")
+    count = _validate_non_negative_count("count", count)
     if count > len(pool):
         raise ValueError(
             f"count cannot exceed pool size: count={count}, pool_size={len(pool)}"
@@ -54,12 +59,6 @@ def seeded_training_batches(
     generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(len(pool), generator=generator)[:count].tolist()
     return [pool[index] for index in indices], indices
-
-
-def _validate_non_negative_count(name: str, value: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{name} must be a non-negative integer, got {value}")
-    return value
 
 
 def partition_seed_batches(
