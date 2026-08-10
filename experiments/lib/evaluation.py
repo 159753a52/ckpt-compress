@@ -114,6 +114,12 @@ def _evaluate_classification(model, cached_eval, device, task_type):
 
 
 def _evaluate_regression(model, cached_eval, device):
+    if not cached_eval:
+        return {
+            'loss': 0.0,
+            'pearson': 0.0,
+        }
+
     total_loss = 0.0
     all_preds = []
     all_labels = []
