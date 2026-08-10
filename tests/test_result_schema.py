@@ -76,6 +76,29 @@ class TestResultSchema(unittest.TestCase):
                 },
             )
 
+    def test_multiple_companion_configs_merge_with_json_precedence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result_path = Path(temp_dir) / "run.json"
+            result_path.write_text(
+                json.dumps({"results": [{"method": "uniform"}]}),
+                encoding="utf-8",
+            )
+            result_path.with_name("run_config.json").write_text(
+                json.dumps({"model": "gpt2", "seed": 7}),
+                encoding="utf-8",
+            )
+            result_path.with_name("config.yaml").write_text(
+                yaml.safe_dump({"dataset": "wikitext103", "seed": 1}),
+                encoding="utf-8",
+            )
+
+            bundle = load_result_bundle(result_path)
+
+            self.assertEqual(
+                bundle.config,
+                {"model": "gpt2", "dataset": "wikitext103", "seed": 7},
+            )
+
     def test_result_manager_dataframe_keeps_top_level_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = ResultManager(temp_dir)
@@ -105,6 +128,23 @@ class TestResultSchema(unittest.TestCase):
         )
         self.assertEqual(
             primary_metric({"accuracy": 0.8, "loss": 0.2}),
+            ("accuracy", 0.8),
+        )
+
+    def test_primary_metric_falls_back_to_top_level_values(self) -> None:
+        self.assertEqual(
+            primary_metric({
+                "perplexity": 12.5,
+                "loss": 2.5,
+                "metrics": {"seconds": 0.4},
+            }),
+            ("perplexity", 12.5),
+        )
+        self.assertEqual(
+            primary_metric({
+                "accuracy": 0.7,
+                "metrics": {"accuracy": 0.8},
+            }),
             ("accuracy", 0.8),
         )
 

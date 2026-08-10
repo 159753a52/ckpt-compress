@@ -81,6 +81,7 @@ def _load_companion_config(result_path: Path) -> Dict[str, Any]:
         result_path.with_name("config.yaml"),
         result_path.with_name("config.yml"),
     )
+    merged: Dict[str, Any] = {}
     for config_path in candidates:
         if not config_path.exists():
             continue
@@ -89,8 +90,11 @@ def _load_companion_config(result_path: Path) -> Dict[str, Any]:
                 config = json.load(handle)
             else:
                 config = yaml.safe_load(handle)
-        return _normalize_config(config, "companion")
-    return {}
+        # Keep the historical priority of ``*_config.json`` over YAML while
+        # allowing later files to supplement fields that are absent from it.
+        for key, value in _normalize_config(config, "companion").items():
+            merged.setdefault(key, value)
+    return merged
 
 
 def load_result_bundle(path: Any) -> ResultBundle:
@@ -107,8 +111,12 @@ def load_result_bundle(path: Any) -> ResultBundle:
 
 def primary_metric(record: Mapping[str, Any]) -> tuple[Optional[str], Any]:
     """Return the primary metric key and value from one normalized record."""
+    candidates = dict(record)
     metrics = record.get("metrics")
-    candidates = metrics if isinstance(metrics, Mapping) and metrics else record
+    if isinstance(metrics, Mapping):
+        # Records from different runners use both layouts.  Treat top-level
+        # values as defaults and let the normalized nested block override them.
+        candidates.update(metrics)
 
     accuracy = candidates.get("accuracy")
     if "perplexity" in candidates and accuracy in (None, 0):
