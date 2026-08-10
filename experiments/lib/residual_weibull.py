@@ -15,6 +15,12 @@ from experiments.lib.residual_budget import largest_remainder_counts
 def fit_weibull_mom(values: torch.Tensor) -> Dict[str, float | bool | str]:
     flat = values.detach().float().flatten().cpu()
     count = flat.numel()
+    if count == 0:
+        return {
+            "valid": False,
+            "reason": "empty values",
+            "zero_fraction": 0.0,
+        }
     maximum = flat.max().item()
     zero_fraction = (flat == 0).sum().item() / count
     if not math.isfinite(maximum) or maximum <= 0:

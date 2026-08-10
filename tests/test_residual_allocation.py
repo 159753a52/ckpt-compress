@@ -11,6 +11,7 @@ from experiments.lib.residual_allocation import (
     budget_tangent_dct_directions,
     directional_layer_counts,
     fit_weibull_mom,
+    largest_remainder_counts,
     reconstruct_directional_gradient,
     trust_region_counts,
     weibull_counts,
@@ -174,6 +175,27 @@ class TestResidualAllocation(unittest.TestCase):
                 target=7,
                 lower_bounds=[1, 1],
                 upper_bounds=[3, 3],
+            )
+
+    def test_budget_rounding_rejects_truncated_or_non_finite_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "same length"):
+            largest_remainder_counts([1.0, 2.0], target=1, capacities=[2])
+        with self.assertRaisesRegex(ValueError, "finite"):
+            largest_remainder_counts([float("nan")], target=1, capacities=[1])
+
+    def test_empty_weibull_fit_and_zero_sized_trust_layer_are_explicit(self) -> None:
+        empty_fit = residual_weibull.fit_weibull_mom(torch.empty(0))
+        self.assertFalse(empty_fit["valid"])
+        self.assertEqual(empty_fit["reason"], "empty values")
+
+        with self.assertRaisesRegex(ValueError, "positive"):
+            trust_region_counts(
+                marginal_losses=[1.0, 2.0],
+                layer_sizes=[0, 4],
+                target=2,
+                ratio=0.5,
+                trust_radius=0.1,
+                max_layer_ratio=0.8,
             )
 
     def test_spectral_directions_are_budget_tangent(self) -> None:
