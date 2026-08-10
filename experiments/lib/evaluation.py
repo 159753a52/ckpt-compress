@@ -40,15 +40,53 @@ def evaluate(
         raise ValueError(f"Unknown task_type: {task_type}")
 
 
-def compute_quality_drop(baseline: Dict[str, float], pruned: Dict[str, float], task_type: str) -> float:
-    """计算剪枝后的质量下降比例（百分比）。"""
+def _metric_value(metrics: Dict[str, float], key: str, role: str) -> float:
+    """Read one finite metric and report malformed evaluation records early."""
+    if key not in metrics:
+        raise KeyError(f"{role} metrics must contain '{key}'")
+    try:
+        value = float(metrics[key])
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{role} metric '{key}' must be numeric") from exc
+    if not math.isfinite(value):
+        raise ValueError(f"{role} metric '{key}' must be finite")
+    return value
+
+
+def _relative_drop_pct(delta: float, baseline: float) -> float:
+    """Scale a quality delta by the baseline without dividing by zero."""
+    if baseline == 0.0:
+        if delta == 0.0:
+            return 0.0
+        return math.copysign(float("inf"), delta)
+    return delta / abs(baseline) * 100.0
+
+
+def compute_quality_drop(
+    baseline: Dict[str, float],
+    pruned: Dict[str, float],
+    task_type: str,
+) -> float:
+    """计算剪枝后的质量下降比例（百分比）。
+
+    Loss increases and higher-is-better metric decreases are both positive
+    drops.  A zero baseline is treated as neutral only when the pruned metric
+    is also zero; any non-zero change becomes signed infinity so a search
+    constraint cannot silently accept an undefined relative comparison.
+    """
     if task_type == 'lm':
-        return (pruned['loss'] - baseline['loss']) / baseline['loss'] * 100
-    elif task_type in ('cls', 'cv'):
-        return (baseline['accuracy'] - pruned.get('accuracy', 0)) / baseline['accuracy'] * 100
-    elif task_type == 'reg':
-        return (baseline.get('pearson', 1) - pruned.get('pearson', 0)) / max(baseline.get('pearson', 1), 1e-8) * 100
-    return 0.0
+        baseline_value = _metric_value(baseline, 'loss', 'baseline')
+        pruned_value = _metric_value(pruned, 'loss', 'pruned')
+        return _relative_drop_pct(pruned_value - baseline_value, baseline_value)
+    if task_type in ('cls', 'cv'):
+        baseline_value = _metric_value(baseline, 'accuracy', 'baseline')
+        pruned_value = _metric_value(pruned, 'accuracy', 'pruned')
+        return _relative_drop_pct(baseline_value - pruned_value, baseline_value)
+    if task_type == 'reg':
+        baseline_value = _metric_value(baseline, 'pearson', 'baseline')
+        pruned_value = _metric_value(pruned, 'pearson', 'pruned')
+        return _relative_drop_pct(baseline_value - pruned_value, baseline_value)
+    raise ValueError(f"Unknown task_type: {task_type}")
 
 
 def _evaluate_lm(model, cached_eval, device):
