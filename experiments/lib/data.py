@@ -9,7 +9,8 @@
 """
 
 import torch
-from typing import Tuple, List, Dict
+from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 from torch.utils.data import DataLoader
 
 from experiments.lib.losses import SUPPORTED_TASK_TYPES
@@ -66,16 +67,16 @@ def get_data_loaders(
 
     if dataset_name in ('wikitext2', 'wikitext103'):
         train_loader, val_loader = _get_wikitext_loaders(
-            dataset_name, batch_size, seq_length, num_workers)
+            dataset_name, batch_size, seq_length, num_workers, data_dir)
     elif dataset_name in ('sst2', 'mnli', 'mrpc', 'qqp', 'qnli', 'cola', 'rte', 'stsb'):
         train_loader, val_loader = _get_glue_loaders(
-            model_name, dataset_name, batch_size, seq_length, num_workers)
+            model_name, dataset_name, batch_size, seq_length, num_workers, data_dir)
     elif dataset_name in ('cifar10', 'cifar100'):
         train_loader, val_loader = _get_cifar_loaders(
             dataset_name, batch_size, num_workers, data_dir)
     elif dataset_name == 'alpaca':
         train_loader, val_loader = _get_alpaca_loaders(
-            model_name, batch_size, seq_length, num_workers)
+            model_name, batch_size, seq_length, num_workers, data_dir)
     elif dataset_name == 'imagenet':
         train_loader, val_loader = _get_imagenet_loaders(
             batch_size, num_workers, data_dir)
@@ -151,28 +152,51 @@ def cache_batches(
 
 # ---- 内部加载函数 ----
 
-def _get_wikitext_loaders(dataset_name, batch_size, seq_length, num_workers):
+def _find_wikitext_local_path(
+    data_dir: str, dataset_name: str
+) -> Optional[str]:
+    """Find a local WikiText directory without changing HF fallback behavior."""
+    if not data_dir:
+        return None
+    root = Path(data_dir).expanduser()
+    candidates = (root / dataset_name, root)
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+        if (candidate / "train.txt").is_file() and (candidate / "valid.txt").is_file():
+            return str(candidate)
+    return None
+
+
+def _get_wikitext_loaders(
+    dataset_name, batch_size, seq_length, num_workers, data_dir
+):
     from dacp.utils.data_loader import (
         get_wikitext2_dataloader, get_wikitext103_dataloader,
     )
     loader_fn = get_wikitext2_dataloader if dataset_name == 'wikitext2' else get_wikitext103_dataloader
+    local_path = _find_wikitext_local_path(data_dir, dataset_name)
     train_loader = loader_fn(split='train', batch_size=batch_size,
-                             seq_length=seq_length, num_workers=num_workers, shuffle=True)
+                             seq_length=seq_length, num_workers=num_workers,
+                             shuffle=True, local_path=local_path)
     val_loader = loader_fn(split='validation', batch_size=batch_size,
-                           seq_length=seq_length, num_workers=num_workers, shuffle=False)
+                           seq_length=seq_length, num_workers=num_workers,
+                           shuffle=False, local_path=local_path)
     return train_loader, val_loader
 
 
-def _get_glue_loaders(model_name, dataset_name, batch_size, seq_length, num_workers):
+def _get_glue_loaders(
+    model_name, dataset_name, batch_size, seq_length, num_workers, data_dir
+):
     from datasets import load_dataset
     from transformers import AutoTokenizer
 
     tokenizer_name = 'bert-base-uncased' if 'bert' in model_name else 'gpt2'
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=data_dir)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    dataset = load_dataset('glue', dataset_name)
+    dataset = load_dataset('glue', dataset_name, cache_dir=data_dir)
     # GLUE 各任务字段映射
     _GLUE_KEYS = {
         'sst2': ('sentence', None),
@@ -210,7 +234,7 @@ def _get_cifar_loaders(dataset_name, batch_size, num_workers, data_dir):
     return loader_fn(batch_size=batch_size, data_dir=data_dir, num_workers=num_workers)
 
 
-def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers):
+def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers, data_dir):
     """加载 Alpaca 52K 指令微调数据集。"""
     import os
     from datasets import load_dataset, Dataset
@@ -237,7 +261,9 @@ def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers):
         dataset = Dataset.from_list(data)
         print(f"  Alpaca: loaded {len(dataset)} samples from local JSON")
     else:
-        dataset = load_dataset('tatsu-lab/alpaca', split='train')
+        dataset = load_dataset(
+            'tatsu-lab/alpaca', split='train', cache_dir=data_dir
+        )
 
     def format_and_tokenize(examples):
         texts = []
