@@ -2,7 +2,12 @@ import unittest
 
 import torch
 
-from dacp.tools.importance import compute_hvp_blockwise
+from dacp.tools.importance import (
+    compute_hvp_batched,
+    compute_hvp_blockwise,
+    compute_hvp_blockwise_batched,
+    compute_importance_scores_hvp_blockwise,
+)
 
 
 class _QuadraticModel(torch.nn.Module):
@@ -17,6 +22,33 @@ def _quadratic_loss(model, _batch):
 
 
 class TestBlockwiseHvp(unittest.TestCase):
+    def test_batched_hvp_rejects_empty_data_or_non_positive_budget(self) -> None:
+        model = _QuadraticModel()
+        vector = {"left": model.left.detach()}
+
+        with self.assertRaisesRegex(ValueError, "data_batches"):
+            compute_hvp_batched(model, _quadratic_loss, [], vector)
+        with self.assertRaisesRegex(ValueError, "num_batches"):
+            compute_hvp_blockwise_batched(
+                model, _quadratic_loss, [None], [["left"]], num_batches=0
+            )
+
+    def test_blockwise_score_entrypoint_rejects_empty_data(self) -> None:
+        with self.assertRaisesRegex(ValueError, "data_batches"):
+            compute_importance_scores_hvp_blockwise(
+                _QuadraticModel(), _quadratic_loss, [], model_family="gpt2"
+            )
+
+    def test_blockwise_score_rejects_non_positive_gradient_budget(self) -> None:
+        with self.assertRaisesRegex(ValueError, "num_batches"):
+            compute_importance_scores_hvp_blockwise(
+                _QuadraticModel(),
+                _quadratic_loss,
+                [None],
+                model_family="gpt2",
+                grad_accumulation_batches=0,
+            )
+
     def test_matches_quadratic_hessian_vector_product(self) -> None:
         model = _QuadraticModel()
 

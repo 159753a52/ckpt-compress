@@ -93,6 +93,26 @@ def compute_mean_importance(
 # HVP (Hessian-Vector Product) 相关函数
 # ============================================================
 
+def _validate_hvp_batch_request(data_batches: list, num_batches: int) -> int:
+    """Validate a batched HVP request and return the effective batch count.
+
+    All public batched HVP entry points use the same convention: a positive
+    integer requests up to that many cached batches, and the request is capped
+    by the available data.  Failing early here avoids silent empty results and
+    the less useful ``data_batches[0]`` IndexError from score helpers.
+    """
+    if (
+        isinstance(num_batches, bool)
+        or not isinstance(num_batches, int)
+        or num_batches < 1
+    ):
+        raise ValueError(
+            f"num_batches must be a positive integer, got {num_batches}"
+        )
+    if not data_batches:
+        raise ValueError("data_batches must contain at least one batch")
+    return min(num_batches, len(data_batches))
+
 def compute_hvp(
     model: torch.nn.Module,
     loss_fn: Callable,
@@ -175,7 +195,7 @@ def compute_hvp_batched(
         平均 HVP 结果字典
     """
     hvp_sum = None
-    actual_batches = min(num_batches, len(data_batches))
+    actual_batches = _validate_hvp_batch_request(data_batches, num_batches)
 
     for i in range(actual_batches):
         batch = data_batches[i]
@@ -235,6 +255,8 @@ def compute_importance_scores_hvp(
         ...     return outputs.loss
         >>> scores = compute_importance_scores_hvp(model, loss_fn, batches, num_batches=5)
     """
+    _validate_hvp_batch_request(data_batches, num_batches)
+
     # 收集模型参数（作为向量 v = θ）
     params = {name: p for name, p in model.named_parameters() if p.requires_grad}
     weights = {name: p.data.clone() for name, p in params.items()}
@@ -302,6 +324,8 @@ def compute_importance_scores_hvp_abs(
         ...     return outputs.loss
         >>> scores = compute_importance_scores_hvp_abs(model, loss_fn, batches, num_batches=5)
     """
+    _validate_hvp_batch_request(data_batches, num_batches)
+
     # 收集模型参数（作为向量 v = θ）
     params = {name: p for name, p in model.named_parameters() if p.requires_grad}
     weights = {name: p.data.clone() for name, p in params.items()}
@@ -529,7 +553,7 @@ def compute_hvp_blockwise_batched(
         平均 HVP 结果字典 {param_name: tensor}
     """
     hvp_sum = None
-    actual_batches = min(num_batches, len(data_batches))
+    actual_batches = _validate_hvp_batch_request(data_batches, num_batches)
 
     for i in range(actual_batches):
         print(f"[Block-wise HVP] Batch {i + 1}/{actual_batches}...")
@@ -594,6 +618,10 @@ def compute_importance_scores_hvp_blockwise(
         ...     model, loss_fn, batches, model_family='gpt2', num_batches=3
         ... )
     """
+    _validate_hvp_batch_request(data_batches, num_batches)
+    if grad_accumulation_batches is not None:
+        _validate_hvp_batch_request(data_batches, grad_accumulation_batches)
+
     # 1. 构建 block 划分
     blocks = build_transformer_blocks(model, model_family)
     print(f"[Block-wise HVP] Built {len(blocks)} blocks from {model_family} model")
@@ -603,8 +631,11 @@ def compute_importance_scores_hvp_blockwise(
     weights = {name: p.data.clone() for name, p in params.items()}
 
     # 3. 计算梯度（多 batch 累积，大幅提升一阶项稳定性）
-    n_grad = grad_accumulation_batches if grad_accumulation_batches else len(data_batches)
-    n_grad = min(n_grad, len(data_batches))
+    n_grad = (
+        len(data_batches)
+        if grad_accumulation_batches is None
+        else min(grad_accumulation_batches, len(data_batches))
+    )
     print(f"[Block-wise HVP] Accumulating gradients over {n_grad} batches...")
     model.zero_grad()
     for _gb in range(n_grad):
