@@ -50,6 +50,15 @@ class TestImportanceScoringContract(unittest.TestCase):
                 hvp_batches=0,
             )
 
+        with self.assertRaisesRegex(ValueError, "grad_batches_first_order"):
+            compute_scores_by_method(
+                None,
+                [],
+                "lm",
+                methods=["magnitude"],
+                grad_batches_first_order=True,
+            )
+
     def test_gradient_collection_rejects_empty_batches_and_non_positive_count(self) -> None:
         model = torch.nn.Linear(1, 1)
 

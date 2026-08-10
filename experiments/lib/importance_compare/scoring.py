@@ -15,6 +15,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 import torch
+import torch.nn as nn
 
 from dacp.pruning.importance import (
     MagnitudeScorer,
@@ -30,6 +31,12 @@ _SUPPORTED_METHODS = frozenset(
 )
 _SUPPORTED_TASK_TYPES = SUPPORTED_TASK_TYPES
 _SUPPORTED_HVP_MODES = frozenset({"full", "block"})
+
+
+def _validate_positive_int(name: str, value: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{name} must be a positive integer, got {value}")
+    return value
 
 
 # ------------------------------------------------------------------ #
@@ -49,9 +56,7 @@ def _collect_gradients(
     device: str,
 ) -> Dict[str, torch.Tensor]:
     """累积梯度并平均。"""
-    if (not isinstance(num_batches, int) or isinstance(num_batches, bool)
-            or num_batches < 1):
-        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
+    num_batches = _validate_positive_int("num_batches", num_batches)
     if not cached_train:
         raise ValueError("cached_train must contain at least one batch")
 
@@ -207,16 +212,11 @@ def compute_scores_by_method(
             f"Unknown hvp_mode: {hvp_mode}. "
             f"Available: {sorted(_SUPPORTED_HVP_MODES)}"
         )
-    if not isinstance(hvp_batches, int) or isinstance(hvp_batches, bool) or hvp_batches < 1:
-        raise ValueError(f"hvp_batches must be a positive integer, got {hvp_batches}")
-    if grad_batches_first_order is not None and (
-        not isinstance(grad_batches_first_order, int)
-        or isinstance(grad_batches_first_order, bool)
-        or grad_batches_first_order < 1
-    ):
-        raise ValueError(
-            "grad_batches_first_order must be a positive integer or None, "
-            f"got {grad_batches_first_order}"
+    hvp_batches = _validate_positive_int("hvp_batches", hvp_batches)
+    if grad_batches_first_order is not None:
+        grad_batches_first_order = _validate_positive_int(
+            "grad_batches_first_order",
+            grad_batches_first_order,
         )
 
     device = next(model.parameters()).device
