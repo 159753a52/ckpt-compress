@@ -36,7 +36,13 @@ def setup_model_and_data(args, cache_eval=True):
 
     print(f"[Setup] 加载数据: {args.dataset}")
     train_loader, val_loader, task_type = get_data_loaders(
-        args.model, args.dataset, args.batch_size, args.seq_length)
+        args.model,
+        args.dataset,
+        batch_size=args.batch_size,
+        seq_length=args.seq_length,
+        num_workers=getattr(args, 'num_workers', 0),
+        data_dir=getattr(args, 'data_dir', './data'),
+    )
 
     num_steps = getattr(args, 'num_steps', 100)
     eval_batches = getattr(args, 'eval_batches', 20)

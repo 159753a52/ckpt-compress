@@ -21,6 +21,8 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--checkpoint', type=str, default=None, help='微调检查点路径')
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--seq_length', type=int, default=512)
+    parser.add_argument('--data_dir', type=str, default='./data')
+    parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--output_dir', type=str, default=None)
 
