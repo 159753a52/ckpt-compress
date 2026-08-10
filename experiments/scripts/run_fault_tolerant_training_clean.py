@@ -214,23 +214,8 @@ def compute_scores_for_method(method_name, model, optimizer, train_loader,
     # --- second-order-hvp: real block-wise HVP for damage scoring ---
     if imp_name == 'second-order-hvp':
         from dacp.tools.importance import compute_importance_scores_hvp_blockwise
-        criterion = torch.nn.CrossEntropyLoss()
-        if task_type == 'lm':
-            def loss_fn(m, batch):
-                ids = batch['input_ids'].to(device)
-                out = m(ids)
-                logits = out.logits if hasattr(out, 'logits') else out
-                return criterion(logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
-                                 batch['labels'].to(device)[..., 1:].contiguous().view(-1))
-        else:
-            def loss_fn(m, batch):
-                ids = batch['input_ids'].to(device)
-                attn = batch.get('attention_mask')
-                if attn is not None:
-                    attn = attn.to(device)
-                out = m(ids, attention_mask=attn)
-                logits = out.logits if hasattr(out, 'logits') else out
-                return criterion(logits, batch['labels'].to(device))
+        def loss_fn(m, batch):
+            return compute_task_loss(m, batch, task_type, device)
         hvp_batches = []
         data_it = iter(train_loader)
         for _ in range(min(5, num_steps)):
