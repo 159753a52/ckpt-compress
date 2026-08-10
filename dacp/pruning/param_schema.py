@@ -1,18 +1,55 @@
 """参数名解析注册表：统一的 param_name → layer_type 映射。
 
-新增模型只需调用 register_type_rule() 注册一个解析函数即可。
+新增模型只需调用 register_type_rule() 注册解析函数和可剪枝类型即可。
 """
 
 import torch
-from typing import Dict, Callable, List
-
-# 注册表：model_family -> parse_fn(name, tensor) -> layer_type
-_TYPE_RULES: Dict[str, Callable[[str, torch.Tensor], str]] = {}
+from typing import Callable, Dict, List, NamedTuple, Sequence, Tuple
 
 
-def register_type_rule(family: str, fn: Callable[[str, torch.Tensor], str]):
-    """注册模型族的参数类型解析规则。"""
-    _TYPE_RULES[family] = fn
+TypeRule = Callable[[str, torch.Tensor], str]
+
+
+class _TypeSchema(NamedTuple):
+    rule: TypeRule
+    prunable_types: Tuple[str, ...]
+
+
+_TYPE_SCHEMAS: Dict[str, _TypeSchema] = {}
+
+
+def _get_schema(model_family: str) -> _TypeSchema:
+    try:
+        return _TYPE_SCHEMAS[model_family]
+    except KeyError as exc:
+        raise ValueError(
+            f"No type schema for model family: {model_family}. "
+            "Register with register_type_rule(). "
+            f"Available: {list(_TYPE_SCHEMAS)}"
+        ) from exc
+
+
+def register_type_rule(
+    family: str,
+    fn: TypeRule,
+    prunable_types: Sequence[str],
+) -> None:
+    """Register one model family's classifier and searchable layer types."""
+    if not isinstance(family, str) or not family.strip():
+        raise ValueError("family must be a non-empty string")
+    if not callable(fn):
+        raise TypeError("fn must be callable")
+    normalized_types = tuple(prunable_types)
+    if not normalized_types or any(
+        not isinstance(layer_type, str) or not layer_type
+        for layer_type in normalized_types
+    ):
+        raise ValueError("prunable_types must contain non-empty strings")
+    if "skip" in normalized_types:
+        raise ValueError("prunable_types must not contain the reserved 'skip' type")
+    if len(set(normalized_types)) != len(normalized_types):
+        raise ValueError("prunable_types must not contain duplicates")
+    _TYPE_SCHEMAS[family] = _TypeSchema(fn, normalized_types)
 
 
 def infer_layer_type(name: str, tensor: torch.Tensor, model_family: str) -> str:
@@ -22,12 +59,14 @@ def infer_layer_type(name: str, tensor: torch.Tensor, model_family: str) -> str:
         'attn' | 'mlp' | 'conv' | 'fc' | 'others_linear' | 'skip'
         'skip' 表示不可剪枝（embedding / norm / bias / 1D）。
     """
-    if model_family not in _TYPE_RULES:
+    schema = _get_schema(model_family)
+    layer_type = schema.rule(name, tensor)
+    if layer_type != 'skip' and layer_type not in schema.prunable_types:
         raise ValueError(
-            f"No type rules for model family: {model_family}. "
-            f"Register with register_type_rule(). Available: {list(_TYPE_RULES.keys())}"
+            f"Type rule for {model_family!r} returned unregistered type "
+            f"{layer_type!r} for parameter {name!r}"
         )
-    return _TYPE_RULES[model_family](name, tensor)
+    return layer_type
 
 
 def build_type_map(
@@ -42,18 +81,11 @@ def build_type_map(
 
 def get_prunable_types(model_family: str) -> List[str]:
     """返回该模型族中可剪枝的 type 列表。"""
-    mapping = {
-        'gpt2': ['attn', 'mlp', 'others_linear'],
-        'bert': ['attn', 'mlp', 'others_linear'],
-        'resnet': ['conv', 'fc'],
-        'pythia': ['attn', 'mlp', 'others_linear'],
-        'vit': ['attn', 'mlp', 'fc', 'others_linear'],
-    }
-    return mapping.get(model_family, ['attn', 'mlp', 'others_linear'])
+    return list(_get_schema(model_family).prunable_types)
 
 
 def list_registered_families() -> List[str]:
-    return list(_TYPE_RULES.keys())
+    return list(_TYPE_SCHEMAS)
 
 
 # ============================================================
@@ -128,8 +160,24 @@ def _vit_type_rule(name: str, tensor: torch.Tensor) -> str:
     return 'others_linear'
 
 
-register_type_rule('gpt2', _gpt2_type_rule)
-register_type_rule('bert', _bert_type_rule)
-register_type_rule('resnet', _resnet_type_rule)
-register_type_rule('pythia', _pythia_type_rule)
-register_type_rule('vit', _vit_type_rule)
+register_type_rule(
+    'gpt2',
+    _gpt2_type_rule,
+    ('attn', 'mlp', 'others_linear'),
+)
+register_type_rule(
+    'bert',
+    _bert_type_rule,
+    ('attn', 'mlp', 'others_linear'),
+)
+register_type_rule('resnet', _resnet_type_rule, ('conv', 'fc'))
+register_type_rule(
+    'pythia',
+    _pythia_type_rule,
+    ('attn', 'mlp', 'others_linear'),
+)
+register_type_rule(
+    'vit',
+    _vit_type_rule,
+    ('attn', 'mlp', 'fc', 'others_linear'),
+)
