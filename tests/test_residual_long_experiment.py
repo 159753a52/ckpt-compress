@@ -298,6 +298,12 @@ class TestResidualLongExperiment(unittest.TestCase):
         self.assertIsNone(residual_reporting.summarize_values([3.0])["std"])
         json.dumps(aggregate, allow_nan=False)
 
+    def test_reporting_rejects_empty_inputs(self) -> None:
+        with self.assertRaisesRegex(ValueError, "values must not be empty"):
+            residual_reporting.summarize_values([])
+        with self.assertRaisesRegex(ValueError, "seed_results must not be empty"):
+            residual_reporting.aggregate({})
+
     def test_method_identifier_protocol_preserves_existing_strings(self) -> None:
         self.assertEqual(
             residual_protocol.FIXED_METHODS,

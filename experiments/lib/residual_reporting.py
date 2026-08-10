@@ -23,6 +23,8 @@ from experiments.lib.residual_protocol import (
 
 
 def summarize_values(values: Sequence[float]) -> Dict[str, object]:
+    if len(values) == 0:
+        raise ValueError("values must not be empty")
     mean = statistics.mean(values)
     if len(values) < 2:
         return {"values": list(values), "mean": mean, "std": None, "ci95": None}
@@ -38,6 +40,8 @@ def summarize_values(values: Sequence[float]) -> Dict[str, object]:
 
 def aggregate(seed_results: Mapping[str, Mapping]) -> Dict[str, object]:
     """Aggregate paired seed results without changing method insertion order."""
+    if not seed_results:
+        raise ValueError("seed_results must not be empty")
     seeds = sorted(seed_results, key=int)
     method_names = list(seed_results[seeds[0]]["methods"])
     output: Dict[str, object] = {
