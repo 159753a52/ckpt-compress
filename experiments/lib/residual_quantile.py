@@ -47,6 +47,8 @@ def calibrate_quantile_smooth_allocation(
         [sum(scores[name].numel() for name in names) for names in layers],
         dtype=np.int64,
     )
+    if np.any(layer_sizes <= 0):
+        raise ValueError("Structural layers must contain at least one score")
     lower_rate = max(0.0, ratio - trust_radius)
     upper_rate = min(max_layer_ratio, ratio + trust_radius)
     lower_bounds = np.ceil(lower_rate * layer_sizes).astype(np.int64)

@@ -34,6 +34,21 @@ class TestResidualMasks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Invalid prune count"):
             exact_keep_mask(scores, 4)
 
+    def test_exact_keep_mask_rejects_invalid_counts_and_scores(self) -> None:
+        for invalid_count in (True, 1.5, float("nan")):
+            with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
+                ValueError, "must be an integer"
+            ):
+                exact_keep_mask(torch.ones(3), invalid_count)
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            exact_keep_mask(torch.tensor([1.0, float("nan")]), 1)
+        self.assertTrue(
+            torch.equal(
+                exact_keep_mask(torch.tensor([1.0, 2.0]), 1.0),
+                torch.tensor([False, True]),
+            )
+        )
+
     def test_order_mask_uses_the_same_prune_count_boundaries(self) -> None:
         order = torch.tensor([2, 0, 1])
 
@@ -73,6 +88,14 @@ class TestResidualMasks(unittest.TestCase):
             actual_count = sum((~direct[name]).sum().item() for name in names)
             self.assertEqual(actual_count, expected_count)
         self.assertEqual(layer_rates(layers, direct), [0.6, 0.5])
+
+    def test_layer_masks_reject_empty_layers_and_mismatched_counts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            layer_score_orders([[]], {})
+        with self.assertRaisesRegex(ValueError, "at least one score"):
+            layer_score_orders([["empty"]], {"empty": torch.empty(0)})
+        with self.assertRaisesRegex(ValueError, "Prune counts must match"):
+            layer_masks([["scores"]], {"scores": torch.ones(2)}, [])
 
     def test_global_mask_preserves_shapes_and_exact_budget(self) -> None:
         scores = {

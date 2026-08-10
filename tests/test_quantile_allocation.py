@@ -103,6 +103,42 @@ class TestQuantileAllocation(unittest.TestCase):
         self.assertLess(high_variation, low_variation)
         self.assertEqual(counts[10.0], [3, 3, 3])
 
+    def test_quantile_smooth_supports_single_layer(self) -> None:
+        layers = [["only"]]
+        scores = {"only": torch.tensor([1.0, 2.0, 3.0, 4.0])}
+
+        counts, metadata = calibrate_quantile_smooth_allocation(
+            layers,
+            scores,
+            layer_score_orders(layers, scores),
+            target=2,
+            ratio=0.5,
+            max_layer_ratio=0.75,
+            trust_radius=0.25,
+            smoothness_values=[0.1, 10.0],
+            device="cpu",
+        )
+
+        self.assertEqual(counts, {0.1: [2], 10.0: [2]})
+        for solution in metadata["solutions"].values():
+            self.assertTrue(solution["converged"])
+            self.assertEqual(solution["iterations"], 0)
+            self.assertEqual(solution["smoothness_penalty"], 0.0)
+
+    def test_quantile_smooth_rejects_empty_structural_layer(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least one score"):
+            calibrate_quantile_smooth_allocation(
+                [[]],
+                {},
+                [torch.empty(0, dtype=torch.long)],
+                target=0,
+                ratio=0.5,
+                max_layer_ratio=0.75,
+                trust_radius=0.25,
+                smoothness_values=[0.1],
+                device="cpu",
+            )
+
     def test_relative_quantile_cost_is_invariant_to_layer_scaling(self) -> None:
         layers = [["low"], ["high"], ["middle"]]
         scores = {

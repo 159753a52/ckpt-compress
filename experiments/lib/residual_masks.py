@@ -12,18 +12,29 @@ TensorDict = Dict[str, torch.Tensor]
 MaskDict = Dict[str, torch.Tensor]
 
 
-def _validate_prune_count(prune_count: int, score_count: int) -> None:
-    if prune_count < 0 or prune_count > score_count:
+def _validate_prune_count(prune_count: int, score_count: int) -> int:
+    if isinstance(prune_count, bool):
+        raise ValueError(f"Prune count must be an integer, got {prune_count}")
+    try:
+        normalized = int(prune_count)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"Prune count must be an integer, got {prune_count}") from exc
+    if normalized != prune_count:
+        raise ValueError(f"Prune count must be an integer, got {prune_count}")
+    if normalized < 0 or normalized > score_count:
         raise ValueError(
             f"Invalid prune count {prune_count} for {score_count} scores"
         )
+    return normalized
 
 
 def exact_keep_mask(values: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Return a deterministic mask with exactly ``prune_count`` false entries."""
     flat = values.detach().float().flatten().cpu()
     count = flat.numel()
-    _validate_prune_count(prune_count, count)
+    prune_count = _validate_prune_count(prune_count, count)
+    if not torch.isfinite(flat).all().item():
+        raise ValueError("Mask scores must be finite")
     if prune_count == 0:
         return torch.ones(count, dtype=torch.bool)
     if prune_count == count:
@@ -48,7 +59,7 @@ def exact_keep_mask_from_order(
     if order.ndim != 1:
         raise ValueError("Score order must be one-dimensional")
     count = order.numel()
-    _validate_prune_count(prune_count, count)
+    prune_count = _validate_prune_count(prune_count, count)
     keep = torch.ones(count, dtype=torch.bool)
     keep[order[:prune_count]] = False
     return keep
@@ -62,9 +73,15 @@ def layer_score_orders(
     """Cache stable within-layer score orders for repeated exact masks."""
     orders = []
     for names in layers:
+        if not names:
+            raise ValueError("Structural layers must be non-empty")
         flat_scores = torch.cat(
             [scores[name].detach().float().flatten().cpu() for name in names]
         )
+        if flat_scores.numel() == 0:
+            raise ValueError("Structural layers must contain at least one score")
+        if not torch.isfinite(flat_scores).all().item():
+            raise ValueError("Mask scores must be finite")
         if sort_device is None or sort_device == "cpu":
             order = torch.argsort(flat_scores, stable=True)
         else:
@@ -94,6 +111,10 @@ def layer_mask_at_count(
     score_order: torch.Tensor | None = None,
 ) -> MaskDict:
     """Build one structural layer's exact-count mask."""
+    if not names:
+        raise ValueError("Structural layers must be non-empty")
+    if not any(scores[name].numel() for name in names):
+        raise ValueError("Structural layers must contain at least one score")
     if score_order is None:
         flat_scores = torch.cat([scores[name].flatten() for name in names])
         flat_keep = exact_keep_mask(flat_scores, prune_count)
@@ -111,6 +132,8 @@ def layer_masks(
     counts: Sequence[int],
     score_orders: Sequence[torch.Tensor] | None = None,
 ) -> MaskDict:
+    if len(counts) != len(layers):
+        raise ValueError("Prune counts must match the structural layers")
     if score_orders is not None and len(score_orders) != len(layers):
         raise ValueError("Score orders must match the structural layers")
     masks: MaskDict = {}

@@ -250,37 +250,46 @@ def solve_quantile_smooth_counts(
     solutions = {}
     solve_started = time.perf_counter()
     for smoothness in smoothness_values:
-        step_size = _STEP_SAFETY_FACTOR / (
-            smoothness * laplacian_largest_eigenvalue
-        )
-        rates = initial_rates.copy()
-        extrapolated = rates.copy()
-        acceleration = 1.0
-        residual = math.inf
-        converged = False
-
-        for iteration in range(1, max_iterations + 1):
-            gradient = smoothness * (laplacian @ extrapolated)
-            candidate = _budget_proximal_rates(
-                extrapolated - step_size * gradient,
-                step_size,
-                problem,
+        if laplacian_largest_eigenvalue <= _ZERO_TOLERANCE:
+            # A one-layer chain has no smoothness term; its budget fixes the rate.
+            rates = np.asarray([target / float(layer_sizes[0])], dtype=np.float64)
+            iteration = 0
+            residual = 0.0
+            converged = True
+        else:
+            step_size = _STEP_SAFETY_FACTOR / (
+                smoothness * laplacian_largest_eigenvalue
             )
-            residual = float(np.max(np.abs(candidate - rates)))
-            next_acceleration = 0.5 * (1.0 + math.sqrt(1.0 + 4.0 * acceleration**2))
-            if np.dot(extrapolated - candidate, candidate - rates) > 0:
-                next_acceleration = 1.0
-                next_extrapolated = candidate.copy()
-            else:
-                next_extrapolated = candidate + (
-                    (acceleration - 1.0) / next_acceleration
-                ) * (candidate - rates)
-            rates = candidate
-            extrapolated = next_extrapolated
-            acceleration = next_acceleration
-            if residual <= tolerance:
-                converged = True
-                break
+            rates = initial_rates.copy()
+            extrapolated = rates.copy()
+            acceleration = 1.0
+            residual = math.inf
+            converged = False
+
+            for iteration in range(1, max_iterations + 1):
+                gradient = smoothness * (laplacian @ extrapolated)
+                candidate = _budget_proximal_rates(
+                    extrapolated - step_size * gradient,
+                    step_size,
+                    problem,
+                )
+                residual = float(np.max(np.abs(candidate - rates)))
+                next_acceleration = 0.5 * (
+                    1.0 + math.sqrt(1.0 + 4.0 * acceleration**2)
+                )
+                if np.dot(extrapolated - candidate, candidate - rates) > 0:
+                    next_acceleration = 1.0
+                    next_extrapolated = candidate.copy()
+                else:
+                    next_extrapolated = candidate + (
+                        (acceleration - 1.0) / next_acceleration
+                    ) * (candidate - rates)
+                rates = candidate
+                extrapolated = next_extrapolated
+                acceleration = next_acceleration
+                if residual <= tolerance:
+                    converged = True
+                    break
 
         continuous_counts = rates * layer_sizes
         counts, rounding = _integerize_quantile_smooth_counts(
