@@ -9,6 +9,8 @@ import math
 import torch
 from typing import Tuple, Dict, Any
 
+from ._validation import relative_mse, validate_quantization_input
+
 
 class INT4Quantizer:
     """
@@ -29,8 +31,15 @@ class INT4Quantizer:
         Args:
             quant_range: 量化范围（对称量化，范围为 [-range, range-1]）
         """
-        if not isinstance(quant_range, int) or isinstance(quant_range, bool) or quant_range < 2:
-            raise ValueError(f"quant_range must be an integer >= 2, got {quant_range}")
+        if (
+            not isinstance(quant_range, int)
+            or isinstance(quant_range, bool)
+            or not 2 <= quant_range <= 128
+        ):
+            raise ValueError(
+                "quant_range must be an integer in [2, 128] for int8 storage, "
+                f"got {quant_range}"
+            )
         self.quant_range = quant_range
         self.n_levels = 2 * quant_range  # 16 levels for 4-bit
     
@@ -52,8 +61,7 @@ class INT4Quantizer:
                 - shape: 原始形状
                 - dtype: 原始数据类型
         """
-        if weight.numel() == 0:
-            raise ValueError("cannot quantize an empty tensor")
+        validate_quantization_input("weight", weight)
 
         # 保存原始形状和数据类型
         shape = weight.shape
@@ -128,10 +136,7 @@ class INT4Quantizer:
         Returns:
             relative_mse: 相对均方误差
         """
-        mse = torch.mean((original - recovered) ** 2)
-        original_var = torch.var(original)
-        relative_mse = (mse / (original_var + 1e-8)).item()
-        return relative_mse
+        return relative_mse(original, recovered)
     
     def get_compression_ratio(self) -> float:
         """

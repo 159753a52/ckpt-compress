@@ -16,6 +16,8 @@ import torch
 import numpy as np
 from typing import Tuple, Dict, Any, Optional
 
+from ._validation import relative_mse, validate_quantization_input
+
 
 def _dtype_from_str(dtype_str: str) -> torch.dtype:
     """将字符串形式的 dtype 安全映射为 torch.dtype。"""
@@ -223,6 +225,7 @@ class KMeansQuantizer:
             quantized: 量化后的索引张量（int64），mask=0 位置索引为 -1
             metadata: 解量化所需的元数据
         """
+        validate_quantization_input("weight", weight)
         if shape is None:
             shape = weight.shape
         if int(np.prod(shape)) != weight.numel():
@@ -381,7 +384,4 @@ class KMeansQuantizer:
         """
         计算量化误差（相对 MSE）。
         """
-        mse = torch.mean((original - recovered) ** 2)
-        original_var = torch.var(original)
-        relative_mse = (mse / (original_var + 1e-8)).item()
-        return relative_mse
+        return relative_mse(original, recovered)

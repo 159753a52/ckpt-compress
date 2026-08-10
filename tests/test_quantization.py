@@ -45,8 +45,30 @@ class TestQuantizers(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "quant_range"):
             INT4Quantizer(quant_range=1)
+        with self.assertRaisesRegex(ValueError, "quant_range"):
+            INT4Quantizer(quant_range=129)
         with self.assertRaisesRegex(ValueError, "empty"):
             quantizer.quantize(torch.empty(0))
+
+    def test_quantizers_reject_nonfinite_inputs(self) -> None:
+        for quantizer in (INT4Quantizer(), KMeansQuantizer(n_clusters=2)):
+            with self.subTest(quantizer=type(quantizer).__name__):
+                with self.assertRaisesRegex(ValueError, "finite"):
+                    quantizer.quantize(torch.tensor([1.0, float("nan")]))
+
+    def test_shared_relative_error_handles_scalars_and_validates_shapes(self) -> None:
+        original = torch.tensor([2.0])
+        recovered = torch.tensor([1.5])
+
+        for quantizer in (INT4Quantizer(), KMeansQuantizer(n_clusters=2)):
+            with self.subTest(quantizer=type(quantizer).__name__):
+                error = quantizer.compute_quantization_error(original, recovered)
+                self.assertTrue(torch.isfinite(torch.tensor(error)))
+                with self.assertRaisesRegex(ValueError, "shapes"):
+                    quantizer.compute_quantization_error(
+                        torch.ones(2),
+                        torch.ones(1),
+                    )
 
 
 if __name__ == "__main__":
