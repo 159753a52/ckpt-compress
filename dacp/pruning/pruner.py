@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from typing import Dict, Tuple, Optional, List
+from typing import Any, Dict, Mapping, Tuple, Optional, List
 
 from .importance import ImportanceScorer, get_importance_scorer
 from .allocation import AllocationStrategy, get_allocation_strategy
@@ -110,11 +110,23 @@ class Pruner:
         self,
         importance: str = 'first-order',
         allocation: str = 'gamma-adaptive',
-        **kwargs,
+        importance_kwargs: Optional[Mapping[str, Any]] = None,
+        allocation_kwargs: Optional[Mapping[str, Any]] = None,
     ):
-        imp_kwargs = {}
-        self.scorer = get_importance_scorer(importance, **imp_kwargs)
-        self.allocator = get_allocation_strategy(allocation)
+        """Create a pruner from independently configured components.
+
+        ``importance_kwargs`` and ``allocation_kwargs`` are intentionally
+        separate so a parameter intended for one component cannot be silently
+        dropped or accidentally passed to the other one.
+        """
+        self.scorer = get_importance_scorer(
+            importance,
+            **dict(importance_kwargs or {}),
+        )
+        self.allocator = get_allocation_strategy(
+            allocation,
+            **dict(allocation_kwargs or {}),
+        )
         self.importance_name = importance
         self.allocation_name = allocation
     
@@ -138,6 +150,14 @@ class Pruner:
         返回:
             重要性得分享典
         """
+        if self.scorer.requires_gradients and gradients is None:
+            raise ValueError(
+                f"Importance method {self.importance_name!r} requires gradients"
+            )
+        if self.scorer.requires_reference and reference_weights is None:
+            raise ValueError(
+                f"Importance method {self.importance_name!r} requires reference_weights"
+            )
         return self.scorer.score(weights, gradients, reference_weights)
     
     def compute_layer_ratios(

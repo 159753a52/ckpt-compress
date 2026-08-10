@@ -129,7 +129,7 @@ def sweep_K(args, model_init, train_loader, val_loader, task_type, cached_eval):
                     prunable_w = filter_prunable_params(weights)
                     prunable_g = {k: gradients.get(k, torch.zeros_like(v)) for k, v in prunable_w.items()}
 
-                    pruner = Pruner(importance=imp_method, allocation=alloc_method, alpha=args.alpha)
+                    pruner = Pruner(importance=imp_method, allocation=alloc_method)
                     scores = pruner.compute_scores(prunable_w, prunable_g)
                     layer_ratios = pruner.compute_layer_ratios(scores, args.prune_ratio)
                     apply_pruning(model, scores, layer_ratios, device=args.device)

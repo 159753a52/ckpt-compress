@@ -2,6 +2,13 @@ import unittest
 
 import torch
 
+from dacp.pruning import Pruner
+from dacp.pruning.importance import (
+    IMPORTANCE_REGISTRY,
+    ImportanceScorer,
+    MagnitudeScorer,
+    get_importance_scorer,
+)
 from dacp.pruning.pruner import apply_pruning, exact_pruning_mask
 
 
@@ -62,6 +69,65 @@ class TestExactPruningMask(unittest.TestCase):
             apply_pruning(model, {"left": torch.ones(4)}, {"left": 1.1})
         with self.assertRaisesRegex(ValueError, "must match"):
             apply_pruning(model, {"left": torch.ones(2)}, {"left": 0.5})
+
+
+class TestPrunerContracts(unittest.TestCase):
+    def test_component_kwargs_are_forwarded_to_the_selected_component(self) -> None:
+        class _ScaledMagnitude(ImportanceScorer):
+            def __init__(self, scale: float = 1.0) -> None:
+                super().__init__()
+                self.scale = scale
+
+            @property
+            def name(self) -> str:
+                return "scaled-magnitude"
+
+            def score(self, weights, gradients=None, reference_weights=None):
+                del gradients, reference_weights
+                return {name: self.scale * weight.abs() for name, weight in weights.items()}
+
+        previous = IMPORTANCE_REGISTRY.get("scaled-magnitude")
+        IMPORTANCE_REGISTRY["scaled-magnitude"] = _ScaledMagnitude
+        try:
+            pruner = Pruner(
+                importance="scaled-magnitude",
+                allocation="weibull-adaptive",
+                importance_kwargs={"scale": 3.0},
+                allocation_kwargs={"max_layer_ratio": 0.25},
+            )
+            self.assertEqual(pruner.scorer.scale, 3.0)
+            self.assertEqual(pruner.allocator.max_layer_ratio, 0.25)
+        finally:
+            if previous is None:
+                IMPORTANCE_REGISTRY.pop("scaled-magnitude", None)
+            else:
+                IMPORTANCE_REGISTRY["scaled-magnitude"] = previous
+
+    def test_missing_required_score_inputs_fail_at_pruner_boundary(self) -> None:
+        weights = {"layer": torch.ones(2, 2)}
+
+        with self.assertRaisesRegex(ValueError, "requires gradients"):
+            Pruner(importance="first-order").compute_scores(weights)
+        with self.assertRaisesRegex(ValueError, "requires reference_weights"):
+            Pruner(importance="residual-magnitude").compute_scores(weights)
+
+    def test_registered_scorer_instances_are_not_called_as_factories(self) -> None:
+        previous = IMPORTANCE_REGISTRY.get("instance-magnitude")
+        IMPORTANCE_REGISTRY["instance-magnitude"] = MagnitudeScorer()
+        try:
+            scorer = get_importance_scorer("instance-magnitude")
+            self.assertIsInstance(scorer, MagnitudeScorer)
+            with self.assertRaisesRegex(TypeError, "does not accept"):
+                get_importance_scorer("instance-magnitude", scale=2.0)
+        finally:
+            if previous is None:
+                IMPORTANCE_REGISTRY.pop("instance-magnitude", None)
+            else:
+                IMPORTANCE_REGISTRY["instance-magnitude"] = previous
+
+    def test_legacy_top_level_kwargs_are_not_silently_ignored(self) -> None:
+        with self.assertRaises(TypeError):
+            Pruner(importance="magnitude", alpha=0.5)
 
 
 if __name__ == "__main__":

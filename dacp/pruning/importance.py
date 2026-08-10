@@ -123,7 +123,15 @@ def get_importance_scorer(name: str, **kwargs) -> ImportanceScorer:
     """根据名称获取重要性得分计算器。"""
     if name not in IMPORTANCE_REGISTRY:
         raise ValueError(f"Unknown importance method: {name}. Available: {list(IMPORTANCE_REGISTRY.keys())}")
-    return IMPORTANCE_REGISTRY[name](**kwargs)
+    registered = IMPORTANCE_REGISTRY[name]
+    if isinstance(registered, ImportanceScorer):
+        if kwargs:
+            raise TypeError(
+                f"Registered scorer {name!r} is an instance and does not accept "
+                f"constructor arguments: {sorted(kwargs)}"
+            )
+        return registered
+    return registered(**kwargs)
 
 def list_importance_methods():
     """列出所有已注册的重要性方法。"""
