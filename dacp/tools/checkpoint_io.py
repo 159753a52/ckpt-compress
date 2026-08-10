@@ -15,6 +15,27 @@ import torch
 from typing import Dict, Mapping
 
 
+def _normalize_mask(
+    name: str,
+    param: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """Validate one keep mask and return a detached CPU boolean tensor."""
+    if not isinstance(mask, torch.Tensor):
+        raise TypeError(f"Mask for {name!r} must be a torch.Tensor")
+    if mask.shape != param.shape:
+        raise ValueError(
+            f"Mask shape for {name!r} must match parameter shape: "
+            f"{tuple(mask.shape)} != {tuple(param.shape)}"
+        )
+    mask_cpu = mask.detach().cpu()
+    if mask_cpu.dtype != torch.bool:
+        binary = (mask_cpu == 0) | (mask_cpu == 1)
+        if not binary.all():
+            raise ValueError(f"Mask for {name!r} must contain only 0 or 1")
+    return mask_cpu.bool()
+
+
 def save_compressed_checkpoint(
     state_dict: Dict[str, torch.Tensor],
     masks: Dict[str, torch.Tensor],
@@ -36,7 +57,7 @@ def save_compressed_checkpoint(
     for name, param in state_dict.items():
         p = param.detach().cpu()
         if name in masks:
-            mask = masks[name].bool().cpu()
+            mask = _normalize_mask(name, p, masks[name])
             values = p[mask]
             if use_fp16:
                 values = values.half()
@@ -149,7 +170,7 @@ def save_quantized_compressed_checkpoint(
       - cluster indices (uint8 for k<=256)
       - codebook (k float16 centroids)
 
-    Cost: 1 + ceil(log2(k)) * (1-P) bits per param.
+    Stored index cost: 8 * (1-P) bits per parameter plus the 1-bit mask.
 
     Returns:
         compressed file size in bytes
@@ -168,7 +189,7 @@ def save_quantized_compressed_checkpoint(
     for name, param in state_dict.items():
         p = param.detach().cpu()
         if name in masks:
-            mask = masks[name].bool().cpu()
+            mask = _normalize_mask(name, p, masks[name])
             values = p[mask].numpy()
             packed_mask = np.packbits(mask.numpy().flatten().astype(np.uint8))
 
@@ -222,21 +243,20 @@ def get_size_breakdown(
     total_pruned = 0
     total_params = 0
 
-    val_bits = 16 if use_fp16 else 32
-
     for name, param in state_dict.items():
         n = param.numel()
-        total_original += n * 4  # fp32 original
+        total_original += n * param.element_size()
+        value_bits = 16 if use_fp16 else param.element_size() * 8
 
         if name in masks:
-            mask = masks[name]
+            mask = _normalize_mask(name, param, masks[name])
             nnz = int(mask.sum().item())
             total_mask_bytes += (n + 7) // 8  # np.packbits pads each tensor separately
-            total_value_bits += nnz * val_bits
+            total_value_bits += nnz * value_bits
             total_pruned += (n - nnz)
             total_params += n
         else:
-            total_value_bits += n * val_bits
+            total_value_bits += n * value_bits
 
     mask_bytes = total_mask_bytes
     value_bytes = total_value_bits // 8

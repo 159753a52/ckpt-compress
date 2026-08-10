@@ -7,6 +7,7 @@ import torch
 from dacp.tools.checkpoint_io import (
     get_size_breakdown,
     load_compressed_checkpoint,
+    save_compressed_checkpoint,
     save_quantized_compressed_checkpoint,
 )
 
@@ -64,6 +65,45 @@ class TestCheckpointSizeBreakdown(unittest.TestCase):
                     str(Path(temp_dir) / "quantized.pt"),
                     n_clusters=257,
                 )
+
+    def test_checkpoint_apis_share_the_mask_contract(self) -> None:
+        state_dict = {"weight": torch.ones(2, 2)}
+        invalid_masks = (
+            ({"weight": torch.ones(4)}, "shape"),
+            ({"weight": torch.tensor([[1.0, 0.5], [0.0, 1.0]])}, "0 or 1"),
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for masks, message in invalid_masks:
+                with self.subTest(message=message):
+                    with self.assertRaisesRegex(ValueError, message):
+                        save_compressed_checkpoint(
+                            state_dict,
+                            masks,
+                            str(Path(temp_dir) / "dense.pt"),
+                        )
+                    with self.assertRaisesRegex(ValueError, message):
+                        save_quantized_compressed_checkpoint(
+                            state_dict,
+                            masks,
+                            str(Path(temp_dir) / "quantized.pt"),
+                        )
+                    with self.assertRaisesRegex(ValueError, message):
+                        get_size_breakdown(state_dict, masks)
+
+    def test_size_breakdown_uses_each_tensor_dtype(self) -> None:
+        state_dict = {
+            "half": torch.ones(1, dtype=torch.float16),
+            "double": torch.ones(1, dtype=torch.float64),
+        }
+
+        native = get_size_breakdown(state_dict, {}, use_fp16=False)
+        converted = get_size_breakdown(state_dict, {}, use_fp16=True)
+
+        self.assertEqual(native["original_bytes"], 10)
+        self.assertEqual(native["values_bytes"], 10)
+        self.assertEqual(converted["original_bytes"], 10)
+        self.assertEqual(converted["values_bytes"], 4)
 
 
 if __name__ == "__main__":
