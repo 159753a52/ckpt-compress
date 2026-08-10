@@ -69,8 +69,10 @@ class TestExactPruningMask(unittest.TestCase):
     def test_apply_pruning_validates_ratio_and_shape(self) -> None:
         model = _TwoParameterModel()
 
-        with self.assertRaisesRegex(ValueError, "must be in"):
+        with self.assertRaisesRegex(ValueError, "Pruning ratio"):
             apply_pruning(model, {"left": torch.ones(4)}, {"left": 1.1})
+        with self.assertRaisesRegex(ValueError, "Pruning ratio"):
+            apply_pruning(model, {"left": torch.ones(4)}, {"left": True})
         with self.assertRaisesRegex(ValueError, "must match"):
             apply_pruning(model, {"left": torch.ones(2)}, {"left": 0.5})
 

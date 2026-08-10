@@ -7,27 +7,7 @@ from abc import ABC, abstractmethod
 from scipy import stats
 from scipy.optimize import bisect
 
-
-def _validate_global_prune_ratio(global_prune_ratio: float) -> float:
-    """Validate and normalize the public allocation budget argument."""
-    if isinstance(global_prune_ratio, bool):
-        raise ValueError(
-            f"global_prune_ratio must be a finite number in [0, 1], "
-            f"got {global_prune_ratio}"
-        )
-    try:
-        ratio = float(global_prune_ratio)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"global_prune_ratio must be a finite number in [0, 1], "
-            f"got {global_prune_ratio}"
-        ) from exc
-    if not np.isfinite(ratio) or not 0.0 <= ratio <= 1.0:
-        raise ValueError(
-            f"global_prune_ratio must be a finite number in [0, 1], "
-            f"got {global_prune_ratio}"
-        )
-    return ratio
+from .validation import validate_unit_interval
 
 
 class AllocationStrategy(ABC):
@@ -59,7 +39,7 @@ class UniformAllocation(AllocationStrategy):
         return "uniform"
     
     def allocate(self, scores, global_prune_ratio):
-        ratio = _validate_global_prune_ratio(global_prune_ratio)
+        ratio = validate_unit_interval("global_prune_ratio", global_prune_ratio)
         return {name: ratio for name in scores}
 
 
@@ -93,7 +73,9 @@ class GlobalTopKAllocation(AllocationStrategy):
         返回:
             {layer_name: prune_ratio} 字典
         """
-        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
+        global_prune_ratio = validate_unit_interval(
+            "global_prune_ratio", global_prune_ratio
+        )
 
         if not scores:
             return {}
@@ -193,7 +175,9 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         scores: Dict[str, torch.Tensor],
         global_prune_ratio: float,
     ) -> Dict[str, float]:
-        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
+        global_prune_ratio = validate_unit_interval(
+            "global_prune_ratio", global_prune_ratio
+        )
 
         # 1. 预排序每层 scores
         sorted_layers = {}
@@ -251,24 +235,9 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
     """
     
     def __init__(self, max_layer_ratio: float = 0.5):
-        if isinstance(max_layer_ratio, bool):
-            raise ValueError(
-                f"max_layer_ratio must be a finite number in [0, 1], "
-                f"got {max_layer_ratio}"
-            )
-        try:
-            max_layer_ratio = float(max_layer_ratio)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"max_layer_ratio must be a finite number in [0, 1], "
-                f"got {max_layer_ratio}"
-            ) from exc
-        if not np.isfinite(max_layer_ratio) or not 0.0 <= max_layer_ratio <= 1.0:
-            raise ValueError(
-                f"max_layer_ratio must be a finite number in [0, 1], "
-                f"got {max_layer_ratio}"
-            )
-        self.max_layer_ratio = max_layer_ratio
+        self.max_layer_ratio = validate_unit_interval(
+            "max_layer_ratio", max_layer_ratio
+        )
     
     @property
     def name(self) -> str:
@@ -279,7 +248,9 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         scores: Dict[str, torch.Tensor],
         global_prune_ratio: float,
     ) -> Dict[str, float]:
-        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
+        global_prune_ratio = validate_unit_interval(
+            "global_prune_ratio", global_prune_ratio
+        )
         MAX_FIT_SAMPLES = 50000
         
         # 1. 对每层拟合 Weibull

@@ -6,6 +6,7 @@ from typing import Any, Dict, Mapping, Tuple, Optional, List
 
 from .importance import get_importance_scorer
 from .allocation import get_allocation_strategy
+from .validation import validate_unit_interval
 
 
 def exact_pruning_mask(score: torch.Tensor, prune_count: int) -> torch.Tensor:
@@ -77,9 +78,9 @@ def apply_pruning(
                 f"{tuple(score.shape)} != {tuple(param.shape)}"
             )
 
-        ratio = float(layer_ratios[name])
-        if not 0.0 <= ratio <= 1.0:
-            raise ValueError(f"Pruning ratio for {name!r} must be in [0, 1], got {ratio}")
+        ratio = validate_unit_interval(
+            f"Pruning ratio for {name!r}", layer_ratios[name]
+        )
 
         k = int(score.numel() * ratio)
         mask = exact_pruning_mask(score, k)
