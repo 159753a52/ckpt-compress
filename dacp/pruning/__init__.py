@@ -36,6 +36,7 @@ from .pruner import (
     Pruner,
     filter_prunable_params,
     apply_pruning,
+    exact_pruning_mask,
 )
 from .param_schema import (
     infer_layer_type,
@@ -51,7 +52,7 @@ __all__ = [
     'get_importance_scorer', 'list_importance_methods',
     'AllocationStrategy', 'UniformAllocation', 'GammaAdaptiveAllocation', 'WeibullAdaptiveAllocation',
     'get_allocation_strategy', 'list_allocation_strategies',
-    'Pruner', 'filter_prunable_params', 'apply_pruning',
+    'Pruner', 'filter_prunable_params', 'apply_pruning', 'exact_pruning_mask',
     'combine_scores_2d_with_protection', 'apply_magnitude_protection',
     'infer_layer_type', 'build_type_map', 'get_prunable_types',
     'register_type_rule', 'list_registered_families',

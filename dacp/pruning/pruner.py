@@ -8,6 +8,20 @@ from .importance import ImportanceScorer, get_importance_scorer
 from .allocation import AllocationStrategy, get_allocation_strategy
 
 
+def exact_pruning_mask(score: torch.Tensor, prune_count: int) -> torch.Tensor:
+    """Build a deterministic float mask that prunes exactly ``prune_count`` values."""
+    if not 0 <= prune_count <= score.numel():
+        raise ValueError(
+            f"prune_count must be in [0, {score.numel()}], got {prune_count}"
+        )
+
+    flat_mask = torch.ones(score.numel(), dtype=torch.bool, device=score.device)
+    if prune_count:
+        order = torch.argsort(score.flatten(), stable=True)
+        flat_mask[order[:prune_count]] = False
+    return flat_mask.reshape_as(score).float()
+
+
 def filter_prunable_params(
     weights: Dict[str, torch.Tensor],
     exclude_patterns: List[str] = None,
@@ -56,23 +70,26 @@ def apply_pruning(
         if name not in model_params or name not in layer_ratios:
             continue
         
-        ratio = layer_ratios[name]
-        flat_score = score.flatten()
-        k = int(len(flat_score) * ratio)
-        
-        if k == 0:
-            masks[name] = torch.ones_like(score)
-            continue
-        
-        threshold = torch.kthvalue(flat_score, k).values
-        mask = (score > threshold).float()
+        param = model_params[name]
+        if score.shape != param.shape:
+            raise ValueError(
+                f"Score shape for {name!r} must match parameter shape: "
+                f"{tuple(score.shape)} != {tuple(param.shape)}"
+            )
+
+        ratio = float(layer_ratios[name])
+        if not 0.0 <= ratio <= 1.0:
+            raise ValueError(f"Pruning ratio for {name!r} must be in [0, 1], got {ratio}")
+
+        k = int(score.numel() * ratio)
+        mask = exact_pruning_mask(score, k)
         masks[name] = mask
         
         # 应用掩码
-        param = model_params[name]
-        param.data.mul_(mask.to(device))
+        with torch.no_grad():
+            param.mul_(mask.to(device=device, dtype=param.dtype))
         
-        total_pruned += (mask == 0).sum().item()
+        total_pruned += k
         total_params += mask.numel()
     
     actual_ratio = total_pruned / total_params if total_params > 0 else 0
