@@ -22,6 +22,18 @@ _GPT2_TOKENIZER_FALLBACKS = [
     '/lihongliang/fangzl/ckpt-compress/models/gpt2_tokenizer',
 ]
 
+
+def _apply_subset(dataset: Dataset, limit: Optional[int], name: str) -> Dataset:
+    """Apply a prefix subset while enforcing one shared count contract."""
+    if limit is None:
+        return dataset
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise ValueError(
+            f"{name} must be None or a non-negative integer, got {limit}"
+        )
+    return Subset(dataset, list(range(min(limit, len(dataset)))))
+
+
 def _load_gpt2_tokenizer():
     """加载 GPT-2 tokenizer，支持多路径 fallback。"""
     import os
@@ -116,13 +128,8 @@ def get_cifar10_loaders(
     )
 
     # 如果指定则应用子集
-    if train_subset is not None:
-        indices = list(range(min(train_subset, len(train_dataset))))
-        train_dataset = Subset(train_dataset, indices)
-
-    if test_subset is not None:
-        indices = list(range(min(test_subset, len(test_dataset))))
-        test_dataset = Subset(test_dataset, indices)
+    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
+    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
 
     # 创建数据加载器
     train_loader = DataLoader(
@@ -184,13 +191,8 @@ def get_cifar100_loaders(
     )
 
     # 如果指定则应用子集
-    if train_subset is not None:
-        indices = list(range(min(train_subset, len(train_dataset))))
-        train_dataset = Subset(train_dataset, indices)
-
-    if test_subset is not None:
-        indices = list(range(min(test_subset, len(test_dataset))))
-        test_dataset = Subset(test_dataset, indices)
+    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
+    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
 
     # 创建数据加载器
     train_loader = DataLoader(
@@ -677,13 +679,8 @@ def get_tiny_imagenet_loaders(
     )
 
     # 如果指定则应用子集
-    if train_subset is not None:
-        indices = list(range(min(train_subset, len(train_dataset))))
-        train_dataset = Subset(train_dataset, indices)
-
-    if val_subset is not None:
-        indices = list(range(min(val_subset, len(val_dataset))))
-        val_dataset = Subset(val_dataset, indices)
+    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
+    val_dataset = _apply_subset(val_dataset, val_subset, 'val_subset')
 
     # 创建数据加载器
     train_loader = DataLoader(
@@ -844,9 +841,7 @@ def get_glue_dataloader(
     glue_dataset = GLUEDataset(dataset, tokenizer, max_length)
 
     # 应用子集
-    if subset is not None:
-        indices = list(range(min(subset, len(glue_dataset))))
-        glue_dataset = Subset(glue_dataset, indices)
+    glue_dataset = _apply_subset(glue_dataset, subset, 'subset')
 
     # 创建数据加载器
     dataloader = DataLoader(
