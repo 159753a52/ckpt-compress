@@ -12,21 +12,22 @@ Usage:
 """
 
 import json
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import yaml
 
 from .result_schema import load_result_bundle, result_metrics
 
 
-pd = None  # lazy import of pandas
+@lru_cache(maxsize=1)
 def _get_pd():
-    global pd
-    if pd is None:
-        import pandas as _pd
-        pd = _pd
-    return pd
+    """Import pandas only when table output is requested."""
+    import pandas
+
+    return pandas
 
 
 class ResultManager:
