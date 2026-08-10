@@ -226,13 +226,33 @@ class WikiText2Dataset(Dataset):
         seq_length: int = 512,
         max_samples: Optional[int] = None
     ):
+        if (
+            isinstance(seq_length, bool)
+            or not isinstance(seq_length, int)
+            or seq_length < 1
+        ):
+            raise ValueError(f"seq_length must be a positive integer, got {seq_length}")
+        if max_samples is not None and (
+            isinstance(max_samples, bool)
+            or not isinstance(max_samples, int)
+            or max_samples < 0
+        ):
+            raise ValueError(
+                "max_samples must be None or a non-negative integer, "
+                f"got {max_samples}"
+            )
+
         self.tokenizer = tokenizer
         self.seq_length = seq_length
         self.samples = []
 
+        if max_samples == 0:
+            return
+
         # 增量编码文本，避免一次性编码整个数据集
         tokens = []
-        target_tokens = (max_samples or 1000) * seq_length + seq_length  # 需要的 token 数量
+        target_samples = max_samples if max_samples is not None else 1000
+        target_tokens = target_samples * seq_length + seq_length  # 需要的 token 数量
 
         for text in texts:
             if not text.strip():
