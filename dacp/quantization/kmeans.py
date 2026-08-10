@@ -21,6 +21,8 @@ from ._validation import relative_mse, validate_quantization_input
 
 def _dtype_from_str(dtype_str: str) -> torch.dtype:
     """将字符串形式的 dtype 安全映射为 torch.dtype。"""
+    if not isinstance(dtype_str, str):
+        raise ValueError(f"Unsupported tensor dtype metadata: {dtype_str!r}")
     mapping = {
         'torch.float16': torch.float16,
         'torch.float32': torch.float32,
@@ -33,7 +35,11 @@ def _dtype_from_str(dtype_str: str) -> torch.dtype:
         'torch.uint8': torch.uint8,
         'torch.bool': torch.bool,
     }
-    return mapping.get(dtype_str, torch.float32)
+    normalized = dtype_str if dtype_str.startswith("torch.") else f"torch.{dtype_str}"
+    try:
+        return mapping[normalized]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported tensor dtype metadata: {dtype_str!r}") from exc
 
 
 def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
@@ -308,12 +314,19 @@ class KMeansQuantizer:
         # 将活跃参数分配到最近的中心（在绝对值空间）
         sorted_idx = np.argsort(centroids)
         sorted_centroids = centroids[sorted_idx]
-        insert_pos = np.searchsorted(sorted_centroids, active_abs)
-        insert_pos = np.clip(insert_pos, 1, len(sorted_centroids) - 1)
-        left_dist = np.abs(active_abs - sorted_centroids[insert_pos - 1])
-        right_dist = np.abs(active_abs - sorted_centroids[insert_pos])
-        sorted_labels = np.where(left_dist <= right_dist, insert_pos - 1, insert_pos)
-        active_labels = sorted_idx[sorted_labels]
+        if len(sorted_centroids) == 1:
+            active_labels = np.zeros(len(active_abs), dtype=np.int64)
+        else:
+            insert_pos = np.searchsorted(sorted_centroids, active_abs)
+            insert_pos = np.clip(insert_pos, 1, len(sorted_centroids) - 1)
+            left_dist = np.abs(active_abs - sorted_centroids[insert_pos - 1])
+            right_dist = np.abs(active_abs - sorted_centroids[insert_pos])
+            sorted_labels = np.where(
+                left_dist <= right_dist,
+                insert_pos - 1,
+                insert_pos,
+            )
+            active_labels = sorted_idx[sorted_labels]
 
         # 构建完整索引：活跃位置填充聚类索引，非活跃位置填 -1
         full_labels = np.full(len(weight_flat), -1, dtype=np.int64)

@@ -3,6 +3,7 @@ import unittest
 import torch
 
 from dacp.quantization import INT4Quantizer, KMeansQuantizer
+from dacp.quantization.kmeans import _dtype_from_str
 
 
 class TestQuantizers(unittest.TestCase):
@@ -69,6 +70,11 @@ class TestQuantizers(unittest.TestCase):
                         torch.ones(2),
                         torch.ones(1),
                     )
+
+    def test_unknown_dtype_metadata_is_not_silently_coerced(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported tensor dtype"):
+            _dtype_from_str("torch.not_a_dtype")
+        self.assertEqual(_dtype_from_str("float32"), torch.float32)
 
 
 if __name__ == "__main__":
