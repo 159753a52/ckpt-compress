@@ -195,19 +195,24 @@ def _create_vit(model_name: str, pretrained: bool) -> nn.Module:
         return ViTForImageClassification(config)
 
 
-def _load_checkpoint(model: nn.Module, checkpoint_path: str):
-    """从检查点加载权重。"""
-    ckpt = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
-    if isinstance(ckpt, dict):
-        if 'model_state_dict' in ckpt:
-            model.load_state_dict(ckpt['model_state_dict'], strict=False)
-        elif 'state_dict' in ckpt:
-            model.load_state_dict(ckpt['state_dict'], strict=False)
-        elif 'model' in ckpt:
-            model.load_state_dict(ckpt['model'], strict=False)
-        else:
-            # 尝试直接作为 state_dict 加载
-            model.load_state_dict(ckpt, strict=False)
-    else:
-        model.load_state_dict(ckpt, strict=False)
+def _extract_checkpoint_state(checkpoint):
+    """Extract a model state dict from supported checkpoint payloads."""
+    if isinstance(checkpoint, dict):
+        for key in ('model_state_dict', 'state_dict', 'model'):
+            if key in checkpoint:
+                return checkpoint[key]
+    return checkpoint
+
+
+def _load_checkpoint(model: nn.Module, checkpoint_path: str, strict: bool = False):
+    """从检查点加载权重，并报告非严格加载的键差异。"""
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+    state_dict = _extract_checkpoint_state(checkpoint)
+    incompatible = model.load_state_dict(state_dict, strict=strict)
+    if not strict and (incompatible.missing_keys or incompatible.unexpected_keys):
+        print(
+            "  检查点键不匹配: "
+            f"missing={incompatible.missing_keys}, "
+            f"unexpected={incompatible.unexpected_keys}"
+        )
     print(f"  已加载检查点: {checkpoint_path}")
