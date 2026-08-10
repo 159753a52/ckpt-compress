@@ -434,73 +434,78 @@ def compute_hvp_blockwise(
     }
 
     num_blocks = len(blocks)
+    completed = False
+    loss = grads = grad_vector_product = hvp_grads = None
+    try:
+        for block_idx, block_names in enumerate(blocks):
+            block_name_set = set(block_names)
+            print(f"[Block-wise HVP] Block {block_idx + 1}/{num_blocks} "
+                  f"({len(block_names)} params)...")
 
-    for block_idx, block_names in enumerate(blocks):
-        block_name_set = set(block_names)
-        print(f"[Block-wise HVP] Block {block_idx + 1}/{num_blocks} "
-              f"({len(block_names)} params)...")
+            # 1. 只对当前 block 的参数开启 requires_grad
+            for name, p in named_params.items():
+                p.requires_grad_(name in block_name_set)
 
-        # 1. 只对当前 block 的参数开启 requires_grad
+            # 使用 MATH backend 回退（Flash/Efficient Attention 不支持二阶导）
+            with sdpa_kernel(SDPBackend.MATH):
+                # 2. 前向传播（全模型，但只有当前 block 参与梯度追踪）
+                model.zero_grad()
+                loss = loss_fn(model, data_batch)
+
+                # 3. 获取当前 block 的参数列表（保持顺序）
+                block_params = [named_params[n] for n in block_names if n in named_params]
+                block_param_names = [n for n in block_names if n in named_params]
+
+                # 4. 计算一阶梯度（create_graph=True 仅追踪当前 block 的二阶图）
+                grads = torch.autograd.grad(
+                    loss,
+                    block_params,
+                    create_graph=True,
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+
+                # 5. 计算 g_b · v_b（标量）；v 默认为 θ（全权重置零场景），
+                #    residual 场景应传 vector=delta 得到 H·δ
+                grad_vector_product = torch.tensor(0.0, device=loss.device)
+                for g, name in zip(grads, block_param_names):
+                    if g is not None:
+                        if vector is not None and name in vector:
+                            probe = vector[name].to(g.device)
+                        else:
+                            probe = named_params[name].data
+                        grad_vector_product = grad_vector_product + (
+                            g * probe
+                        ).sum()
+
+                # 6. 二次反向传播 → H_b θ_b
+                hvp_grads = torch.autograd.grad(
+                    grad_vector_product,
+                    block_params,
+                    retain_graph=False,
+                    allow_unused=True,
+                )
+
+            # 7. 保存结果，释放计算图
+            for name, h in zip(block_param_names, hvp_grads):
+                if h is not None:
+                    all_hvp[name] = h.detach()
+                else:
+                    all_hvp[name] = torch.zeros_like(named_params[name].data)
+
+            loss = grads = grad_vector_product = hvp_grads = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        completed = True
+        return all_hvp
+    finally:
+        # The function temporarily owns requires_grad state for the whole model.
         for name, p in named_params.items():
-            p.requires_grad_(name in block_name_set)
-
-        # 使用 MATH backend 回退（Flash/Efficient Attention 不支持二阶导）
-        with sdpa_kernel(SDPBackend.MATH):
-            # 2. 前向传播（全模型，但只有当前 block 参与梯度追踪）
+            p.requires_grad_(original_requires_grad[name])
+        if not completed:
             model.zero_grad()
-            loss = loss_fn(model, data_batch)
-
-            # 3. 获取当前 block 的参数列表（保持顺序）
-            block_params = [named_params[n] for n in block_names if n in named_params]
-            block_param_names = [n for n in block_names if n in named_params]
-
-            # 4. 计算一阶梯度（create_graph=True 仅追踪当前 block 的二阶图）
-            grads = torch.autograd.grad(
-                loss,
-                block_params,
-                create_graph=True,
-                retain_graph=True,
-                allow_unused=True,
-            )
-
-            # 5. 计算 g_b · v_b（标量）；v 默认为 θ（全权重置零场景），
-            #    residual 场景应传 vector=delta 得到 H·δ
-            grad_vector_product = torch.tensor(0.0, device=loss.device)
-            for g, name in zip(grads, block_param_names):
-                if g is not None:
-                    if vector is not None and name in vector:
-                        probe = vector[name].to(g.device)
-                    else:
-                        probe = named_params[name].data
-                    grad_vector_product = grad_vector_product + (
-                        g * probe
-                    ).sum()
-
-            # 6. 二次反向传播 → H_b θ_b
-            hvp_grads = torch.autograd.grad(
-                grad_vector_product,
-                block_params,
-                retain_graph=False,
-                allow_unused=True,
-            )
-
-        # 7. 保存结果，释放计算图
-        for name, h in zip(block_param_names, hvp_grads):
-            if h is not None:
-                all_hvp[name] = h.detach()
-            else:
-                all_hvp[name] = torch.zeros_like(named_params[name].data)
-
-        # 显式释放中间变量
-        del loss, grads, grad_vector_product, hvp_grads
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-    # 8. 恢复所有参数的原始 requires_grad 状态
-    for name, p in named_params.items():
-        p.requires_grad_(original_requires_grad[name])
-
-    return all_hvp
+        loss = grads = grad_vector_product = hvp_grads = None
 
 
 def compute_hvp_blockwise_batched(
