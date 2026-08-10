@@ -45,6 +45,12 @@ def seeded_training_batches(
     count: int,
     seed: int,
 ) -> Tuple[List[Mapping[str, torch.Tensor]], List[int]]:
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ValueError(f"count must be a non-negative integer, got {count}")
+    if count > len(pool):
+        raise ValueError(
+            f"count cannot exceed pool size: count={count}, pool_size={len(pool)}"
+        )
     generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(len(pool), generator=generator)[:count].tolist()
     return [pool[index] for index in indices], indices

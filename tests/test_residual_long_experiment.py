@@ -14,6 +14,14 @@ import experiments.scripts.run_residual_recovery_long as long_runner
 
 
 class TestResidualLongExperiment(unittest.TestCase):
+    def test_seeded_batch_sampling_rejects_invalid_counts(self) -> None:
+        pool = [{"input_ids": torch.tensor([[0]]), "labels": torch.tensor([[0]])}]
+
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            residual_training.seeded_training_batches(pool, -1, seed=0)
+        with self.assertRaisesRegex(ValueError, "pool size"):
+            residual_training.seeded_training_batches(pool, 2, seed=0)
+
     def test_partition_is_deterministic_disjoint_and_rng_local(self) -> None:
         pool = [
             {
