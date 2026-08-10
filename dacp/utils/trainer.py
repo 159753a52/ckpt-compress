@@ -69,6 +69,11 @@ class BaseTrainer:
         self.early_stopping_patience = early_stopping_patience
         self.scheduler = scheduler
         self.use_amp = use_amp
+        if gradient_accumulation_steps <= 0:
+            raise ValueError(
+                "gradient_accumulation_steps must be positive, "
+                f"got {gradient_accumulation_steps}"
+            )
         self.gradient_accumulation_steps = gradient_accumulation_steps
         
         # 早停相关
@@ -86,6 +91,56 @@ class BaseTrainer:
             'val_acc': [],
         }
     
+    def _prepare_batch(self, batch):
+        """Move a tuple, mapping, or tensor batch to the trainer device."""
+        if isinstance(batch, (tuple, list)):
+            inputs, targets = batch
+            inputs = inputs.to(self.device)
+            if isinstance(targets, torch.Tensor):
+                targets = targets.to(self.device)
+            return inputs, targets
+
+        if isinstance(batch, dict):
+            if 'input_ids' in batch:
+                inputs = batch['input_ids'].to(self.device)
+            else:
+                inputs = next(
+                    value for value in batch.values()
+                    if isinstance(value, torch.Tensor)
+                ).to(self.device)
+            targets = batch.get('labels')
+            if isinstance(targets, torch.Tensor):
+                targets = targets.to(self.device)
+            return inputs, targets
+
+        return batch.to(self.device), None
+
+    def _compute_loss(self, inputs, targets):
+        """Run the model and compute classification or shifted LM loss."""
+        outputs = self.model(inputs)
+        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
+
+        if targets is None:
+            return outputs.loss if hasattr(outputs, 'loss') else outputs, logits
+        if logits.dim() == 3:
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = targets[..., 1:].contiguous()
+            loss = self.criterion(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1),
+            )
+        else:
+            loss = self.criterion(logits, targets)
+        return loss, logits
+
+    def _step_optimizer(self):
+        if self.use_amp:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            self.optimizer.step()
+        self.optimizer.zero_grad()
+
     def train_one_epoch(self) -> float:
         """
         训练一个 epoch。
@@ -100,58 +155,14 @@ class BaseTrainer:
         self.optimizer.zero_grad()
         
         for batch_idx, batch in enumerate(self.train_loader):
-            # 获取数据
-            if isinstance(batch, (tuple, list)):
-                inputs, targets = batch
-                inputs = inputs.to(self.device)
-                if targets is not None:
-                    targets = targets.to(self.device)
-            elif isinstance(batch, dict):
-                # 对于字典类型的批次（如 NLP 任务）
-                # 提取 input_ids 作为主要输入
-                if 'input_ids' in batch:
-                    inputs = batch['input_ids'].to(self.device)
-                else:
-                    # 如果没有 input_ids，使用第一个张量
-                    inputs = next(v for v in batch.values() if isinstance(v, torch.Tensor)).to(self.device)
-                targets = batch.get('labels', None)
-                if targets is not None and isinstance(targets, torch.Tensor):
-                    targets = targets.to(self.device)
-            else:
-                inputs = batch.to(self.device)
-                targets = None
+            inputs, targets = self._prepare_batch(batch)
             
             # 前向传播
             if self.use_amp:
                 with torch.cuda.amp.autocast():
-                    outputs = self.model(inputs)
-                    logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-                    if targets is not None:
-                        if logits.dim() == 3:
-                            # 语言模型: shift + reshape
-                            shift_logits = logits[..., :-1, :].contiguous()
-                            shift_labels = targets[..., 1:].contiguous()
-                            loss = self.criterion(
-                                shift_logits.view(-1, shift_logits.size(-1)),
-                                shift_labels.view(-1))
-                        else:
-                            loss = self.criterion(logits, targets)
-                    else:
-                        loss = outputs.loss if hasattr(outputs, 'loss') else outputs
+                    loss, _ = self._compute_loss(inputs, targets)
             else:
-                outputs = self.model(inputs)
-                logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-                if targets is not None:
-                    if logits.dim() == 3:
-                        shift_logits = logits[..., :-1, :].contiguous()
-                        shift_labels = targets[..., 1:].contiguous()
-                        loss = self.criterion(
-                            shift_logits.view(-1, shift_logits.size(-1)),
-                            shift_labels.view(-1))
-                    else:
-                        loss = self.criterion(logits, targets)
-                else:
-                    loss = outputs.loss if hasattr(outputs, 'loss') else outputs
+                loss, _ = self._compute_loss(inputs, targets)
             
             # 梯度累积
             loss = loss / self.gradient_accumulation_steps
@@ -164,15 +175,14 @@ class BaseTrainer:
             
             # 更新参数
             if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                if self.use_amp:
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    self.optimizer.step()
-                self.optimizer.zero_grad()
+                self._step_optimizer()
             
             total_loss += loss.item() * self.gradient_accumulation_steps
             num_batches += 1
+
+        # Do not silently discard gradients from a final partial accumulation.
+        if num_batches and num_batches % self.gradient_accumulation_steps:
+            self._step_optimizer()
         
         avg_loss = total_loss / num_batches
         return avg_loss
@@ -191,42 +201,8 @@ class BaseTrainer:
         
         with torch.no_grad():
             for batch in self.val_loader:
-                # 获取数据
-                if isinstance(batch, (tuple, list)):
-                    inputs, targets = batch
-                    inputs = inputs.to(self.device)
-                    if targets is not None:
-                        targets = targets.to(self.device)
-                elif isinstance(batch, dict):
-                    # 对于字典类型的批次（如 NLP 任务）
-                    # 提取 input_ids 作为主要输入
-                    if 'input_ids' in batch:
-                        inputs = batch['input_ids'].to(self.device)
-                    else:
-                        # 如果没有 input_ids，使用第一个张量
-                        inputs = next(v for v in batch.values() if isinstance(v, torch.Tensor)).to(self.device)
-                    targets = batch.get('labels', None)
-                    if targets is not None and isinstance(targets, torch.Tensor):
-                        targets = targets.to(self.device)
-                else:
-                    inputs = batch.to(self.device)
-                    targets = None
-                
-                # 前向传播
-                outputs = self.model(inputs)
-                logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-                
-                if targets is not None:
-                    if logits.dim() == 3:
-                        shift_logits = logits[..., :-1, :].contiguous()
-                        shift_labels = targets[..., 1:].contiguous()
-                        loss = self.criterion(
-                            shift_logits.view(-1, shift_logits.size(-1)),
-                            shift_labels.view(-1))
-                    else:
-                        loss = self.criterion(logits, targets)
-                else:
-                    loss = outputs.loss if hasattr(outputs, 'loss') else outputs
+                inputs, targets = self._prepare_batch(batch)
+                loss, logits = self._compute_loss(inputs, targets)
                 
                 total_loss += loss.item()
                 
