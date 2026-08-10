@@ -44,8 +44,36 @@ def _make_trainer(model, train_loader, val_loader, optimizer=None, accumulation=
 class TestBaseTrainer(unittest.TestCase):
     def test_rejects_non_positive_accumulation(self) -> None:
         model = nn.Linear(2, 2)
-        with self.assertRaisesRegex(ValueError, "must be positive"):
-            _make_trainer(model, [], [], accumulation=0)
+        for value in (0, -1, 1.5, True):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "gradient_accumulation_steps"):
+                    _make_trainer(model, [], [], accumulation=value)
+
+    def test_empty_loaders_raise_explicit_contract_errors(self) -> None:
+        model = nn.Linear(1, 2)
+        trainer = _make_trainer(model, [], [])
+
+        with self.assertRaisesRegex(ValueError, "train_loader"):
+            trainer.train_one_epoch()
+        with self.assertRaisesRegex(ValueError, "val_loader"):
+            trainer.validate()
+
+    def test_train_validates_epoch_and_checkpoint_intervals(self) -> None:
+        model = nn.Linear(1, 2)
+        trainer = _make_trainer(
+            model,
+            [(torch.tensor([[1.0]]), torch.tensor([0]))],
+            [(torch.tensor([[1.0]]), torch.tensor([0]))],
+        )
+
+        for kwargs, name in (
+            ({"epochs": 0}, "epochs"),
+            ({"epochs": 1, "save_every": 0}, "save_every"),
+            ({"epochs": 1, "save_every": 1.5}, "save_every"),
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, name):
+                    trainer.train(verbose=False, **kwargs)
 
     def test_steps_tail_of_non_divisible_accumulation(self) -> None:
         model = nn.Linear(1, 2)

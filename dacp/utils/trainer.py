@@ -12,6 +12,13 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 
+def _validate_positive_int(name: str, value: int) -> int:
+    """Validate an integer training-loop control parameter."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer, got {value}")
+    return value
+
+
 class BaseTrainer:
     """
     统一训练框架基类。
@@ -67,12 +74,9 @@ class BaseTrainer:
         self.early_stopping_patience = early_stopping_patience
         self.scheduler = scheduler
         self.use_amp = use_amp
-        if gradient_accumulation_steps <= 0:
-            raise ValueError(
-                "gradient_accumulation_steps must be positive, "
-                f"got {gradient_accumulation_steps}"
-            )
-        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.gradient_accumulation_steps = _validate_positive_int(
+            "gradient_accumulation_steps", gradient_accumulation_steps
+        )
         
         # 早停相关
         self.best_val_loss = float('inf')
@@ -182,6 +186,8 @@ class BaseTrainer:
         if num_batches and num_batches % self.gradient_accumulation_steps:
             self._step_optimizer()
         
+        if num_batches == 0:
+            raise ValueError("train_loader must contain at least one batch")
         avg_loss = total_loss / num_batches
         return avg_loss
     
@@ -196,9 +202,11 @@ class BaseTrainer:
         total_loss = 0.0
         correct = 0
         total = 0
+        num_batches = 0
         
         with torch.no_grad():
             for batch in self.val_loader:
+                num_batches += 1
                 inputs, targets = self._prepare_batch(batch)
                 loss, logits = self._compute_loss(inputs, targets)
                 
@@ -210,7 +218,9 @@ class BaseTrainer:
                     total += targets.size(0)
                     correct += (predicted == targets).sum().item()
         
-        avg_loss = total_loss / len(self.val_loader)
+        if num_batches == 0:
+            raise ValueError("val_loader must contain at least one batch")
+        avg_loss = total_loss / num_batches
         accuracy = correct / total if total > 0 else 0.0
         
         return avg_loss, accuracy
@@ -297,6 +307,8 @@ class BaseTrainer:
         返回:
             Dict[str, List[float]]: 训练历史
         """
+        _validate_positive_int("epochs", epochs)
+        _validate_positive_int("save_every", save_every)
         for epoch in range(1, epochs + 1):
             start_time = time.time()
             
