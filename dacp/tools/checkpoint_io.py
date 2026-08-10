@@ -9,10 +9,9 @@ for fp16 non-zero storage, where P is the sparsity ratio.
 """
 
 import os
-import struct
 import numpy as np
 import torch
-from typing import Dict, Optional, Tuple
+from typing import Dict
 
 
 def save_compressed_checkpoint(

@@ -7,7 +7,7 @@
 import math
 import torch
 import torch.nn as nn
-from typing import Dict, List, Any, Optional
+from typing import Dict, List
 
 
 def evaluate(

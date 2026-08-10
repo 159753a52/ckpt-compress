@@ -11,7 +11,6 @@ Usage:
     manager.compare(['run1', 'run2', 'run3'])
 """
 
-import os
 import json
 from pathlib import Path
 from datetime import datetime
