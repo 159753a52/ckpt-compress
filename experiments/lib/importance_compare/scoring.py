@@ -15,7 +15,6 @@ from collections import defaultdict
 from typing import Dict, List, Optional
 
 import torch
-import torch.nn as nn
 
 from dacp.pruning.importance import (
     MagnitudeScorer,
@@ -23,12 +22,13 @@ from dacp.pruning.importance import (
     ResidualMagnitudeScorer,
 )
 from dacp.pruning.pruner import filter_prunable_params
+from experiments.lib.losses import SUPPORTED_TASK_TYPES, make_task_loss
 
 
 _SUPPORTED_METHODS = frozenset(
     {"magnitude", "first-order", "second-order-hvp", "residual-magnitude"}
 )
-_SUPPORTED_TASK_TYPES = frozenset({"lm", "cls", "cv", "reg"})
+_SUPPORTED_TASK_TYPES = SUPPORTED_TASK_TYPES
 _SUPPORTED_HVP_MODES = frozenset({"full", "block"})
 
 
@@ -37,45 +37,8 @@ _SUPPORTED_HVP_MODES = frozenset({"full", "block"})
 # ------------------------------------------------------------------ #
 
 def _make_loss_fn(task_type: str):
-    """返回 loss_fn(model, batch) -> scalar 的闭包。"""
-    if task_type not in _SUPPORTED_TASK_TYPES:
-        raise ValueError(
-            f"Unknown task_type: {task_type}. "
-            f"Available: {sorted(_SUPPORTED_TASK_TYPES)}"
-        )
-
-    criterion = nn.CrossEntropyLoss()
-
-    def lm_loss(model, batch):
-        input_ids = batch['input_ids']
-        labels = batch['labels']
-        outputs = model(input_ids)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
-        return criterion(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
-        )
-
-    def cls_loss(model, batch):
-        input_ids = batch['input_ids']
-        labels = batch['labels']
-        attn = batch.get('attention_mask')
-        outputs = model(input_ids, attention_mask=attn)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        return criterion(logits, labels)
-
-    def cv_loss(model, batch):
-        images = batch['images']
-        labels = batch['labels']
-        outputs = model(images)
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        return criterion(logits, labels)
-
-    # Keep the historical regression contract until a dedicated loss migration
-    # can update scoring and evaluation together.
-    return {'lm': lm_loss, 'cls': cls_loss, 'cv': cv_loss, 'reg': cls_loss}[task_type]
+    """Compatibility wrapper for the shared task-loss factory."""
+    return make_task_loss(task_type)
 
 
 def _collect_gradients(

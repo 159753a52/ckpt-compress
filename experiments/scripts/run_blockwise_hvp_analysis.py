@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from experiments.lib.models import load_model
 from experiments.lib.data import get_data_loaders, cache_batches
 from experiments.lib.args import create_base_parser, add_scoring_args
+from experiments.lib.losses import make_task_loss
 from experiments.lib.importance_compare.score_comparison import (
     compute_relative_l2_error,
     compute_rank_correlation,
@@ -75,24 +76,12 @@ def parse_args():
 
 
 def _make_loss_fn(task_type):
-    """构造 loss 函数闭包。"""
-    import torch.nn as nn
-    criterion = nn.CrossEntropyLoss()
-
-    def lm_loss(model, batch):
-        outputs = model(batch['input_ids'])
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = batch['labels'][..., 1:].contiguous()
-        return criterion(shift_logits.view(-1, shift_logits.size(-1)),
-                         shift_labels.view(-1))
-
-    def cv_loss(model, batch):
-        outputs = model(batch['images'])
-        logits = outputs.logits if hasattr(outputs, 'logits') else outputs
-        return criterion(logits, batch['labels'])
-
-    return {'lm': lm_loss, 'cv': cv_loss, 'cls': lm_loss}[task_type]
+    """构造 blockwise 分析使用的损失函数，保留 cls 的历史 LM 适配。"""
+    if task_type == 'cls':
+        task_type = 'lm'
+    if task_type not in ('lm', 'cv'):
+        raise ValueError(f"Unknown task_type for blockwise analysis: {task_type}")
+    return make_task_loss(task_type)
 
 
 def _compute_shared_gradient(model, loss_fn, gpu_batches, num_batches):

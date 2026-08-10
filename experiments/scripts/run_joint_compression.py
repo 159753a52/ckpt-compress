@@ -136,8 +136,8 @@ def run_single_config(model_init, scores, prune_ratio, method, cached_eval,
 
 def _collect_gradients_simple(model, cached_train, task_type, num_batches, device):
     """收集梯度用于 Inshrinkerator 的敏感度计算。"""
-    from experiments.lib.importance_compare.scoring import _make_loss_fn
-    loss_fn = _make_loss_fn(task_type)
+    from experiments.lib.losses import make_task_loss
+    loss_fn = make_task_loss(task_type)
     model.train()
     model.zero_grad()
     count = 0
