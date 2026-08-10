@@ -12,7 +12,11 @@ from scipy.special import gammaln
 from experiments.lib.residual_budget import largest_remainder_counts
 
 
-def fit_weibull_mom(values: torch.Tensor) -> Dict[str, float | bool | str]:
+WeibullFit = Dict[str, float | int | bool | str]
+WeibullFitView = Mapping[str, float | int | bool | str]
+
+
+def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
     flat = values.detach().float().flatten().cpu()
     count = flat.numel()
     if count == 0:
@@ -90,9 +94,30 @@ def fit_weibull_mom(values: torch.Tensor) -> Dict[str, float | bool | str]:
     }
 
 
+def fit_layer_weibull_mom(
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+) -> List[WeibullFit]:
+    """Fit one Weibull model per non-empty structural score layer."""
+    fits = []
+    for layer_index, names in enumerate(layers):
+        if not names:
+            raise ValueError("Structural layers must be non-empty")
+        missing = [name for name in names if name not in scores]
+        if missing:
+            raise ValueError(f"Missing scores for structural layer: {missing}")
+        values = torch.cat([scores[name].flatten() for name in names])
+        if values.numel() == 0:
+            raise ValueError("Structural layers must contain at least one score")
+        fit = fit_weibull_mom(values)
+        fit["layer"] = layer_index
+        fits.append(fit)
+    return fits
+
+
 def weibull_cdf(
     threshold: float,
-    fit: Mapping[str, float | bool | str],
+    fit: WeibullFitView,
 ) -> float:
     if threshold <= 0:
         return 0.0
@@ -107,7 +132,7 @@ def weibull_cdf(
 
 
 def weibull_counts(
-    fits: Sequence[Mapping[str, float | bool | str]],
+    fits: Sequence[WeibullFitView],
     layer_sizes: Sequence[int],
     target: int,
     ratio: float,
@@ -201,4 +226,9 @@ def weibull_counts(
     }
 
 
-__all__ = ["fit_weibull_mom", "weibull_cdf", "weibull_counts"]
+__all__ = [
+    "fit_layer_weibull_mom",
+    "fit_weibull_mom",
+    "weibull_cdf",
+    "weibull_counts",
+]

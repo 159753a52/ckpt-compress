@@ -8,7 +8,7 @@ from typing import Dict, Sequence, Tuple
 import torch
 
 from experiments.lib.residual_weibull import (
-    fit_weibull_mom,
+    fit_layer_weibull_mom,
     weibull_counts,
 )
 from experiments.lib.residual_budget import uniform_counts
@@ -49,12 +49,7 @@ def build_masks(
     target = int(math.floor(prune_ratio * eligible_count))
     uniform_layer_counts = uniform_counts(layer_sizes, target, prune_ratio)
 
-    fits = []
-    for index, layer in enumerate(layers):
-        values = torch.cat([taylor_scores[name].flatten() for name in layer])
-        fit = fit_weibull_mom(values)
-        fit["layer"] = index
-        fits.append(fit)
+    fits = fit_layer_weibull_mom(layers, taylor_scores)
     weibull_layer_counts, weibull_metadata = weibull_counts(
         fits, layer_sizes, target, prune_ratio, max_layer_ratio
     )

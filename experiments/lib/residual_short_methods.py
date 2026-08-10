@@ -29,7 +29,7 @@ from experiments.lib.residual_protocol import (
     TAYLOR_WEIBULL_MOM_METHOD,
 )
 from experiments.lib.residual_scoring import eligible_layers
-from experiments.lib.residual_weibull import fit_weibull_mom, weibull_counts
+from experiments.lib.residual_weibull import fit_layer_weibull_mom, weibull_counts
 
 
 @dataclass(frozen=True)
@@ -107,12 +107,7 @@ def build_short_gate_masks(
 ) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
     """Fit allocations and construct the short gate's four equal-budget masks."""
     started = time.perf_counter()
-    fits = []
-    for index, layer in enumerate(scope.layers):
-        values = torch.cat([taylor_scores[name].flatten() for name in layer])
-        fit = fit_weibull_mom(values)
-        fit["layer"] = index
-        fits.append(fit)
+    fits = fit_layer_weibull_mom(scope.layers, taylor_scores)
 
     uniform_layer_counts = uniform_counts(
         scope.layer_sizes,

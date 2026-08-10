@@ -10,6 +10,7 @@ from experiments.lib.residual_allocation import (
     bounded_largest_remainder_counts,
     budget_tangent_dct_directions,
     directional_layer_counts,
+    fit_layer_weibull_mom,
     fit_weibull_mom,
     largest_remainder_counts,
     reconstruct_directional_gradient,
@@ -61,6 +62,23 @@ class TestResidualAllocation(unittest.TestCase):
         self.assertEqual(sum(counts), 6)
         self.assertTrue(all(count <= 4 for count in counts))
         self.assertIsNone(metadata["fallback"])
+
+    def test_layer_weibull_fitting_owns_layer_assembly_contract(self) -> None:
+        fits = fit_layer_weibull_mom(
+            [["left", "right"], ["last"]],
+            {
+                "left": torch.tensor([0.1, 0.2]),
+                "right": torch.tensor([0.4, 0.8]),
+                "last": torch.tensor([0.5, 1.0, 2.0, 4.0]),
+            },
+        )
+
+        self.assertEqual([fit["layer"] for fit in fits], [0, 1])
+        self.assertEqual([fit["count"] for fit in fits], [4, 4])
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            fit_layer_weibull_mom([[]], {})
+        with self.assertRaisesRegex(ValueError, "Missing scores"):
+            fit_layer_weibull_mom([["missing"]], {})
 
     def test_weibull_counts_fall_back_when_all_fits_are_invalid(self) -> None:
         fits = [
