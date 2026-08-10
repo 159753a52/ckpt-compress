@@ -161,7 +161,7 @@ def get_size_breakdown(
         compression_ratio, sparsity
     """
     total_original = 0
-    total_mask_bits = 0
+    total_mask_bytes = 0
     total_value_bits = 0
     total_pruned = 0
     total_params = 0
@@ -175,14 +175,14 @@ def get_size_breakdown(
         if name in masks:
             mask = masks[name]
             nnz = int(mask.sum().item())
-            total_mask_bits += n  # 1 bit per element
+            total_mask_bytes += (n + 7) // 8  # np.packbits pads each tensor separately
             total_value_bits += nnz * val_bits
             total_pruned += (n - nnz)
             total_params += n
         else:
             total_value_bits += n * val_bits
 
-    mask_bytes = total_mask_bits // 8
+    mask_bytes = total_mask_bytes
     value_bytes = total_value_bits // 8
     total_compressed = mask_bytes + value_bytes
 
