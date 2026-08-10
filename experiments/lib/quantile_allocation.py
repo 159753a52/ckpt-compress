@@ -1,8 +1,8 @@
 """Pure numerical core for empirical quantile residual allocation.
 
-The public experiment adapter lives in ``residual_allocation``. This module
-only owns the NumPy optimization after Taylor scores have been materialized in
-stable ascending order.
+The tensor adapter lives in ``residual_quantile`` and is reexported through
+``residual_allocation`` for compatibility. This module only owns the NumPy
+optimization after Taylor scores have been materialized in stable order.
 """
 
 from __future__ import annotations

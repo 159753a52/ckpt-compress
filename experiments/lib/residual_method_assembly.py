@@ -7,7 +7,6 @@ from typing import Dict, Mapping, Sequence, Tuple
 
 import torch
 
-from experiments.lib.residual_allocation import calibrate_quantile_smooth_allocation
 from experiments.lib.residual_calibration import (
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
@@ -20,6 +19,7 @@ from experiments.lib.residual_masks import (
 )
 from experiments.lib.residual_method_config import AdaptiveMethodConfig
 from experiments.lib.residual_methods import build_masks
+from experiments.lib.residual_quantile import calibrate_quantile_smooth_allocation
 from experiments.lib.residual_protocol import (
     TAYLOR_PROBE_TRUST_METHOD,
     quantile_method_id,

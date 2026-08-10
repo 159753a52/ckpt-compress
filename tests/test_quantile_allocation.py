@@ -4,6 +4,8 @@ import unittest
 import numpy as np
 import torch
 
+import experiments.lib.residual_allocation as residual_allocation
+import experiments.lib.residual_quantile as residual_quantile
 from experiments.lib.quantile_allocation import (
     _solve_quantile_smooth_counts,
     solve_quantile_smooth_counts,
@@ -18,6 +20,12 @@ from experiments.lib.residual_masks import (
 
 
 class TestQuantileAllocation(unittest.TestCase):
+    def test_residual_facade_reexports_quantile_adapter(self) -> None:
+        self.assertIs(
+            residual_allocation.calibrate_quantile_smooth_allocation,
+            residual_quantile.calibrate_quantile_smooth_allocation,
+        )
+
     def test_legacy_core_alias_points_to_public_solver(self) -> None:
         self.assertIs(_solve_quantile_smooth_counts, solve_quantile_smooth_counts)
 
