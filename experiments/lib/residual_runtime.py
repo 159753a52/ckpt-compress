@@ -149,6 +149,22 @@ def load_token_batches(
     num_batches: int,
     batch_offset: int = 0,
 ) -> List[Dict[str, torch.Tensor]]:
+    for name, value in (
+        ("batch_size", batch_size),
+        ("seq_length", seq_length),
+        ("num_batches", num_batches),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer, got {value}")
+    if (
+        isinstance(batch_offset, bool)
+        or not isinstance(batch_offset, int)
+        or batch_offset < 0
+    ):
+        raise ValueError(
+            f"batch_offset must be a non-negative integer, got {batch_offset}"
+        )
+
     skip = batch_size * seq_length * batch_offset
     needed = batch_size * seq_length * num_batches
     required = skip + needed
@@ -200,6 +216,9 @@ def evaluate_lm(
     batches: Sequence[Mapping[str, torch.Tensor]],
     device: str,
 ) -> Dict[str, float]:
+    if not batches:
+        raise ValueError("batches must contain at least one evaluation batch")
+
     model.eval()
     total_loss = 0.0
     started = time.perf_counter()

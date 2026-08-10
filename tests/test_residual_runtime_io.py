@@ -12,6 +12,7 @@ from experiments.lib.residual_runtime import (
     batch_hash,
     checkpoint_optimizer_state,
     checkpoint_state,
+    evaluate_lm,
     load_token_batches,
     load_training_checkpoint,
     optimizer_state_to_cpu,
@@ -190,6 +191,31 @@ class TestResidualRuntimeIO(unittest.TestCase):
                     num_batches=4,
                     batch_offset=1,
                 )
+
+    def test_token_batch_loader_rejects_invalid_shape_and_count_arguments(self) -> None:
+        path = Path("unused.txt")
+        invalid_cases = [
+            ("batch_size", 0, 2, 1, 0),
+            ("seq_length", 1, 0, 1, 0),
+            ("num_batches", 1, 2, 0, 0),
+            ("batch_offset", 1, 2, 1, -1),
+        ]
+
+        for name, batch_size, seq_length, num_batches, batch_offset in invalid_cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, name):
+                    load_token_batches(
+                        path,
+                        IntegerTokenizer(),
+                        batch_size=batch_size,
+                        seq_length=seq_length,
+                        num_batches=num_batches,
+                        batch_offset=batch_offset,
+                    )
+
+    def test_language_model_evaluation_rejects_empty_batches(self) -> None:
+        with self.assertRaisesRegex(ValueError, "at least one evaluation batch"):
+            evaluate_lm(object(), [], "cpu")
 
 
 if __name__ == "__main__":
