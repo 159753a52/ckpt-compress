@@ -110,6 +110,34 @@ class TestResidualAllocation(unittest.TestCase):
                         max_layer_ratio=0.75,
                     )
 
+    def test_weibull_counts_reject_invalid_budget_and_fit_contracts(self) -> None:
+        valid_fit = fit_weibull_mom(torch.tensor([0.1, 0.2, 0.4, 0.8]))
+
+        with self.assertRaisesRegex(ValueError, "Layer sizes"):
+            weibull_counts(
+                [valid_fit],
+                layer_sizes=[-1],
+                target=0,
+                ratio=0.0,
+                max_layer_ratio=0.8,
+            )
+        with self.assertRaisesRegex(ValueError, "ratio"):
+            weibull_counts(
+                [valid_fit],
+                layer_sizes=[4],
+                target=2,
+                ratio=float("nan"),
+                max_layer_ratio=0.8,
+            )
+        with self.assertRaisesRegex(ValueError, "numeric shape"):
+            weibull_counts(
+                [{"valid": True, "shape": "bad", "scale": 1.0}],
+                layer_sizes=[4],
+                target=2,
+                ratio=0.5,
+                max_layer_ratio=0.8,
+            )
+
     def test_trust_region_counts_preserve_budget_and_order(self) -> None:
         counts = trust_region_counts(
             marginal_losses=[3.0, 1.0, 2.0],

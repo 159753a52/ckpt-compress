@@ -115,6 +115,48 @@ def weibull_counts(
 ) -> Tuple[List[int], Dict[str, object]]:
     if len(fits) != len(layer_sizes):
         raise ValueError("Fits and layer sizes must have the same length")
+    if any(
+        isinstance(size, bool) or not isinstance(size, int) or size < 0
+        for size in layer_sizes
+    ):
+        raise ValueError("Layer sizes must be non-negative integers")
+    if (
+        isinstance(target, bool)
+        or not isinstance(target, int)
+        or target < 0
+        or target > sum(layer_sizes)
+    ):
+        raise ValueError(
+            "target must be a non-negative integer within the layer capacity"
+        )
+    normalized_ratios = {}
+    for name, value in (("ratio", ratio), ("max_layer_ratio", max_layer_ratio)):
+        if isinstance(value, bool):
+            raise ValueError(f"{name} must be a finite number in [0, 1]")
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{name} must be a finite number in [0, 1]") from exc
+        if not math.isfinite(numeric) or not 0.0 <= numeric <= 1.0:
+            raise ValueError(f"{name} must be a finite number in [0, 1]")
+        normalized_ratios[name] = numeric
+    ratio = normalized_ratios["ratio"]
+    max_layer_ratio = normalized_ratios["max_layer_ratio"]
+    for fit in fits:
+        if not isinstance(fit, Mapping) or "valid" not in fit:
+            raise ValueError("Each Weibull fit must contain a valid flag")
+        if bool(fit["valid"]):
+            for key in ("shape", "scale"):
+                try:
+                    numeric = float(fit[key])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Valid Weibull fits must contain numeric {key}"
+                    ) from exc
+                if not math.isfinite(numeric) or numeric <= 0:
+                    raise ValueError(
+                        f"Valid Weibull fit {key} must be finite and positive"
+                    )
     capacities = [
         min(size, int(math.floor(max_layer_ratio * size))) for size in layer_sizes
     ]
