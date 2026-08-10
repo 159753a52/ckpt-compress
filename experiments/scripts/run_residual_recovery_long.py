@@ -42,10 +42,6 @@ from experiments.lib.residual_masks import (  # noqa: E402
     mask_overlap,
     restore_with_mask,
 )
-from experiments.lib.residual_recovery import (  # noqa: E402
-    compute_block_taylor_scores,
-    eligible_layers,
-)
 from experiments.lib.residual_runtime import (  # noqa: E402
     batch_hash,
     configure_hf_offline,
@@ -60,6 +56,10 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     set_seed,
     sha256_file,
     write_json,
+)
+from experiments.lib.residual_scoring import (  # noqa: E402
+    compute_block_taylor_scores,
+    eligible_layers,
 )
 
 

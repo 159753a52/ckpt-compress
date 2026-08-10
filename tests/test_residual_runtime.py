@@ -13,6 +13,7 @@ import experiments.lib.residual_calibration as residual_calibration
 import experiments.lib.residual_masks as residual_masks
 import experiments.lib.residual_recovery as residual_recovery
 import experiments.lib.residual_runtime as residual_runtime
+import experiments.lib.residual_scoring as residual_scoring
 from experiments.lib.residual_runtime import (
     configure_hf_offline,
     empty_device_cache,
@@ -32,6 +33,7 @@ class TestResidualRuntime(unittest.TestCase):
             residual_calibration,
             residual_masks,
             residual_runtime,
+            residual_scoring,
         )
         for module in helper_modules:
             for name in module.__all__:
