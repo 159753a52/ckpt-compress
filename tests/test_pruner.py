@@ -46,6 +46,8 @@ class TestExactPruningMask(unittest.TestCase):
             exact_pruning_mask(scores, 1.5)
         with self.assertRaisesRegex(ValueError, "integer"):
             exact_pruning_mask(scores, True)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            exact_pruning_mask(torch.tensor([0.0, float("nan")]), 1)
 
     def test_apply_pruning_counts_zero_budget_layers(self) -> None:
         model = _TwoParameterModel()

@@ -7,48 +7,20 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 import torch
 import torch.nn as nn
 
+from dacp.pruning.masks import (
+    exact_keep_mask as _exact_keep_mask,
+    validate_prune_count,
+)
+
 
 TensorDict = Dict[str, torch.Tensor]
 MaskDict = Dict[str, torch.Tensor]
 
 
-def _validate_prune_count(prune_count: int, score_count: int) -> int:
-    if isinstance(prune_count, bool):
-        raise ValueError(f"Prune count must be an integer, got {prune_count}")
-    try:
-        normalized = int(prune_count)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"Prune count must be an integer, got {prune_count}") from exc
-    if normalized != prune_count:
-        raise ValueError(f"Prune count must be an integer, got {prune_count}")
-    if normalized < 0 or normalized > score_count:
-        raise ValueError(
-            f"Invalid prune count {prune_count} for {score_count} scores"
-        )
-    return normalized
-
-
 def exact_keep_mask(values: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Return a deterministic mask with exactly ``prune_count`` false entries."""
     flat = values.detach().float().flatten().cpu()
-    count = flat.numel()
-    prune_count = _validate_prune_count(prune_count, count)
-    if not torch.isfinite(flat).all().item():
-        raise ValueError("Mask scores must be finite")
-    if prune_count == 0:
-        return torch.ones(count, dtype=torch.bool)
-    if prune_count == count:
-        return torch.zeros(count, dtype=torch.bool)
-
-    threshold = torch.kthvalue(flat, prune_count).values
-    pruned = flat < threshold
-    remaining = prune_count - int(pruned.sum().item())
-    if remaining:
-        tied = torch.nonzero(flat == threshold, as_tuple=False).flatten()
-        pruned[tied[:remaining]] = True
-    if int(pruned.sum().item()) != prune_count:
-        raise RuntimeError("Tie handling failed to produce the requested prune count")
-    return ~pruned
+    return _exact_keep_mask(flat, prune_count)
 
 
 def exact_keep_mask_from_order(
@@ -59,7 +31,7 @@ def exact_keep_mask_from_order(
     if order.ndim != 1:
         raise ValueError("Score order must be one-dimensional")
     count = order.numel()
-    prune_count = _validate_prune_count(prune_count, count)
+    prune_count = validate_prune_count(prune_count, count)
     keep = torch.ones(count, dtype=torch.bool)
     keep[order[:prune_count]] = False
     return keep

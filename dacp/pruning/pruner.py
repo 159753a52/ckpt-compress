@@ -6,23 +6,13 @@ from typing import Any, Dict, Mapping, Tuple, Optional, List
 
 from .importance import get_importance_scorer
 from .allocation import get_allocation_strategy
+from .masks import exact_keep_mask
 from .validation import validate_unit_interval
 
 
 def exact_pruning_mask(score: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Build a deterministic float mask that prunes exactly ``prune_count`` values."""
-    if isinstance(prune_count, bool) or not isinstance(prune_count, int):
-        raise ValueError(f"prune_count must be an integer, got {prune_count}")
-    if not 0 <= prune_count <= score.numel():
-        raise ValueError(
-            f"prune_count must be in [0, {score.numel()}], got {prune_count}"
-        )
-
-    flat_mask = torch.ones(score.numel(), dtype=torch.bool, device=score.device)
-    if prune_count:
-        order = torch.argsort(score.flatten(), stable=True)
-        flat_mask[order[:prune_count]] = False
-    return flat_mask.reshape_as(score).float()
+    return exact_keep_mask(score, prune_count).float()
 
 
 def filter_prunable_params(

@@ -31,13 +31,13 @@ class TestResidualMasks(unittest.TestCase):
             )
         )
         self.assertTrue(torch.equal(exact_keep_mask(scores, 3), torch.zeros(3).bool()))
-        with self.assertRaisesRegex(ValueError, "Invalid prune count"):
+        with self.assertRaisesRegex(ValueError, "prune_count must be in"):
             exact_keep_mask(scores, 4)
 
     def test_exact_keep_mask_rejects_invalid_counts_and_scores(self) -> None:
         for invalid_count in (True, 1.5, float("nan")):
             with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
-                ValueError, "must be an integer"
+                ValueError, "prune_count must be an integer"
             ):
                 exact_keep_mask(torch.ones(3), invalid_count)
         with self.assertRaisesRegex(ValueError, "must be finite"):
@@ -60,7 +60,7 @@ class TestResidualMasks(unittest.TestCase):
         )
         for invalid_count in (-1, 4):
             with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
-                ValueError, "Invalid prune count"
+                ValueError, "prune_count must be in"
             ):
                 exact_keep_mask_from_order(order, invalid_count)
 
