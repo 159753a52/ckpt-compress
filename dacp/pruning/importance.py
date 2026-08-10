@@ -21,6 +21,21 @@ def _validate_unit_interval(name: str, value: float) -> float:
     return normalized
 
 
+def _validate_same_shape(
+    name: str,
+    left: torch.Tensor,
+    right: torch.Tensor,
+    left_label: str,
+    right_label: str,
+) -> None:
+    """Reject auxiliary tensors that would otherwise broadcast silently."""
+    if left.shape != right.shape:
+        raise ValueError(
+            f"{left_label} and {right_label} shapes for {name!r} must match: "
+            f"{tuple(left.shape)} != {tuple(right.shape)}"
+        )
+
+
 class ImportanceScorer(ABC):
     """重要性得分计算的抽象基类。"""
     
@@ -79,9 +94,12 @@ class FirstOrderScorer(ImportanceScorer):
         return True
     
     def score(self, weights, gradients=None, reference_weights=None):
+        if gradients is None:
+            raise ValueError("First-order scoring requires gradients")
         scores = {}
         for name, w in weights.items():
             g = gradients.get(name, torch.zeros_like(w))
+            _validate_same_shape(name, g, w, "Gradient", "weight")
             scores[name] = torch.abs(g * w)
         return scores
 
@@ -102,7 +120,11 @@ class ResidualMagnitudeScorer(ImportanceScorer):
         scores = {}
         for name, w in weights.items():
             if reference_weights and name in reference_weights:
-                scores[name] = torch.abs(w - reference_weights[name])
+                reference = reference_weights[name]
+                _validate_same_shape(
+                    name, reference, w, "Reference weight", "weight"
+                )
+                scores[name] = torch.abs(w - reference)
             else:
                 scores[name] = torch.abs(w)
         return scores
@@ -193,12 +215,13 @@ def combine_scores_2d_with_protection(
     for name in damage_scores:
         if name not in magnitude_scores:
             continue
-        if magnitude_scores[name].shape != damage_scores[name].shape:
-            raise ValueError(
-                f"Score shapes for {name!r} must match: "
-                f"{tuple(magnitude_scores[name].shape)} != "
-                f"{tuple(damage_scores[name].shape)}"
-            )
+        _validate_same_shape(
+            name,
+            magnitude_scores[name],
+            damage_scores[name],
+            "Magnitude score",
+            "damage score",
+        )
 
         mag = magnitude_scores[name].flatten().float()
         dam = damage_scores[name].flatten().float()
@@ -254,11 +277,7 @@ def apply_magnitude_protection(
         if name not in weights:
             protected[name] = score.clone()
             continue
-        if score.shape != weights[name].shape:
-            raise ValueError(
-                f"Score and weight shapes for {name!r} must match: "
-                f"{tuple(score.shape)} != {tuple(weights[name].shape)}"
-            )
+        _validate_same_shape(name, score, weights[name], "Score", "weight")
 
         s = score.clone().float()
         mag = weights[name].abs().flatten().float()

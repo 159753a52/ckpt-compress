@@ -4,9 +4,11 @@ import torch
 
 from dacp.pruning import Pruner
 from dacp.pruning.importance import (
+    FirstOrderScorer,
     IMPORTANCE_REGISTRY,
     ImportanceScorer,
     MagnitudeScorer,
+    ResidualMagnitudeScorer,
     apply_magnitude_protection,
     combine_scores_2d_with_protection,
     get_importance_scorer,
@@ -112,6 +114,19 @@ class TestPrunerContracts(unittest.TestCase):
             Pruner(importance="first-order").compute_scores(weights)
         with self.assertRaisesRegex(ValueError, "requires reference_weights"):
             Pruner(importance="residual-magnitude").compute_scores(weights)
+
+    def test_direct_scorers_reject_invalid_auxiliary_tensors(self) -> None:
+        weights = {"layer": torch.ones(2, 2)}
+
+        with self.assertRaisesRegex(ValueError, "requires gradients"):
+            FirstOrderScorer().score(weights)
+        with self.assertRaisesRegex(ValueError, "Gradient and weight shapes"):
+            FirstOrderScorer().score(weights, {"layer": torch.ones(2)})
+        with self.assertRaisesRegex(ValueError, "Reference weight and weight shapes"):
+            ResidualMagnitudeScorer().score(
+                weights,
+                reference_weights={"layer": torch.ones(2)},
+            )
 
     def test_registered_scorer_instances_are_not_called_as_factories(self) -> None:
         previous = IMPORTANCE_REGISTRY.get("instance-magnitude")
