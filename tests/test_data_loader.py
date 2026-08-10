@@ -1,3 +1,4 @@
+import shutil
 import unittest
 from unittest import mock
 
@@ -127,6 +128,17 @@ class TestWikiText2Dataset(unittest.TestCase):
 
 
 class TestGlueLoaders(unittest.TestCase):
+    def test_nfs_disk_override_restores_global_function_after_failure(self) -> None:
+        original_disk_usage = shutil.disk_usage
+
+        with self.assertRaisesRegex(RuntimeError, 'synthetic failure'):
+            with data_loader._nfs_disk_space_override():
+                usage = shutil.disk_usage('/unused')
+                self.assertEqual(usage.free, 1 << 40)
+                raise RuntimeError('synthetic failure')
+
+        self.assertIs(shutil.disk_usage, original_disk_usage)
+
     def test_dataset_adapter_uses_task_fields_and_label_dtype(self) -> None:
         tokenizer = _RecordingTokenizer()
         regression = GLUEDataset(

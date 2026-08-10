@@ -4,10 +4,13 @@
 提供加载 CIFAR-10 和 WikiText-2 数据集的函数。
 """
 
+from contextlib import contextmanager
+from threading import RLock
+from typing import Dict, Iterator, Mapping, NamedTuple, Optional, Sequence, Tuple
+
 import torch
-from torch.utils.data import DataLoader, Subset, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
-from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 try:
     from datasets import load_dataset
@@ -21,6 +24,28 @@ _GPT2_TOKENIZER_FALLBACKS = [
     '/root/ckpt-compress/data/models/gpt2-medium',  # V100 server
     '/lihongliang/fangzl/ckpt-compress/models/gpt2_tokenizer',
 ]
+
+class _DiskUsage(NamedTuple):
+    total: int
+    used: int
+    free: int
+
+
+_DISK_USAGE_OVERRIDE_LOCK = RLock()
+
+
+@contextmanager
+def _nfs_disk_space_override() -> Iterator[None]:
+    """Serialize and restore the global disk-usage workaround used by HF."""
+    import shutil
+
+    with _DISK_USAGE_OVERRIDE_LOCK:
+        original_disk_usage = shutil.disk_usage
+        shutil.disk_usage = lambda _path: _DiskUsage(1 << 40, 0, 1 << 40)
+        try:
+            yield
+        finally:
+            shutil.disk_usage = original_disk_usage
 
 
 def _apply_subset(dataset: Dataset, limit: Optional[int], name: str) -> Dataset:
@@ -796,13 +821,8 @@ def get_glue_dataloader(
     from transformers import AutoTokenizer
 
     # 绕过 NFS 磁盘空间检查误报（df 显示 100% 但实际有空间）
-    import shutil
-    _orig_disk_usage = shutil.disk_usage
-    shutil.disk_usage = lambda path: shutil._ntuple_diskusage(1 << 40, 0, 1 << 40)
-    try:
+    with _nfs_disk_space_override():
         dataset = load_dataset('glue', dataset_name, cache_dir=data_dir, split=split)
-    finally:
-        shutil.disk_usage = _orig_disk_usage
 
     # 加载 tokenizer（使用 BERT tokenizer）
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
