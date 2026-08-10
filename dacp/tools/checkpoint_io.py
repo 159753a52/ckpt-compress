@@ -1,7 +1,8 @@
 """Bitmask-based checkpoint compression serialization.
 
 Format: for each parameter tensor:
-  - Pruned layers: 1-bit mask (packed uint8) + dense non-zero values (fp16)
+  - Pruned layers: 1-bit mask (packed uint8) + dense non-zero values (fp16),
+    or mask + uint8 cluster indices + fp16 codebook for quantized checkpoints
   - Non-pruned layers: raw values (fp16)
 
 This yields an amortized cost of 1 + 16*(1-P) bits per parameter
@@ -11,7 +12,7 @@ for fp16 non-zero storage, where P is the sparsity ratio.
 import os
 import numpy as np
 import torch
-from typing import Dict
+from typing import Dict, Mapping
 
 
 def save_compressed_checkpoint(
@@ -54,11 +55,69 @@ def save_compressed_checkpoint(
     return os.path.getsize(path)
 
 
+def _unpack_masked_entry(data: Mapping, dtype: torch.dtype) -> torch.Tensor:
+    """Restore one masked entry from either dense values or quantized labels."""
+    try:
+        shape = tuple(data["shape"])
+        numel = int(data["numel"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Masked checkpoint entry has invalid shape metadata") from exc
+    if numel < 0 or int(np.prod(shape, dtype=np.int64)) != numel:
+        raise ValueError("Masked checkpoint entry has inconsistent numel metadata")
+
+    packed_mask = data.get("mask")
+    if isinstance(packed_mask, torch.Tensor):
+        packed_mask = packed_mask.detach().cpu().numpy()
+    packed_mask = np.asarray(packed_mask, dtype=np.uint8)
+    try:
+        unpacked_mask = np.unpackbits(packed_mask)
+    except ValueError as exc:
+        raise ValueError("Masked checkpoint entry has an invalid packed mask") from exc
+    if unpacked_mask.size < numel:
+        raise ValueError("Masked checkpoint entry has a truncated packed mask")
+    flat_mask = unpacked_mask[:numel].astype(bool)
+    mask = torch.from_numpy(flat_mask)
+    active_count = int(mask.sum().item())
+
+    if "values" in data:
+        values = data["values"]
+    elif "indices" in data and "codebook" in data:
+        indices = data["indices"]
+        codebook = data["codebook"]
+        if not isinstance(indices, torch.Tensor) or not isinstance(
+            codebook, torch.Tensor
+        ):
+            raise ValueError(
+                "Quantized checkpoint entries must store tensor indices and codebook"
+            )
+        indices = indices.detach().cpu().to(torch.long).flatten()
+        codebook = codebook.detach().cpu().flatten()
+        if indices.numel() != active_count:
+            raise ValueError("Quantized checkpoint indices do not match the mask")
+        if indices.numel() and (
+            int(indices.min()) < 0 or int(indices.max()) >= codebook.numel()
+        ):
+            raise ValueError("Quantized checkpoint index is outside the codebook")
+        values = codebook[indices]
+    else:
+        raise ValueError("Masked checkpoint entry has neither values nor quantized data")
+
+    if not isinstance(values, torch.Tensor) or values.numel() != active_count:
+        raise ValueError("Masked checkpoint values do not match the mask")
+    tensor = torch.zeros(shape, dtype=dtype)
+    tensor.view(-1)[mask] = values.detach().cpu().flatten().to(dtype)
+    return tensor
+
+
 def load_compressed_checkpoint(
     path: str,
     dtype: torch.dtype = torch.float32,
 ) -> Dict[str, torch.Tensor]:
     """Load bitmask-compressed checkpoint back to dense state_dict.
+
+    Both the legacy dense-value entries and the quantized
+    ``indices``/``codebook`` entries produced by
+    :func:`save_quantized_compressed_checkpoint` are supported.
 
     Args:
         path: compressed checkpoint file path
@@ -71,14 +130,7 @@ def load_compressed_checkpoint(
     state_dict = {}
     for name, data in compressed.items():
         if isinstance(data, dict) and 'mask' in data:
-            shape = data['shape']
-            numel = data['numel']
-            packed = data['mask'].numpy()
-            flat_mask = np.unpackbits(packed)[:numel].astype(bool)
-            mask = torch.from_numpy(flat_mask).reshape(shape)
-            tensor = torch.zeros(shape, dtype=dtype)
-            tensor[mask] = data['values'].to(dtype)
-            state_dict[name] = tensor
+            state_dict[name] = _unpack_masked_entry(data, dtype)
         else:
             state_dict[name] = data.to(dtype)
     return state_dict
@@ -102,10 +154,15 @@ def save_quantized_compressed_checkpoint(
     Returns:
         compressed file size in bytes
     """
-    from ..quantization.kmeans import KMeansQuantizer
-
-    quantizer = KMeansQuantizer(n_clusters=n_clusters)
-    index_bits = int(np.ceil(np.log2(n_clusters)))
+    if (
+        isinstance(n_clusters, bool)
+        or not isinstance(n_clusters, int)
+        or not 1 <= n_clusters <= 256
+    ):
+        raise ValueError(
+            "n_clusters must be an integer in [1, 256] for uint8 indices, "
+            f"got {n_clusters}"
+        )
     compressed = {}
 
     for name, param in state_dict.items():
