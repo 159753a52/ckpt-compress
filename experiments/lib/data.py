@@ -12,6 +12,8 @@ import torch
 from typing import Tuple, List, Dict
 from torch.utils.data import DataLoader
 
+from experiments.lib.losses import SUPPORTED_TASK_TYPES
+
 
 # task_type 映射
 _TASK_MAP = {
@@ -98,6 +100,18 @@ def cache_batches(
     返回:
         缓存的批次列表，每个元素为字典
     """
+    if task_type not in SUPPORTED_TASK_TYPES:
+        raise ValueError(
+            f"Unknown task_type: {task_type}. "
+            f"Available: {sorted(SUPPORTED_TASK_TYPES)}"
+        )
+    if (
+        isinstance(num_batches, bool)
+        or not isinstance(num_batches, int)
+        or num_batches < 1
+    ):
+        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
+
     cached = []
     data_iter = iter(data_loader)
 
