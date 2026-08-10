@@ -16,7 +16,6 @@ full model weight.
 
 from __future__ import annotations
 
-import argparse
 import gc
 import math
 import sys
@@ -100,47 +99,10 @@ from experiments.lib.residual_scoring import (  # noqa: E402
     eligible_layers,
     model_checksum,
 )
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--reference-checkpoint",
-        type=Path,
-        default=ROOT / "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_800.pt",
-    )
-    parser.add_argument(
-        "--current-checkpoint",
-        type=Path,
-        default=ROOT / "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
-    )
-    parser.add_argument(
-        "--data-dir",
-        type=Path,
-        default=ROOT.parent.parent / "data/wikitext103",
-    )
-    parser.add_argument("--prune-ratio", type=float, default=0.30)
-    parser.add_argument("--max-layer-ratio", type=float, default=0.80)
-    parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--seq-length", type=int, default=128)
-    parser.add_argument("--eval-batches", type=int, default=20)
-    parser.add_argument("--hvp-batches", type=int, default=1)
-    parser.add_argument(
-        "--train-batch-offset",
-        type=int,
-        default=0,
-        help="Skip this many deterministic training batches before HVP data.",
-    )
-    parser.add_argument("--continuation-steps", type=int, default=0)
-    parser.add_argument("--continuation-lr", type=float, default=5e-5)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", default="cuda")
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=ROOT / "results/diagnostics/v100_allocation_gate",
-    )
-    return parser.parse_args()
+from experiments.lib.residual_short_config import (  # noqa: E402
+    parse_args,
+    validate_short_config,
+)
 
 
 def continue_training(
@@ -180,10 +142,7 @@ def continue_training(
 
 def main() -> None:
     args = parse_args()
-    if not 0 < args.prune_ratio < 1:
-        raise ValueError("--prune-ratio must be in (0, 1)")
-    if args.hvp_batches < 1 or args.continuation_steps < 0 or args.train_batch_offset < 0:
-        raise ValueError("HVP batches must be positive and step/offset counts non-negative")
+    validate_short_config(args)
     if not torch.cuda.is_available() and args.device.startswith("cuda"):
         raise RuntimeError("CUDA was requested but is unavailable")
 
