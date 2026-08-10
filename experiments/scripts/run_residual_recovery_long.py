@@ -27,6 +27,10 @@ from experiments.lib.residual_allocation import (  # noqa: E402
     uniform_counts,
     weibull_counts,
 )
+from experiments.lib.residual_calibration import (  # noqa: E402
+    calibrate_spectral_allocation,
+    calibrate_trust_region_allocation,
+)
 from experiments.lib.residual_masks import (  # noqa: E402
     MaskDict,
     TensorDict,
@@ -39,8 +43,6 @@ from experiments.lib.residual_masks import (  # noqa: E402
     restore_with_mask,
 )
 from experiments.lib.residual_recovery import (  # noqa: E402
-    calibrate_spectral_allocation,
-    calibrate_trust_region_allocation,
     compute_block_taylor_scores,
     eligible_layers,
 )

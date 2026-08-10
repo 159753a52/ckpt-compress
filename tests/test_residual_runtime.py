@@ -9,6 +9,7 @@ from unittest import mock
 import torch
 
 import experiments.lib.residual_allocation as residual_allocation
+import experiments.lib.residual_calibration as residual_calibration
 import experiments.lib.residual_masks as residual_masks
 import experiments.lib.residual_recovery as residual_recovery
 import experiments.lib.residual_runtime as residual_runtime
@@ -26,7 +27,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TestResidualRuntime(unittest.TestCase):
     def test_residual_recovery_reexports_helper_aliases(self) -> None:
-        helper_modules = (residual_allocation, residual_masks, residual_runtime)
+        helper_modules = (
+            residual_allocation,
+            residual_calibration,
+            residual_masks,
+            residual_runtime,
+        )
         for module in helper_modules:
             for name in module.__all__:
                 with self.subTest(module=module.__name__, name=name):
