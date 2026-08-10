@@ -8,9 +8,10 @@ import gc
 import math
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
+from typing import Callable, Dict, List, Mapping, Sequence, Tuple
 
 import torch
 
@@ -76,6 +77,23 @@ from experiments.lib.residual_training import (  # noqa: E402
     seeded_training_batches,
     train_segment,
 )
+
+
+@dataclass(frozen=True)
+class LongRunContext:
+    """Resources shared across every paired seed in one long experiment."""
+
+    args: argparse.Namespace
+    output_path: Path
+    results: Dict[str, object]
+    model_factory: Callable[[], torch.nn.Module]
+    training_pool: Sequence[Mapping[str, torch.Tensor]]
+    eval_batches: Sequence[Mapping[str, torch.Tensor]]
+    reference_state: Mapping[str, torch.Tensor]
+    reference_optimizer_state: Mapping
+    trust_radii: Sequence[float]
+    spectral_ranks: Sequence[int]
+    quantile_smoothness_values: Sequence[float]
 
 
 def parse_args() -> argparse.Namespace:
@@ -163,6 +181,268 @@ def validate_args(args: argparse.Namespace, seeds: Sequence[int]) -> None:
         raise RuntimeError("CUDA was requested but is unavailable")
 
 
+def run_seed(
+    context: LongRunContext,
+    seed: int,
+    seed_index: int,
+    seed_count: int,
+) -> None:
+    """Run one paired seed while preserving incremental result checkpoints."""
+    args = context.args
+    output_path = context.output_path
+    results = context.results
+    reference_state = context.reference_state
+    eval_batches = context.eval_batches
+
+    print(f"\n=== Seed {seed} ({seed_index}/{seed_count}) ===", flush=True)
+    seed_started = time.perf_counter()
+    batches = partition_seed_batches(
+        context.training_pool,
+        args.total_steps,
+        args.recovery_step,
+        args.hvp_batches,
+        args.allocation_probe_batches,
+        args.allocation_selection_batches,
+        seed,
+    )
+
+    seed_result: Dict[str, object] = {
+        "seed": seed,
+        "selected_pool_indices": batches.selected_pool_indices,
+        "data_hashes": batches.data_hashes(),
+        "methods": {},
+    }
+    results["seed_results"][str(seed)] = seed_result
+    write_json(output_path, results)
+
+    model = context.model_factory()
+    model.load_state_dict(reference_state, strict=True)
+    model.to(args.device)
+    reference_metrics = evaluate_lm(model, eval_batches, args.device)
+    seed_result["reference"] = reference_metrics
+
+    optimizer = build_optimizer(
+        model,
+        context.reference_optimizer_state,
+        learning_rate=args.learning_rate,
+    )
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.total_steps, eta_min=0.0
+    )
+    pre_metrics = train_segment(
+        model, optimizer, scheduler, batches.pre_recovery, seed, args.device
+    )
+    current_state = clone_model_state_to_cpu(model)
+    current_optimizer_state = optimizer_state_to_cpu(optimizer.state_dict())
+    current_scheduler_state = copy.deepcopy(scheduler.state_dict())
+    del optimizer, scheduler
+    empty_device_cache(args.device)
+    current_metrics = evaluate_lm(model, eval_batches, args.device)
+    seed_result["pre_recovery_training"] = pre_metrics
+    seed_result["current"] = current_metrics
+    write_json(output_path, results)
+    print(
+        f"  reference PPL={reference_metrics['perplexity']:.4f}; "
+        f"recovery-point PPL={current_metrics['perplexity']:.4f}",
+        flush=True,
+    )
+
+    layers = eligible_layers(model)
+    eligible_names = [name for layer in layers for name in layer]
+    delta = {
+        name: current_state[name].detach().float() - reference_state[name].detach().float()
+        for name in eligible_names
+    }
+    magnitude_scores = {name: values.abs() for name, values in delta.items()}
+    reset_peak_memory(args.device)
+    components_raw, scoring_metrics = compute_block_taylor_scores(
+        model,
+        batches.scoring,
+        layers,
+        delta,
+        args.device,
+        return_components=True,
+    )
+    components = components_raw
+    scoring_metrics["peak_gpu_memory_bytes"] = peak_memory_bytes(args.device)
+    seed_result["scoring"] = scoring_metrics
+
+    allocation_started = time.perf_counter()
+    taylor_score_orders = None
+    score_order_seconds = 0.0
+    if context.spectral_ranks or context.quantile_smoothness_values:
+        score_order_started = time.perf_counter()
+        taylor_score_orders = layer_score_orders(
+            layers, components["taylor"], sort_device=args.device
+        )
+        score_order_seconds = time.perf_counter() - score_order_started
+    masks, allocation_metadata = build_masks(
+        layers,
+        magnitude_scores,
+        components,
+        args.prune_ratio,
+        args.max_layer_ratio,
+        taylor_score_orders,
+    )
+    probe_trust_counts, probe_trust_metadata = calibrate_trust_region_allocation(
+        model,
+        current_state,
+        reference_state,
+        layers,
+        components["taylor"],
+        allocation_metadata["uniform_layer_counts"],
+        allocation_metadata["target_pruned"],
+        args.prune_ratio,
+        args.max_layer_ratio,
+        batches.allocation_probe,
+        batches.allocation_selection,
+        args.allocation_probe_radius,
+        context.trust_radii,
+        args.device,
+        taylor_score_orders,
+    )
+    masks[TAYLOR_PROBE_TRUST_METHOD] = layer_masks(
+        layers, components["taylor"], probe_trust_counts, taylor_score_orders
+    )
+    allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
+    allocation_metadata["probe_trust"] = probe_trust_metadata
+    if context.spectral_ranks:
+        spectral_counts, spectral_metadata = calibrate_spectral_allocation(
+            model,
+            current_state,
+            reference_state,
+            layers,
+            components["taylor"],
+            allocation_metadata["target_pruned"],
+            args.prune_ratio,
+            args.max_layer_ratio,
+            batches.allocation_probe,
+            args.spectral_probe_radius,
+            context.spectral_ranks,
+            args.spectral_trust_radius,
+            args.device,
+            taylor_score_orders,
+        )
+        for rank, counts in spectral_counts.items():
+            masks[spectral_method_id(rank)] = layer_masks(
+                layers, components["taylor"], counts, taylor_score_orders
+            )
+        allocation_metadata["spectral_layer_counts"] = spectral_counts
+        allocation_metadata["spectral"] = spectral_metadata
+    if context.quantile_smoothness_values:
+        quantile_counts, quantile_metadata = calibrate_quantile_smooth_allocation(
+            layers,
+            components["taylor"],
+            taylor_score_orders,
+            allocation_metadata["target_pruned"],
+            args.prune_ratio,
+            args.max_layer_ratio,
+            args.quantile_trust_radius,
+            context.quantile_smoothness_values,
+            args.device,
+            args.quantile_cost_normalization,
+        )
+        for smoothness, counts in quantile_counts.items():
+            method = quantile_method_id(
+                args.quantile_cost_normalization,
+                smoothness,
+            )
+            masks[method] = layer_masks(
+                layers, components["taylor"], counts, taylor_score_orders
+            )
+        allocation_metadata["quantile_smooth_layer_counts"] = {
+            str(value): counts for value, counts in quantile_counts.items()
+        }
+        allocation_metadata["quantile_smooth"] = quantile_metadata
+    if taylor_score_orders is not None:
+        allocation_metadata["score_order_seconds"] = score_order_seconds
+        allocation_metadata["score_order_sort_device"] = args.device
+        allocation_metadata["score_order_bytes"] = sum(
+            order.numel() * order.element_size() for order in taylor_score_orders
+        )
+    del taylor_score_orders
+    allocation_metadata["seconds"] = time.perf_counter() - allocation_started
+    allocation_metadata["whole_model_parameters"] = sum(
+        parameter.numel() for parameter in model.parameters()
+    )
+    seed_result["allocation"] = allocation_metadata
+    exact_metrics = mask_metrics(
+        masks[TAYLOR_EXACT_GLOBAL_METHOD], components["taylor"]
+    )
+
+    for method, method_masks in masks.items():
+        metrics = mask_metrics(method_masks, components["taylor"])
+        selection = mask_metrics(
+            method_masks, score_for_method(method, magnitude_scores, components)
+        )
+        metrics["selection_score_cost"] = selection["proxy_cost"]
+        metrics["eligible_sparsity"] = (
+            metrics["pruned"] / allocation_metadata["eligible_parameters"]
+        )
+        metrics["layer_rates"] = layer_rates(layers, method_masks)
+        metrics["taylor_regret_vs_exact"] = (
+            (metrics["proxy_cost"] - exact_metrics["proxy_cost"])
+            / max(abs(exact_metrics["proxy_cost"]), 1e-30)
+        )
+        metrics["overlap_with_taylor_exact"] = mask_overlap(
+            method_masks, masks[TAYLOR_EXACT_GLOBAL_METHOD]
+        )
+        restore_with_mask(
+            model, current_state, reference_state, method_masks, args.device
+        )
+        metrics["immediate"] = evaluate_lm(model, eval_batches, args.device)
+        seed_result["methods"][method] = metrics
+        write_json(output_path, results)
+        print(
+            f"  immediate {method:28s} "
+            f"PPL={metrics['immediate']['perplexity']:.4f}",
+            flush=True,
+        )
+
+    trajectories: List[Tuple[str, MaskDict | None]] = [(NO_COMPRESSION_METHOD, None)]
+    trajectories.extend(masks.items())
+    for method, method_masks in trajectories:
+        if method_masks is None:
+            model.load_state_dict(current_state, strict=True)
+        else:
+            restore_with_mask(
+                model, current_state, reference_state, method_masks, args.device
+            )
+        optimizer = build_optimizer(model, current_optimizer_state)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=args.total_steps, eta_min=0.0
+        )
+        scheduler.load_state_dict(current_scheduler_state)
+        continuation_metrics = train_segment(
+            model,
+            optimizer,
+            scheduler,
+            batches.continuation,
+            seed + 1_000_000,
+            args.device,
+        )
+        final_metrics = evaluate_lm(model, eval_batches, args.device)
+        continuation_metrics["evaluation"] = final_metrics
+        if method == NO_COMPRESSION_METHOD:
+            seed_result["no_compression_continuation"] = continuation_metrics
+            seed_result["no_compression_final"] = final_metrics
+        else:
+            seed_result["methods"][method]["continuation"] = continuation_metrics
+            seed_result["methods"][method]["final"] = final_metrics
+        del optimizer, scheduler
+        model.zero_grad(set_to_none=True)
+        empty_device_cache(args.device)
+        write_json(output_path, results)
+        print(f"  final     {method:28s} PPL={final_metrics['perplexity']:.4f}", flush=True)
+
+    seed_result["wall_seconds"] = time.perf_counter() - seed_started
+    del masks, components, components_raw, magnitude_scores, delta
+    del current_state, current_optimizer_state, model
+    gc.collect()
+    empty_device_cache(args.device)
+    write_json(output_path, results)
+
+
 def main() -> None:
     args = parse_args()
     seeds = [int(value) for value in args.seeds.split(",") if value.strip()]
@@ -246,256 +526,23 @@ def main() -> None:
         args.eval_batches,
     )
     results["evaluation_batches_sha256"] = batch_hash(eval_batches)
+    context = LongRunContext(
+        args=args,
+        output_path=output_path,
+        results=results,
+        model_factory=lambda: get_gpt2_medium(pretrained=False),
+        training_pool=training_pool,
+        eval_batches=eval_batches,
+        reference_state=reference_state,
+        reference_optimizer_state=reference_optimizer_state,
+        trust_radii=trust_radii,
+        spectral_ranks=spectral_ranks,
+        quantile_smoothness_values=quantile_smoothness_values,
+    )
     wall_started = time.perf_counter()
 
     for seed_index, seed in enumerate(seeds, start=1):
-        print(f"\n=== Seed {seed} ({seed_index}/{len(seeds)}) ===", flush=True)
-        seed_started = time.perf_counter()
-        batches = partition_seed_batches(
-            training_pool,
-            args.total_steps,
-            args.recovery_step,
-            args.hvp_batches,
-            args.allocation_probe_batches,
-            args.allocation_selection_batches,
-            seed,
-        )
-
-        seed_result: Dict[str, object] = {
-            "seed": seed,
-            "selected_pool_indices": batches.selected_pool_indices,
-            "data_hashes": batches.data_hashes(),
-            "methods": {},
-        }
-        results["seed_results"][str(seed)] = seed_result
-        write_json(output_path, results)
-
-        model = get_gpt2_medium(pretrained=False)
-        model.load_state_dict(reference_state, strict=True)
-        model.to(args.device)
-        reference_metrics = evaluate_lm(model, eval_batches, args.device)
-        seed_result["reference"] = reference_metrics
-
-        optimizer = build_optimizer(
-            model, reference_optimizer_state, learning_rate=args.learning_rate
-        )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=args.total_steps, eta_min=0.0
-        )
-        pre_metrics = train_segment(
-            model, optimizer, scheduler, batches.pre_recovery, seed, args.device
-        )
-        current_state = clone_model_state_to_cpu(model)
-        current_optimizer_state = optimizer_state_to_cpu(optimizer.state_dict())
-        current_scheduler_state = copy.deepcopy(scheduler.state_dict())
-        del optimizer, scheduler
-        empty_device_cache(args.device)
-        current_metrics = evaluate_lm(model, eval_batches, args.device)
-        seed_result["pre_recovery_training"] = pre_metrics
-        seed_result["current"] = current_metrics
-        write_json(output_path, results)
-        print(
-            f"  reference PPL={reference_metrics['perplexity']:.4f}; "
-            f"recovery-point PPL={current_metrics['perplexity']:.4f}",
-            flush=True,
-        )
-
-        layers = eligible_layers(model)
-        eligible_names = [name for layer in layers for name in layer]
-        delta = {
-            name: current_state[name].detach().float() - reference_state[name].detach().float()
-            for name in eligible_names
-        }
-        magnitude_scores = {name: values.abs() for name, values in delta.items()}
-        reset_peak_memory(args.device)
-        components_raw, scoring_metrics = compute_block_taylor_scores(
-            model,
-            batches.scoring,
-            layers,
-            delta,
-            args.device,
-            return_components=True,
-        )
-        components = components_raw
-        scoring_metrics["peak_gpu_memory_bytes"] = peak_memory_bytes(args.device)
-        seed_result["scoring"] = scoring_metrics
-
-        allocation_started = time.perf_counter()
-        taylor_score_orders = None
-        score_order_seconds = 0.0
-        if spectral_ranks or quantile_smoothness_values:
-            score_order_started = time.perf_counter()
-            taylor_score_orders = layer_score_orders(
-                layers, components["taylor"], sort_device=args.device
-            )
-            score_order_seconds = time.perf_counter() - score_order_started
-        masks, allocation_metadata = build_masks(
-            layers,
-            magnitude_scores,
-            components,
-            args.prune_ratio,
-            args.max_layer_ratio,
-            taylor_score_orders,
-        )
-        probe_trust_counts, probe_trust_metadata = calibrate_trust_region_allocation(
-            model,
-            current_state,
-            reference_state,
-            layers,
-            components["taylor"],
-            allocation_metadata["uniform_layer_counts"],
-            allocation_metadata["target_pruned"],
-            args.prune_ratio,
-            args.max_layer_ratio,
-            batches.allocation_probe,
-            batches.allocation_selection,
-            args.allocation_probe_radius,
-            trust_radii,
-            args.device,
-            taylor_score_orders,
-        )
-        masks[TAYLOR_PROBE_TRUST_METHOD] = layer_masks(
-            layers, components["taylor"], probe_trust_counts, taylor_score_orders
-        )
-        allocation_metadata["probe_trust_layer_counts"] = probe_trust_counts
-        allocation_metadata["probe_trust"] = probe_trust_metadata
-        if spectral_ranks:
-            spectral_counts, spectral_metadata = calibrate_spectral_allocation(
-                model,
-                current_state,
-                reference_state,
-                layers,
-                components["taylor"],
-                allocation_metadata["target_pruned"],
-                args.prune_ratio,
-                args.max_layer_ratio,
-                batches.allocation_probe,
-                args.spectral_probe_radius,
-                spectral_ranks,
-                args.spectral_trust_radius,
-                args.device,
-                taylor_score_orders,
-            )
-            for rank, counts in spectral_counts.items():
-                masks[spectral_method_id(rank)] = layer_masks(
-                    layers, components["taylor"], counts, taylor_score_orders
-                )
-            allocation_metadata["spectral_layer_counts"] = spectral_counts
-            allocation_metadata["spectral"] = spectral_metadata
-        if quantile_smoothness_values:
-            quantile_counts, quantile_metadata = calibrate_quantile_smooth_allocation(
-                layers,
-                components["taylor"],
-                taylor_score_orders,
-                allocation_metadata["target_pruned"],
-                args.prune_ratio,
-                args.max_layer_ratio,
-                args.quantile_trust_radius,
-                quantile_smoothness_values,
-                args.device,
-                args.quantile_cost_normalization,
-            )
-            for smoothness, counts in quantile_counts.items():
-                method = quantile_method_id(
-                    args.quantile_cost_normalization,
-                    smoothness,
-                )
-                masks[method] = layer_masks(
-                    layers, components["taylor"], counts, taylor_score_orders
-                )
-            allocation_metadata["quantile_smooth_layer_counts"] = {
-                str(value): counts for value, counts in quantile_counts.items()
-            }
-            allocation_metadata["quantile_smooth"] = quantile_metadata
-        if taylor_score_orders is not None:
-            allocation_metadata["score_order_seconds"] = score_order_seconds
-            allocation_metadata["score_order_sort_device"] = args.device
-            allocation_metadata["score_order_bytes"] = sum(
-                order.numel() * order.element_size() for order in taylor_score_orders
-            )
-        del taylor_score_orders
-        allocation_metadata["seconds"] = time.perf_counter() - allocation_started
-        allocation_metadata["whole_model_parameters"] = sum(
-            parameter.numel() for parameter in model.parameters()
-        )
-        seed_result["allocation"] = allocation_metadata
-        exact_metrics = mask_metrics(
-            masks[TAYLOR_EXACT_GLOBAL_METHOD], components["taylor"]
-        )
-
-        for method, method_masks in masks.items():
-            metrics = mask_metrics(method_masks, components["taylor"])
-            selection = mask_metrics(
-                method_masks, score_for_method(method, magnitude_scores, components)
-            )
-            metrics["selection_score_cost"] = selection["proxy_cost"]
-            metrics["eligible_sparsity"] = (
-                metrics["pruned"] / allocation_metadata["eligible_parameters"]
-            )
-            metrics["layer_rates"] = layer_rates(layers, method_masks)
-            metrics["taylor_regret_vs_exact"] = (
-                (metrics["proxy_cost"] - exact_metrics["proxy_cost"])
-                / max(abs(exact_metrics["proxy_cost"]), 1e-30)
-            )
-            metrics["overlap_with_taylor_exact"] = mask_overlap(
-                method_masks, masks[TAYLOR_EXACT_GLOBAL_METHOD]
-            )
-            restore_with_mask(
-                model, current_state, reference_state, method_masks, args.device
-            )
-            metrics["immediate"] = evaluate_lm(model, eval_batches, args.device)
-            seed_result["methods"][method] = metrics
-            write_json(output_path, results)
-            print(
-                f"  immediate {method:28s} "
-                f"PPL={metrics['immediate']['perplexity']:.4f}",
-                flush=True,
-            )
-
-        trajectories: List[Tuple[str, MaskDict | None]] = [
-            (NO_COMPRESSION_METHOD, None)
-        ]
-        trajectories.extend(masks.items())
-        for method, method_masks in trajectories:
-            if method_masks is None:
-                model.load_state_dict(current_state, strict=True)
-            else:
-                restore_with_mask(
-                    model, current_state, reference_state, method_masks, args.device
-                )
-            optimizer = build_optimizer(model, current_optimizer_state)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-                optimizer, T_max=args.total_steps, eta_min=0.0
-            )
-            scheduler.load_state_dict(current_scheduler_state)
-            continuation_metrics = train_segment(
-                model,
-                optimizer,
-                scheduler,
-                batches.continuation,
-                seed + 1_000_000,
-                args.device,
-            )
-            final_metrics = evaluate_lm(model, eval_batches, args.device)
-            continuation_metrics["evaluation"] = final_metrics
-            if method == NO_COMPRESSION_METHOD:
-                seed_result["no_compression_continuation"] = continuation_metrics
-                seed_result["no_compression_final"] = final_metrics
-            else:
-                seed_result["methods"][method]["continuation"] = continuation_metrics
-                seed_result["methods"][method]["final"] = final_metrics
-            del optimizer, scheduler
-            model.zero_grad(set_to_none=True)
-            empty_device_cache(args.device)
-            write_json(output_path, results)
-            print(f"  final     {method:28s} PPL={final_metrics['perplexity']:.4f}", flush=True)
-
-        seed_result["wall_seconds"] = time.perf_counter() - seed_started
-        del masks, components, components_raw, magnitude_scores, delta
-        del current_state, current_optimizer_state, model
-        gc.collect()
-        empty_device_cache(args.device)
-        write_json(output_path, results)
+        run_seed(context, seed, seed_index, len(seeds))
 
     results["aggregate"] = aggregate(results["seed_results"])
     results["status"] = "complete"
