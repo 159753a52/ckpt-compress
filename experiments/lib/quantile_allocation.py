@@ -188,7 +188,7 @@ def _integerize_quantile_smooth_counts(
     }
 
 
-def _solve_quantile_smooth_counts(
+def solve_quantile_smooth_counts(
     sorted_scores: Sequence[np.ndarray],
     layer_sizes: np.ndarray,
     uniform_layer_counts: Sequence[int],
@@ -327,3 +327,8 @@ def _solve_quantile_smooth_counts(
         "target_quantiles": target_quantiles,
         "solutions": solutions,
     }
+
+
+_solve_quantile_smooth_counts = solve_quantile_smooth_counts
+
+__all__ = ["solve_quantile_smooth_counts"]

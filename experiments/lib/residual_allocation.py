@@ -9,7 +9,7 @@ from typing import Dict, List, Mapping, Sequence, Tuple
 import numpy as np
 import torch
 
-from experiments.lib.quantile_allocation import _solve_quantile_smooth_counts
+from experiments.lib.quantile_allocation import solve_quantile_smooth_counts
 from experiments.lib.residual_budget import (
     bounded_largest_remainder_counts,
     largest_remainder_counts,
@@ -83,7 +83,7 @@ def calibrate_quantile_smooth_allocation(
     score_materialization_seconds = time.perf_counter() - score_started
 
     uniform_layer_counts = uniform_counts(layer_sizes.tolist(), target, ratio)
-    counts_by_smoothness, solver_metadata = _solve_quantile_smooth_counts(
+    counts_by_smoothness, solver_metadata = solve_quantile_smooth_counts(
         sorted_scores=sorted_scores,
         layer_sizes=layer_sizes,
         uniform_layer_counts=uniform_layer_counts,

@@ -4,7 +4,10 @@ import unittest
 import numpy as np
 import torch
 
-from experiments.lib.quantile_allocation import _solve_quantile_smooth_counts
+from experiments.lib.quantile_allocation import (
+    _solve_quantile_smooth_counts,
+    solve_quantile_smooth_counts,
+)
 from experiments.lib.residual_allocation import (
     calibrate_quantile_smooth_allocation,
     uniform_counts,
@@ -15,6 +18,9 @@ from experiments.lib.residual_masks import (
 
 
 class TestQuantileAllocation(unittest.TestCase):
+    def test_legacy_core_alias_points_to_public_solver(self) -> None:
+        self.assertIs(_solve_quantile_smooth_counts, solve_quantile_smooth_counts)
+
     def test_quantile_smooth_matches_small_discrete_optimum(self) -> None:
         layers = [["low"], ["high"], ["middle"]]
         scores = {
@@ -187,7 +193,7 @@ class TestQuantileAllocation(unittest.TestCase):
             scores[name].float().numpy()[order.numpy()]
             for name, order in zip(("left", "center", "right"), orders)
         ]
-        core_counts, core_metadata = _solve_quantile_smooth_counts(
+        core_counts, core_metadata = solve_quantile_smooth_counts(
             sorted_scores=sorted_scores,
             layer_sizes=layer_sizes,
             uniform_layer_counts=uniform_layer_counts,
