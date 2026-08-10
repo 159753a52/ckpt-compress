@@ -8,6 +8,28 @@ from scipy import stats
 from scipy.optimize import bisect
 
 
+def _validate_global_prune_ratio(global_prune_ratio: float) -> float:
+    """Validate and normalize the public allocation budget argument."""
+    if isinstance(global_prune_ratio, bool):
+        raise ValueError(
+            f"global_prune_ratio must be a finite number in [0, 1], "
+            f"got {global_prune_ratio}"
+        )
+    try:
+        ratio = float(global_prune_ratio)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"global_prune_ratio must be a finite number in [0, 1], "
+            f"got {global_prune_ratio}"
+        ) from exc
+    if not np.isfinite(ratio) or not 0.0 <= ratio <= 1.0:
+        raise ValueError(
+            f"global_prune_ratio must be a finite number in [0, 1], "
+            f"got {global_prune_ratio}"
+        )
+    return ratio
+
+
 class AllocationStrategy(ABC):
     """剪枝率分配策略的抽象基类。"""
     
@@ -37,7 +59,8 @@ class UniformAllocation(AllocationStrategy):
         return "uniform"
     
     def allocate(self, scores, global_prune_ratio):
-        return {name: global_prune_ratio for name in scores}
+        ratio = _validate_global_prune_ratio(global_prune_ratio)
+        return {name: ratio for name in scores}
 
 
 class GlobalTopKAllocation(AllocationStrategy):
@@ -70,10 +93,7 @@ class GlobalTopKAllocation(AllocationStrategy):
         返回:
             {layer_name: prune_ratio} 字典
         """
-        if not 0.0 <= global_prune_ratio <= 1.0:
-            raise ValueError(
-                f"global_prune_ratio must be in [0, 1], got {global_prune_ratio}"
-            )
+        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
 
         if not scores:
             return {}
@@ -166,6 +186,8 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         scores: Dict[str, torch.Tensor],
         global_prune_ratio: float,
     ) -> Dict[str, float]:
+        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
+
         # 1. 预排序每层 scores
         sorted_layers = {}
         sizes = {}
@@ -176,7 +198,7 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         
         N = sum(sizes.values())
         if N == 0:
-            return {name: global_prune_ratio for name in scores}
+            return {name: 0.0 for name in scores}
         
         # 2. 用经验 CDF 做 bisection
         def objective(c: float) -> float:
@@ -203,6 +225,9 @@ class GammaAdaptiveAllocation(AllocationStrategy):
         c_tensor = torch.tensor(c_star)
         result = {}
         for name in scores:
+            if sizes[name] == 0:
+                result[name] = 0.0
+                continue
             idx = torch.searchsorted(sorted_layers[name], c_tensor).item()
             result[name] = max(0.0, min(1.0, idx / sizes[name]))
         
@@ -219,6 +244,23 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
     """
     
     def __init__(self, max_layer_ratio: float = 0.5):
+        if isinstance(max_layer_ratio, bool):
+            raise ValueError(
+                f"max_layer_ratio must be a finite number in [0, 1], "
+                f"got {max_layer_ratio}"
+            )
+        try:
+            max_layer_ratio = float(max_layer_ratio)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"max_layer_ratio must be a finite number in [0, 1], "
+                f"got {max_layer_ratio}"
+            ) from exc
+        if not np.isfinite(max_layer_ratio) or not 0.0 <= max_layer_ratio <= 1.0:
+            raise ValueError(
+                f"max_layer_ratio must be a finite number in [0, 1], "
+                f"got {max_layer_ratio}"
+            )
         self.max_layer_ratio = max_layer_ratio
     
     @property
@@ -230,6 +272,7 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         scores: Dict[str, torch.Tensor],
         global_prune_ratio: float,
     ) -> Dict[str, float]:
+        global_prune_ratio = _validate_global_prune_ratio(global_prune_ratio)
         MAX_FIT_SAMPLES = 50000
         
         # 1. 对每层拟合 Weibull
@@ -251,7 +294,7 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         
         N = sum(info['n'] for info in layer_info)
         if N == 0:
-            return {name: global_prune_ratio for name in scores}
+            return {name: 0.0 for name in scores}
         
         # 2. Weibull CDF bisection
         def objective(c: float) -> float:
@@ -266,13 +309,16 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
             return total / N - global_prune_ratio
         
         # 搜索范围（子采样估计 99.9% 分位数，避免大张量 quantile 溢出）
-        all_maxes = []
+        generator = torch.Generator(device='cpu').manual_seed(42)
         sampled_for_quantile = []
         for score in scores.values():
             flat = score.flatten().float().cpu()
-            all_maxes.append(flat.max().item())
+            if flat.numel() == 0:
+                continue
             if flat.numel() > 100_000:
-                idx = torch.randperm(flat.numel())[:100_000]
+                idx = torch.randperm(
+                    flat.numel(), generator=generator
+                )[:100_000]
                 sampled_for_quantile.append(flat[idx])
             else:
                 sampled_for_quantile.append(flat)
@@ -289,6 +335,9 @@ class WeibullAdaptiveAllocation(AllocationStrategy):
         result = {}
         for info in layer_info:
             name = info['name']
+            if info['n'] == 0:
+                result[name] = 0.0
+                continue
             flat = scores[name].flatten().float()
             below = (flat <= c_star).sum().item()
             ratio = max(0.0, min(self.max_layer_ratio, below / info['n']))
