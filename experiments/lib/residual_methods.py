@@ -41,18 +41,23 @@ def build_masks(
     prune_ratio: float,
     max_layer_ratio: float,
     taylor_score_orders: Sequence[torch.Tensor] | None = None,
+    *,
+    distributed_moments: bool = False,
 ) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
     """Build the fixed-order baseline mask family for recovery experiments."""
     taylor_scores = components["taylor"]
-    layer_sizes = [sum(taylor_scores[name].numel() for name in layer) for layer in layers]
-    eligible_count = sum(layer_sizes)
-    target = int(math.floor(prune_ratio * eligible_count))
-    uniform_layer_counts = uniform_counts(layer_sizes, target, prune_ratio)
-
-    fits = fit_layer_weibull_mom(layers, taylor_scores)
-    weibull_layer_counts, weibull_metadata = weibull_counts(
-        fits, layer_sizes, target, prune_ratio, max_layer_ratio
+    weibull_mask, metadata = build_weibull_mask(
+        layers,
+        taylor_scores,
+        prune_ratio,
+        max_layer_ratio,
+        distributed_moments=distributed_moments,
+        score_orders=taylor_score_orders,
     )
+    layer_sizes = metadata["layer_sizes"]
+    eligible_count = metadata["eligible_parameters"]
+    target = metadata["target_pruned"]
+    uniform_layer_counts = uniform_counts(layer_sizes, target, prune_ratio)
     eligible_names = [name for layer in layers for name in layer]
     masks = {
         RESIDUAL_MAGNITUDE_UNIFORM_METHOD: layer_masks(
@@ -67,22 +72,46 @@ def build_masks(
         TAYLOR_UNIFORM_METHOD: layer_masks(
             layers, taylor_scores, uniform_layer_counts, taylor_score_orders
         ),
-        TAYLOR_WEIBULL_MOM_METHOD: layer_masks(
-            layers, taylor_scores, weibull_layer_counts, taylor_score_orders
-        ),
+        TAYLOR_WEIBULL_MOM_METHOD: weibull_mask,
         TAYLOR_EXACT_GLOBAL_METHOD: global_mask(eligible_names, taylor_scores, target),
     }
-    metadata = {
+    metadata["uniform_layer_counts"] = uniform_layer_counts
+    return masks, metadata
+
+
+def build_weibull_mask(
+    layers: Sequence[Sequence[str]],
+    taylor_scores: TensorDict,
+    prune_ratio: float,
+    max_layer_ratio: float,
+    *,
+    distributed_moments: bool = False,
+    score_orders: Sequence[torch.Tensor] | None = None,
+) -> Tuple[MaskDict, Dict[str, object]]:
+    """Build only the DACP Weibull mask for memory-constrained paper runs."""
+    layer_sizes = [
+        sum(taylor_scores[name].numel() for name in layer) for layer in layers
+    ]
+    eligible_count = sum(layer_sizes)
+    target = int(math.floor(prune_ratio * eligible_count))
+    fits = fit_layer_weibull_mom(
+        layers,
+        taylor_scores,
+        distributed=distributed_moments,
+    )
+    counts, weibull_metadata = weibull_counts(
+        fits, layer_sizes, target, prune_ratio, max_layer_ratio
+    )
+    masks = layer_masks(layers, taylor_scores, counts, score_orders)
+    return masks, {
         "eligible_parameters": eligible_count,
         "target_pruned": target,
         "target_eligible_sparsity": prune_ratio,
         "layer_sizes": layer_sizes,
-        "uniform_layer_counts": uniform_layer_counts,
-        "weibull_layer_counts": weibull_layer_counts,
+        "weibull_layer_counts": counts,
         "weibull_fits": fits,
         "weibull": weibull_metadata,
     }
-    return masks, metadata
 
 
 def score_for_method(
@@ -130,6 +159,7 @@ def compute_method_diagnostics(
 
 __all__ = [
     "build_masks",
+    "build_weibull_mask",
     "compute_method_diagnostics",
     "float_slug",
     "quantile_method_id",

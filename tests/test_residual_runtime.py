@@ -16,6 +16,7 @@ import experiments.lib.residual_runtime as residual_runtime
 import experiments.lib.residual_scoring as residual_scoring
 import experiments.lib.residual_training as residual_training
 from experiments.lib.residual_runtime import (
+    batch_hash,
     configure_hf_offline,
     empty_device_cache,
     peak_memory_bytes,
@@ -102,6 +103,16 @@ print(json.dumps({
             self.assertEqual(
                 os.environ["TRANSFORMERS_OFFLINE"], "custom-transformers"
             )
+
+    def test_batch_hash_covers_all_tensor_fields_and_task_schemas(self) -> None:
+        left = [{"input_ids": torch.tensor([[1, 2]]), "labels": torch.tensor([0])}]
+        right = [{"input_ids": torch.tensor([[1, 2]]), "labels": torch.tensor([1])}]
+        images = [{"images": torch.ones(2, 3), "labels": torch.tensor([0, 1])}]
+
+        self.assertNotEqual(batch_hash(left), batch_hash(right))
+        self.assertNotEqual(batch_hash(left), batch_hash(images))
+        with self.assertRaisesRegex(ValueError, "at least one tensor"):
+            batch_hash([{"metadata": "only"}])
 
     @mock.patch.object(torch.cuda, "synchronize")
     @mock.patch.object(torch.cuda, "max_memory_allocated")

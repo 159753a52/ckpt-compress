@@ -9,7 +9,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 import torch
 import torch.nn as nn
 
-from experiments.lib.residual_runtime import batch_hash, lm_loss, set_seed
+from experiments.lib.residual_runtime import batch_hash, set_seed, task_loss
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,21 @@ class SeedBatchPartition:
             "allocation_probe": batch_hash(self.allocation_probe),
             "allocation_selection": batch_hash(self.allocation_selection),
             "continuation": batch_hash(self.continuation),
+        }
+
+
+@dataclass(frozen=True)
+class RepeatedSeedBatchPlan:
+    """Disjoint training and scoring batches for K recovery cycles."""
+
+    selected_pool_indices: List[int]
+    training_segments: List[List[Mapping[str, torch.Tensor]]]
+    scoring_batches: List[List[Mapping[str, torch.Tensor]]]
+
+    def data_hashes(self) -> Dict[str, object]:
+        return {
+            "training_segments": [batch_hash(segment) for segment in self.training_segments],
+            "scoring_batches": [batch_hash(batches) for batches in self.scoring_batches],
         }
 
 
@@ -108,6 +123,48 @@ def partition_seed_batches(
     )
 
 
+def partition_repeated_seed_batches(
+    pool: Sequence[Mapping[str, torch.Tensor]],
+    total_steps: int,
+    num_recoveries: int,
+    hvp_batches: int,
+    seed: int,
+) -> RepeatedSeedBatchPlan:
+    """Partition one seed's pool into K+1 train segments and K score sets."""
+    total_steps = _validate_non_negative_count("total_steps", total_steps)
+    num_recoveries = _validate_non_negative_count("num_recoveries", num_recoveries)
+    hvp_batches = _validate_non_negative_count("hvp_batches", hvp_batches)
+    if total_steps < num_recoveries + 1:
+        raise ValueError("total_steps must provide at least one step per training segment")
+    if num_recoveries and hvp_batches < 1:
+        raise ValueError("hvp_batches must be positive when recoveries are requested")
+
+    base_length, extra = divmod(total_steps, num_recoveries + 1)
+    segment_lengths = [
+        base_length + (1 if index < extra else 0)
+        for index in range(num_recoveries + 1)
+    ]
+    selected_count = total_steps + num_recoveries * hvp_batches
+    selected, selected_indices = seeded_training_batches(pool, selected_count, seed)
+
+    training_segments = []
+    scoring_sets = []
+    offset = 0
+    for cycle, segment_length in enumerate(segment_lengths):
+        training_segments.append(selected[offset : offset + segment_length])
+        offset += segment_length
+        if cycle < num_recoveries:
+            scoring_sets.append(selected[offset : offset + hvp_batches])
+            offset += hvp_batches
+    if offset != len(selected):
+        raise RuntimeError("Internal repeated batch partition did not consume its selection")
+    return RepeatedSeedBatchPlan(
+        selected_pool_indices=selected_indices,
+        training_segments=training_segments,
+        scoring_batches=scoring_sets,
+    )
+
+
 def build_optimizer(
     model: nn.Module,
     state: Mapping,
@@ -129,6 +186,7 @@ def train_segment(
     batches: Sequence[Mapping[str, torch.Tensor]],
     seed: int,
     device: str,
+    task_type: str = "lm",
 ) -> Dict[str, object]:
     set_seed(seed)
     model.train()
@@ -138,7 +196,7 @@ def train_segment(
     for batch in batches:
         learning_rates.append(float(optimizer.param_groups[0]["lr"]))
         optimizer.zero_grad(set_to_none=True)
-        loss = lm_loss(model, batch, device)
+        loss = task_loss(model, batch, task_type, device)
         loss.backward()
         optimizer.step()
         scheduler.step()
@@ -148,14 +206,17 @@ def train_segment(
         "seconds": time.perf_counter() - started,
         "train_losses": losses,
         "learning_rates": learning_rates,
+        "task_type": task_type,
     }
 
 
 __all__ = [
+    "RepeatedSeedBatchPlan",
     "SeedBatchPartition",
     "build_optimizer",
     "clone_model_state_to_cpu",
     "partition_seed_batches",
+    "partition_repeated_seed_batches",
     "seeded_training_batches",
     "train_segment",
 ]

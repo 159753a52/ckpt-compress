@@ -10,23 +10,29 @@ from scipy.optimize import brentq
 from scipy.special import gammaln
 
 from experiments.lib.residual_budget import largest_remainder_counts
+from experiments.lib.distributed_stats import (
+    ScoreMoments,
+    layer_score_moments,
+    reduce_score_moments,
+    score_moments,
+)
 
 
-WeibullFit = Dict[str, float | int | bool | str]
-WeibullFitView = Mapping[str, float | int | bool | str]
+WeibullFit = Dict[str, object]
+WeibullFitView = Mapping[str, object]
 
 
-def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
-    flat = values.detach().float().flatten().cpu()
-    count = flat.numel()
+def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
+    """Fit a Weibull distribution from streamable sufficient statistics."""
+    count = moments.count
     if count == 0:
         return {
             "valid": False,
             "reason": "empty values",
             "zero_fraction": 0.0,
         }
-    maximum = flat.max().item()
-    zero_fraction = (flat == 0).sum().item() / count
+    maximum = moments.maximum
+    zero_fraction = moments.zero_count / count
     if not math.isfinite(maximum) or maximum <= 0:
         return {
             "valid": False,
@@ -34,11 +40,8 @@ def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
             "zero_fraction": zero_fraction,
         }
 
-    scaled = flat / maximum
-    total = scaled.sum(dtype=torch.float64).item()
-    total_squared = (scaled * scaled).sum(dtype=torch.float64).item()
-    mean = total / count
-    variance = max(total_squared / count - mean * mean, 0.0)
+    mean = moments.total / count
+    variance = max(moments.total_squared / count - mean * mean, 0.0)
     if mean <= 1e-15 or variance <= 0:
         return {
             "valid": False,
@@ -70,11 +73,7 @@ def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
             "reason": "shape root not bracketed",
             "zero_fraction": zero_fraction,
         }
-    log_scale = (
-        math.log(mean)
-        - float(gammaln(1.0 + 1.0 / shape))
-        + math.log(maximum)
-    )
+    log_scale = math.log(mean) - float(gammaln(1.0 + 1.0 / shape))
     scale = math.exp(log_scale)
     if not math.isfinite(scale) or scale <= 0:
         return {
@@ -85,8 +84,8 @@ def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
     return {
         "valid": True,
         "count": count,
-        "mean": mean * maximum,
-        "variance": variance * maximum * maximum,
+        "mean": mean,
+        "variance": variance,
         "cv_squared": cv_squared,
         "shape": shape,
         "scale": scale,
@@ -94,23 +93,32 @@ def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
     }
 
 
+def fit_weibull_mom(values: torch.Tensor) -> WeibullFit:
+    return fit_weibull_from_moments(score_moments(values))
+
+
 def fit_layer_weibull_mom(
     layers: Sequence[Sequence[str]],
     scores: Mapping[str, torch.Tensor],
+    *,
+    distributed: bool = False,
+    process_group=None,
 ) -> List[WeibullFit]:
     """Fit one Weibull model per non-empty structural score layer."""
+    moments = layer_score_moments(layers, scores)
+    reduction = {
+        "distributed": False,
+        "world_size": 1,
+        "backend": None,
+        "communicated_scalars_per_rank": 0,
+    }
+    if distributed:
+        moments, reduction = reduce_score_moments(moments, process_group)
     fits = []
-    for layer_index, names in enumerate(layers):
-        if not names:
-            raise ValueError("Structural layers must be non-empty")
-        missing = [name for name in names if name not in scores]
-        if missing:
-            raise ValueError(f"Missing scores for structural layer: {missing}")
-        values = torch.cat([scores[name].flatten() for name in names])
-        if values.numel() == 0:
-            raise ValueError("Structural layers must contain at least one score")
-        fit = fit_weibull_mom(values)
+    for layer_index, layer_moments in enumerate(moments):
+        fit = fit_weibull_from_moments(layer_moments)
         fit["layer"] = layer_index
+        fit["moment_reduction"] = reduction
         fits.append(fit)
     return fits
 
@@ -228,6 +236,7 @@ def weibull_counts(
 
 __all__ = [
     "fit_layer_weibull_mom",
+    "fit_weibull_from_moments",
     "fit_weibull_mom",
     "weibull_cdf",
     "weibull_counts",

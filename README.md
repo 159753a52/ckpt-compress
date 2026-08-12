@@ -35,6 +35,11 @@ scripts/                 数据集和模型下载脚本
 
 ## 运行实验
 
+论文当前五模型、`K>1`、基线 fidelity 与结果 provenance 的统一入口见
+[`docs/paper_experiment_protocol.md`](docs/paper_experiment_protocol.md)。先用
+`experiments/configs/paper_experiments.yaml` 的 dry-run 核对实验清单；旧脚本保留用于
+开发诊断和历史结果兼容，不应混入新主表。
+
 ### 单个实验
 
 ```bash

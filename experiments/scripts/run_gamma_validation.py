@@ -85,7 +85,7 @@ def fit_and_test_distributions(scores_dict):
                 ks_stat, p_value, params = fit_fn(data_pos)
                 row[f'{dist_name}_ks'] = float(ks_stat)
                 row[f'{dist_name}_pvalue'] = float(p_value)
-                row[f'{dist_name}_params'] = str(params)
+                row[f'{dist_name}_params'] = [float(value) for value in params]
                 # AIC
                 if dist_name == 'gamma':
                     ll = np.sum(stats.gamma.logpdf(data_pos, *params))
@@ -96,12 +96,31 @@ def fit_and_test_distributions(scores_dict):
                 elif dist_name == 'exponential':
                     ll = np.sum(stats.expon.logpdf(data_pos, *params))
                 k_params = len(params) - 1  # exclude loc
-                row[f'{dist_name}_aic'] = 2 * k_params - 2 * ll
+                aic = 2 * k_params - 2 * ll
+                row[f'{dist_name}_aic'] = float(aic) if np.isfinite(aic) else None
             except Exception as e:
-                row[f'{dist_name}_ks'] = float('nan')
+                row[f'{dist_name}_ks'] = None
                 row[f'{dist_name}_pvalue'] = 0.0
-                row[f'{dist_name}_aic'] = float('inf')
+                row[f'{dist_name}_aic'] = None
 
+        cdf_x = np.unique(np.quantile(data_pos, np.linspace(0.001, 0.999, 256)))
+        sorted_data = np.sort(data_pos)
+        row['cdf'] = {
+            'x': cdf_x.tolist(),
+            'empirical': (
+                np.searchsorted(sorted_data, cdf_x, side='right') / len(sorted_data)
+            ).tolist(),
+        }
+        fitted_cdfs = {
+            'gamma': stats.gamma,
+            'lognormal': stats.lognorm,
+            'weibull': stats.weibull_min,
+            'exponential': stats.expon,
+        }
+        for dist_name, distribution in fitted_cdfs.items():
+            params = row.get(f'{dist_name}_params')
+            if params is not None:
+                row['cdf'][dist_name] = distribution.cdf(cdf_x, *params).tolist()
         results.append(row)
     return results
 
@@ -256,7 +275,7 @@ def main():
     # 每种分布的平均 KS-D
     for dist in ['gamma', 'lognormal', 'weibull', 'exponential']:
         ks_vals = [r[f'{dist}_ks'] for r in fit_results
-                   if not np.isnan(r.get(f'{dist}_ks', float('nan')))]
+                   if r.get(f'{dist}_ks') is not None]
         if ks_vals:
             print(f"  {dist:12s} avg KS-D = {np.mean(ks_vals):.4f}")
 
@@ -278,7 +297,12 @@ def main():
 
     # 拟合结果
     with open(output_dir / f'{prefix}_fit_results.json', 'w') as f:
-        json.dump(fit_results, f, indent=2, default=str)
+        json.dump({
+            'schema_version': 1,
+            'status': 'complete',
+            'config': vars(args),
+            'records': fit_results,
+        }, f, indent=2, default=str, allow_nan=False)
 
     # 分配策略对比
     save_results(alloc_results, str(output_dir),

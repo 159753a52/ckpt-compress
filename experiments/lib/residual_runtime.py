@@ -18,6 +18,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from experiments.lib.evaluation import evaluate
+from experiments.lib.losses import compute_task_loss
+
 
 @dataclass(frozen=True)
 class LoadedTrainingCheckpoint:
@@ -190,9 +193,30 @@ def load_token_batches(
 
 
 def batch_hash(batches: Sequence[Mapping[str, torch.Tensor]]) -> str:
+    """Hash arbitrary task batches without depending on one input schema."""
     digest = hashlib.sha256()
+    legacy_lm_schema = all(
+        set(batch) == {"input_ids", "labels"}
+        and torch.is_tensor(batch["input_ids"])
+        and torch.is_tensor(batch["labels"])
+        and torch.equal(batch["input_ids"], batch["labels"])
+        for batch in batches
+    )
     for batch in batches:
-        digest.update(batch["input_ids"].contiguous().numpy().tobytes())
+        if legacy_lm_schema:
+            digest.update(batch["input_ids"].detach().cpu().contiguous().numpy().tobytes())
+            continue
+        tensor_items = sorted(
+            (key, value) for key, value in batch.items() if torch.is_tensor(value)
+        )
+        if not tensor_items:
+            raise ValueError("Every batch must contain at least one tensor")
+        for key, value in tensor_items:
+            cpu_value = value.detach().cpu().contiguous()
+            digest.update(key.encode("utf-8"))
+            digest.update(str(cpu_value.dtype).encode("ascii"))
+            digest.update(str(tuple(cpu_value.shape)).encode("ascii"))
+            digest.update(cpu_value.numpy().tobytes())
     return digest.hexdigest()
 
 
@@ -209,6 +233,16 @@ def lm_loss(
         logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
         labels[..., 1:].contiguous().view(-1),
     )
+
+
+def task_loss(
+    model: nn.Module,
+    batch: Mapping[str, torch.Tensor],
+    task_type: str,
+    device: str,
+) -> torch.Tensor:
+    """Compute a task loss through the shared experiment contract."""
+    return compute_task_loss(model, batch, task_type, device)
 
 
 def evaluate_lm(
@@ -235,6 +269,26 @@ def evaluate_lm(
     }
 
 
+def evaluate_task(
+    model: nn.Module,
+    batches: Sequence[Mapping[str, torch.Tensor]],
+    task_type: str,
+    device: str,
+) -> Dict[str, float]:
+    """Evaluate any task supported by the shared experiment library."""
+    if not batches:
+        raise ValueError("batches must contain at least one evaluation batch")
+    started = time.perf_counter()
+    metrics = evaluate(model, list(batches), task_type, device)
+    metrics["seconds"] = time.perf_counter() - started
+    metrics["batches"] = len(batches)
+    metrics["examples"] = sum(
+        next(value for value in batch.values() if torch.is_tensor(value)).shape[0]
+        for batch in batches
+    )
+    return metrics
+
+
 __all__ = [
     "LoadedTrainingCheckpoint",
     "batch_hash",
@@ -243,6 +297,7 @@ __all__ = [
     "configure_hf_offline",
     "empty_device_cache",
     "evaluate_lm",
+    "evaluate_task",
     "lm_loss",
     "load_token_batches",
     "load_training_checkpoint",
@@ -252,5 +307,6 @@ __all__ = [
     "set_seed",
     "sha256_file",
     "synchronize_device",
+    "task_loss",
     "write_json",
 ]

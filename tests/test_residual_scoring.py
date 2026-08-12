@@ -135,6 +135,7 @@ class TestResidualScoring(unittest.TestCase):
             set(metadata),
             {
                 "total_seconds",
+                "score_kind",
                 "layer_seconds",
                 "checksum_before",
                 "checksum_after",
@@ -143,6 +144,8 @@ class TestResidualScoring(unittest.TestCase):
                 "optimizer_constructed",
                 "model_mode",
                 "hvp_batches",
+                "task_type",
+                "model_family",
             },
         )
         self.assertEqual(metadata["checksum_before"], [3.25, 10.25])
@@ -152,6 +155,9 @@ class TestResidualScoring(unittest.TestCase):
         self.assertFalse(metadata["optimizer_constructed"])
         self.assertEqual(metadata["model_mode"], "eval")
         self.assertEqual(metadata["hvp_batches"], 2)
+        self.assertEqual(metadata["task_type"], "lm")
+        self.assertEqual(metadata["model_family"], "gpt2")
+        self.assertEqual(metadata["score_kind"], "taylor_hvp")
         self.assertEqual(len(metadata["layer_seconds"]), 1)
         for duration in [metadata["total_seconds"], *metadata["layer_seconds"]]:
             self.assertTrue(math.isfinite(duration))
@@ -163,6 +169,24 @@ class TestResidualScoring(unittest.TestCase):
             self.assertEqual(parameter.requires_grad, requires_grad_before[name])
             self.assertIsNone(parameter.grad)
         self.assertFalse(self.model.training)
+
+    def test_explicit_block_groups_support_non_gpt_parameter_names(self) -> None:
+        with redirect_stdout(io.StringIO()):
+            scores, metadata = compute_block_taylor_scores(
+                self.model,
+                self.batches,
+                [["transformer.h.0.left"]],
+                {"transformer.h.0.left": self.delta["transformer.h.0.left"]},
+                device="cpu",
+                task_type="cls",
+                loss_fn=self.quadratic_loss,
+                block_parameter_names=[
+                    ["transformer.h.0.left", "transformer.h.0.right"]
+                ],
+            )
+
+        self.assertEqual(set(scores), {"transformer.h.0.left"})
+        self.assertEqual(metadata["task_type"], "cls")
 
 
 if __name__ == "__main__":

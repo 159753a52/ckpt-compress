@@ -16,6 +16,7 @@ from experiments.lib.residual_spectral import (
 )
 from experiments.lib.residual_weibull import (
     fit_layer_weibull_mom,
+    fit_weibull_from_moments,
     fit_weibull_mom,
     weibull_cdf,
     weibull_counts,
@@ -28,6 +29,7 @@ __all__ = [
     "calibrate_quantile_smooth_allocation",
     "directional_layer_counts",
     "fit_layer_weibull_mom",
+    "fit_weibull_from_moments",
     "fit_weibull_mom",
     "largest_remainder_counts",
     "reconstruct_directional_gradient",

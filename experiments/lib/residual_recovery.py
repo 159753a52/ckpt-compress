@@ -29,6 +29,8 @@ from experiments.lib.residual_allocation import (  # noqa: E402
     budget_tangent_dct_directions,
     calibrate_quantile_smooth_allocation,
     directional_layer_counts,
+    fit_layer_weibull_mom,
+    fit_weibull_from_moments,
     fit_weibull_mom,
     largest_remainder_counts,
     reconstruct_directional_gradient,
@@ -67,6 +69,7 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     configure_hf_offline,
     empty_device_cache,
     evaluate_lm,
+    evaluate_task,
     lm_loss,
     load_token_batches,
     load_training_checkpoint,
@@ -76,20 +79,25 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     set_seed,
     sha256_file,
     synchronize_device,
+    task_loss,
     write_json,
 )
 from experiments.lib.residual_training import (  # noqa: E402
+    RepeatedSeedBatchPlan,
     SeedBatchPartition,
     build_optimizer,
     clone_model_state_to_cpu,
     partition_seed_batches,
+    partition_repeated_seed_batches,
     seeded_training_batches,
     train_segment,
 )
 from experiments.lib.residual_scoring import (  # noqa: E402
+    compute_block_first_order_scores,
     compute_block_taylor_scores,
     eligible_layers,
     model_checksum,
+    transformer_layers,
 )
 from experiments.lib.residual_short_config import (  # noqa: E402
     parse_args,
