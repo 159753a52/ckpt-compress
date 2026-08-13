@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Dict, List, Mapping, Sequence, Tuple
+from collections.abc import Iterator, Mapping
+from typing import Dict, List, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -253,10 +253,91 @@ def _bucket_for_rank(histogram: torch.Tensor, rank: int) -> tuple[int, int]:
     return bucket, before
 
 
+def _validate_tensor_mapping(
+    values: object,
+    label: str,
+    *,
+    require_bool: bool = False,
+    require_real_floating: bool = False,
+) -> None:
+    """Validate a named tensor mapping with at least one materialized element."""
+    if not isinstance(values, Mapping):
+        raise TypeError(f"{label} must be a mapping")
+    if not values:
+        raise ValueError(f"{label} must contain at least one tensor")
+
+    invalid_keys = [name for name in values if not isinstance(name, str)]
+    if invalid_keys:
+        raise TypeError(f"{label} keys must be strings: {invalid_keys}")
+
+    for name, value in values.items():
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"{label}[{name!r}] must be a torch.Tensor")
+        if value.layout != torch.strided:
+            raise TypeError(f"{label}[{name!r}] must be a dense strided tensor")
+        if value.is_quantized:
+            raise TypeError(f"{label}[{name!r}] must not be quantized")
+        if bool(getattr(value, "is_nested", False)):
+            raise TypeError(f"{label}[{name!r}] must not be nested")
+        if value.device.type == "meta":
+            raise TypeError(f"{label}[{name!r}] must be on a materialized device")
+        if require_bool and value.dtype != torch.bool:
+            raise TypeError(f"{label}[{name!r}] must have bool dtype")
+        if require_real_floating and (not value.is_floating_point() or value.is_complex()):
+            raise TypeError(f"{label}[{name!r}] must be real floating point")
+        if require_real_floating and not torch.isfinite(value).all().item():
+            raise ValueError(f"{label}[{name!r}] must contain only finite values")
+    if not any(value.numel() for value in values.values()):
+        raise ValueError(f"{label} must contain at least one element")
+
+
+def _validate_matching_keys(
+    left: Mapping[str, torch.Tensor],
+    right: Mapping[str, torch.Tensor],
+    label: str,
+) -> None:
+    """Require two validated named tensor mappings to have identical keys."""
+    missing = sorted(set(left).difference(right))
+    extra = sorted(set(right).difference(left))
+    if missing or extra:
+        raise ValueError(f"{label} keys must match: missing={missing}, extra={extra}")
+
+
+def _validate_matching_tensor_metadata(
+    left: Mapping[str, torch.Tensor],
+    right: Mapping[str, torch.Tensor],
+    label: str,
+) -> None:
+    """Require corresponding tensors to have matching shape and device."""
+    for name in left:
+        left_value = left[name]
+        right_value = right[name]
+        if left_value.shape != right_value.shape:
+            raise ValueError(
+                f"{label} shape for {name!r} must match: "
+                f"{tuple(left_value.shape)} != {tuple(right_value.shape)}"
+            )
+        if left_value.device != right_value.device:
+            raise ValueError(
+                f"{label} device for {name!r} must match: "
+                f"{left_value.device} != {right_value.device}"
+            )
+
+
 def mask_metrics(
     masks: Mapping[str, torch.Tensor],
     taylor_scores: Mapping[str, torch.Tensor],
 ) -> Dict[str, float | int]:
+    """Return pruning count and finite Taylor proxy cost for a mask mapping."""
+    _validate_tensor_mapping(masks, "masks", require_bool=True)
+    _validate_tensor_mapping(
+        taylor_scores,
+        "taylor_scores",
+        require_real_floating=True,
+    )
+    _validate_matching_keys(masks, taylor_scores, "Mask and Taylor score")
+    _validate_matching_tensor_metadata(masks, taylor_scores, "Mask and Taylor score")
+
     pruned = 0
     proxy_cost = 0.0
     for name, keep in masks.items():
@@ -270,6 +351,12 @@ def mask_overlap(
     left: Mapping[str, torch.Tensor],
     right: Mapping[str, torch.Tensor],
 ) -> Dict[str, float | int]:
+    """Return exact overlap metrics for two non-empty, compatible mask mappings."""
+    _validate_tensor_mapping(left, "left masks", require_bool=True)
+    _validate_tensor_mapping(right, "right masks", require_bool=True)
+    _validate_matching_keys(left, right, "Mask")
+    _validate_matching_tensor_metadata(left, right, "Mask")
+
     intersection = 0
     union = 0
     disagreements = 0
@@ -280,7 +367,7 @@ def mask_overlap(
         union += (left_pruned | right_pruned).sum().item()
         disagreements += (left_pruned != right_pruned).sum().item()
     return {
-        "pruned_jaccard": intersection / max(union, 1),
+        "pruned_jaccard": intersection / union if union else 0.0,
         "mask_disagreements": int(disagreements),
     }
 
