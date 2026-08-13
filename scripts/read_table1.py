@@ -1,71 +1,106 @@
 #!/usr/bin/env python3
-"""Print table1 and FT results in a readable format."""
-import json, glob, os
+"""Print validated single-shot and fault-tolerant paper results."""
 
-base = "results/paper_results"
+import argparse
+import sys
+from pathlib import Path
+from typing import Optional, Sequence
 
-# Table1 single-shot results
-print("="*80)
-print("TABLE 1 (Single-shot compression)")
-print("="*80)
-for f in sorted(glob.glob(os.path.join(base, "table1", "*_table1_*.json"))):
-    if "_config" in f:
-        continue
-    name = os.path.basename(f)
-    print(f"\n--- {name} ---")
-    data = json.load(open(f))
-    baseline_ppl = None
-    for r in data["results"]:
-        if baseline_ppl is None:
-            baseline_ppl = r.get("baseline_ppl", "?")
-        method = r["method"]
-        ratio = r["target_ratio"]
-        if "perplexity" in r:
-            metric = f"PPL={r['perplexity']:.2f}"
-        elif "accuracy" in r:
-            metric = f"Acc={r['accuracy']:.4f}"
-        else:
-            metric = f"loss={r['loss']:.4f}"
-        print(f"  {method:40s}  sparsity={ratio:.0%}  {metric}")
-    if baseline_ppl:
-        print(f"  [Baseline PPL/Acc: {baseline_ppl}]")
+import yaml
 
-# FT results
-print("\n" + "="*80)
-print("FAULT-TOLERANT TRAINING RESULTS")
-print("="*80)
-for f in sorted(glob.glob(os.path.join(base, "fault_tolerant", "*_ft_*.json"))):
-    if "_config" in f:
-        continue
-    name = os.path.basename(f)
-    print(f"\n--- {name} ---")
-    data = json.load(open(f))
-    # Check structure
-    if "results" in data and isinstance(data["results"], dict):
-        for method_name, method_data in data["results"].items():
-            final = method_data.get("final_metrics", {})
-            if "perplexity" in final:
-                metric = f"PPL={final['perplexity']:.2f}"
-            elif "accuracy" in final:
-                metric = f"Acc={final['accuracy']:.4f}"
-            else:
-                metric = f"loss={final.get('loss', '?')}"
-            print(f"  {method_name:40s}  {metric}")
-    elif isinstance(data, list):
-        # Flat list format
-        methods = {}
-        for r in data:
-            m = r.get("method", "?")
-            if m not in methods:
-                methods[m] = []
-            methods[m].append(r)
-        for m, records in methods.items():
-            last = records[-1]
-            ppl = last.get("perplexity", 0)
-            acc = last.get("accuracy", 0)
-            loss = last.get("loss", 0)
-            print(f"  {m:40s}  final: PPL={ppl:.2f} Acc={acc:.4f} loss={loss:.4f}")
-    elif isinstance(data, dict):
-        for k, v in data.items():
-            if k != "config":
-                print(f"  {k}: {v}")
+ROOT = Path(__file__).parent.parent
+if __package__ in (None, ""):
+    sys.path.insert(0, str(ROOT))
+
+from experiments.lib.result_schema import load_result_bundle
+from experiments.scripts.aggregate_results import (
+    MetricEntry,
+    ResultScanError,
+    extract_final_metrics,
+)
+
+
+def _metric_text(entry: MetricEntry) -> str:
+    metric = entry["metric"]
+    value = entry["value"]
+    if metric == "perplexity":
+        return f"PPL={value:.2f}"
+    if metric in ("accuracy", "top1_accuracy", "pearson"):
+        return f"{metric}={value:.4f}"
+    return f"{metric}={value:.4f}"
+
+
+def _print_files(paths: Sequence[Path], *, lenient: bool) -> int:
+    printed = 0
+    for path in paths:
+        try:
+            entries = extract_final_metrics(load_result_bundle(path))
+        except (OSError, TypeError, ValueError, UnicodeError, yaml.YAMLError) as exc:
+            if lenient:
+                print(f"warning: skipped {path}: {exc}", file=sys.stderr)
+                continue
+            raise ResultScanError(f"invalid result file {path}: {exc}") from exc
+
+        print(f"\n--- {path.name} ---")
+        for entry in entries:
+            print(
+                f"  {entry['method']:40s}  "
+                f"sparsity={entry['prune_ratio']:.0%}  {_metric_text(entry)}"
+            )
+        printed += 1
+    return printed
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=ROOT / "results" / "paper_results",
+        help="Paper-results directory",
+    )
+    parser.add_argument(
+        "--lenient",
+        action="store_true",
+        help="Skip invalid matching result files during exploratory inspection",
+    )
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = _build_parser().parse_args(argv)
+    sections = (
+        (
+            "TABLE 1 (Single-shot compression)",
+            args.results_dir / "table1",
+            "*_table1_*.json",
+        ),
+        (
+            "FAULT-TOLERANT TRAINING RESULTS",
+            args.results_dir / "fault_tolerant",
+            "*_ft_*.json",
+        ),
+    )
+
+    total = 0
+    try:
+        for title, directory, pattern in sections:
+            print("=" * 80)
+            print(title)
+            print("=" * 80)
+            paths = sorted(
+                path for path in directory.glob(pattern) if not path.name.endswith("_config.json")
+            )
+            total += _print_files(paths, lenient=args.lenient)
+    except ResultScanError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if total == 0:
+        print(f"error: no matching valid results under {args.results_dir}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

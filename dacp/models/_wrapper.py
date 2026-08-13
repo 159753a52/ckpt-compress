@@ -29,12 +29,11 @@ class DelegatingModel(nn.Module):
         return self._wrapped_model.load_state_dict(state_dict, strict)
 
     def train(self, mode: bool = True):
-        self._wrapped_model.train(mode)
+        super().train(mode)
         return self
 
     def eval(self):
-        self._wrapped_model.eval()
-        return self
+        return self.train(False)
 
 
 __all__ = ["DelegatingModel"]

@@ -1,5 +1,7 @@
-"""
-Fig 5: Sub-layer 剪枝率热力图
+"""Legacy single-checkpoint pruning-allocation diagnostic.
+
+This script is not the authoritative source for the paper's figure evidence.
+Sub-layer 剪枝率热力图诊断
 
 展示 Gamma-adaptive 分配给每个 (block, param_group) 的剪枝率。
 X 轴: 参数组类型 (QKV, AProj, FC, MProj, LN1, LN2)
@@ -10,41 +12,35 @@ Y 轴: Transformer block 编号
 
 运行示例:
     # GPT-2 单方法热力图
-    python experiments/scripts/run_fig5_heatmap.py \
+    python experiments/scripts/run_pruning_heatmap.py \
         --model gpt2-small --dataset wikitext103 \
         --global_prune_ratio 0.3 \
         --num_steps 100 --device cuda
 
     # GPT-2 多方法对比
-    python experiments/scripts/run_fig5_heatmap.py \
+    python experiments/scripts/run_pruning_heatmap.py \
         --model gpt2-small --dataset wikitext103 \
         --global_prune_ratio 0.3 \
         --methods second-order-hvp+gamma-adaptive,first-order+gamma-adaptive \
         --device cuda
 
     # BERT-Large
-    python experiments/scripts/run_fig5_heatmap.py \
+    python experiments/scripts/run_pruning_heatmap.py \
         --model bert-large --dataset sst2 \
         --checkpoint checkpoints/bert_large_sst2_1000steps/final.pt \
         --global_prune_ratio 0.3 --device cuda
 
     # 多个全局剪枝率对比
-    python experiments/scripts/run_fig5_heatmap.py \
+    python experiments/scripts/run_pruning_heatmap.py \
         --model gpt2-small --dataset wikitext103 \
         --global_prune_ratios 0.3,0.5,0.7 \
         --device cuda
 """
 
 import os
-os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
-
 import sys
+from functools import lru_cache
 from pathlib import Path
-import pandas as pd
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -53,6 +49,26 @@ from experiments.lib.args import create_base_parser, add_scoring_args
 from experiments.lib.pipeline import setup_model_and_data, precompute_scores
 from experiments.lib.results import save_results
 from dacp.pruning.allocation import get_allocation_strategy
+
+
+@lru_cache(maxsize=1)
+def _get_pandas():
+    """Import pandas only when heatmap data is actually computed."""
+    import pandas
+
+    return pandas
+
+
+@lru_cache(maxsize=1)
+def _get_plot_modules():
+    """Load the non-interactive plotting stack only when rendering starts."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import seaborn
+
+    return plt, seaborn
 
 
 # ============================================================
@@ -213,6 +229,7 @@ def compute_sublayer_rates(layer_ratios, model_name):
     
     返回: DataFrame [block_id, param_group, prune_rate]
     """
+    pd = _get_pandas()
     parser = get_param_parser(model_name)
     rows = []
     
@@ -236,6 +253,9 @@ def compute_sublayer_rates(layer_ratios, model_name):
 
 def plot_single_heatmap(agg_df, model_name, global_ratio, method_name, output_dir):
     """绘制单个方法的热力图。"""
+    if agg_df.empty:
+        raise ValueError("cannot plot an empty sub-layer pruning-rate table")
+    plt, sns = _get_plot_modules()
     col_order, col_labels = get_column_order(model_name)
     
     pivot = agg_df.pivot(index='block_id', columns='param_group', values='prune_rate')
@@ -301,7 +321,14 @@ def plot_comparison_heatmap(all_agg, model_name, global_ratio, output_dir):
     """多方法对比热力图（并排子图）。"""
     n_methods = len(all_agg)
     if n_methods == 0:
-        return
+        raise ValueError("cannot plot a comparison without any methods")
+    empty_methods = [name for name, frame in all_agg.items() if frame.empty]
+    if empty_methods:
+        raise ValueError(
+            "cannot plot empty sub-layer pruning-rate tables for: "
+            + ", ".join(empty_methods)
+        )
+    plt, sns = _get_plot_modules()
     
     col_order, col_labels = get_column_order(model_name)
     
@@ -363,7 +390,7 @@ def plot_comparison_heatmap(all_agg, model_name, global_ratio, output_dir):
 # ============================================================
 
 def main():
-    parser = create_base_parser('Fig 5: Sub-layer 剪枝率热力图')
+    parser = create_base_parser('Legacy single-checkpoint pruning heatmap diagnostic')
     add_scoring_args(parser)
     parser.add_argument('--global_prune_ratio', type=float, default=0.3,
                         help='单个全局剪枝率')
@@ -373,6 +400,7 @@ def main():
                         default='second-order-hvp+gamma-adaptive',
                         help='方法列表（逗号分隔），如 second-order-hvp+gamma-adaptive,first-order+gamma-adaptive')
     args = parser.parse_args()
+    os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
     if args.output_dir is None:
         args.output_dir = 'results/paper_results/fig5'
     
@@ -394,7 +422,7 @@ def main():
         ratios = [args.global_prune_ratio]
     
     print("=" * 70)
-    print("Fig 5: Sub-layer 剪枝率热力图")
+    print("Legacy single-checkpoint pruning heatmap diagnostic")
     print(f"模型: {args.model} | 数据集: {args.dataset}")
     print(f"方法: {methods}")
     print(f"全局剪枝率: {ratios}")

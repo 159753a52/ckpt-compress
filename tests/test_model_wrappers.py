@@ -29,8 +29,7 @@ class TestDelegatingModel(unittest.TestCase):
         self.assertEqual(set(wrapper.state_dict()), set(inner.state_dict()))
 
         replacement = {
-            name: torch.full_like(value, 2.0)
-            for name, value in inner.state_dict().items()
+            name: torch.full_like(value, 2.0) for name, value in inner.state_dict().items()
         }
         wrapper.load_state_dict(replacement)
         for name, value in inner.state_dict().items():
@@ -46,8 +45,10 @@ class TestDelegatingModel(unittest.TestCase):
             [name for name, _ in inner.named_parameters()],
         )
         self.assertIs(wrapper.train(False), wrapper)
+        self.assertFalse(wrapper.training)
         self.assertFalse(inner.training)
         self.assertIs(wrapper.eval(), wrapper)
+        self.assertFalse(wrapper.training)
 
 
 if __name__ == "__main__":

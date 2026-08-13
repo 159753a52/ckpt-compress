@@ -29,8 +29,8 @@ class _RecordingTokenizer:
     def __call__(self, *texts, **kwargs):
         self.calls.append((texts, kwargs))
         return {
-            'input_ids': torch.tensor([[1, 2]]),
-            'attention_mask': torch.tensor([[1, 1]]),
+            "input_ids": torch.tensor([[1, 2]]),
+            "attention_mask": torch.tensor([[1, 1]]),
         }
 
 
@@ -81,6 +81,15 @@ class TestWikiText2Dataset(unittest.TestCase):
                         **overrides,
                     )
 
+    def test_exact_complete_sequences_are_not_dropped(self) -> None:
+        tokenizer = _CountingTokenizer()
+
+        one_sequence = WikiText2Dataset(["0 1"], tokenizer, seq_length=2)
+        two_sequences = WikiText2Dataset(["0 1 2 3"], tokenizer, seq_length=2)
+
+        self.assertEqual(len(one_sequence), 1)
+        self.assertEqual(len(two_sequences), 2)
+
     def test_subset_contract_rejects_negative_and_boolean_limits(self) -> None:
         for value in (-1, True):
             with self.subTest(value=value):
@@ -99,19 +108,22 @@ class TestWikiText2Dataset(unittest.TestCase):
 
     def test_cifar_builder_reuses_dataset_and_loader_configuration(self) -> None:
         _RecordingDataset.calls = []
-        with mock.patch.object(
-            data_loader,
-            'get_cifar10_transforms',
-            return_value=('train-transform', 'test-transform'),
-        ), mock.patch.object(
-            data_loader,
-            'DataLoader',
-            side_effect=lambda dataset, **kwargs: (dataset, kwargs),
+        with (
+            mock.patch.object(
+                data_loader,
+                "get_cifar10_transforms",
+                return_value=("train-transform", "test-transform"),
+            ),
+            mock.patch.object(
+                data_loader,
+                "DataLoader",
+                side_effect=lambda dataset, **kwargs: (dataset, kwargs),
+            ),
         ):
             train_loader, test_loader = data_loader._get_cifar_loaders(
                 _RecordingDataset,
                 batch_size=8,
-                data_dir='/tmp/cifar',
+                data_dir="/tmp/cifar",
                 download=False,
                 num_workers=2,
                 train_subset=None,
@@ -119,77 +131,77 @@ class TestWikiText2Dataset(unittest.TestCase):
             )
 
         self.assertEqual(
-            [call['train'] for call in _RecordingDataset.calls],
+            [call["train"] for call in _RecordingDataset.calls],
             [True, False],
         )
         self.assertEqual(
-            [call['transform'] for call in _RecordingDataset.calls],
-            ['train-transform', 'test-transform'],
+            [call["transform"] for call in _RecordingDataset.calls],
+            ["train-transform", "test-transform"],
         )
-        self.assertTrue(train_loader[1]['shuffle'])
-        self.assertFalse(test_loader[1]['shuffle'])
-        self.assertEqual(train_loader[1]['batch_size'], 8)
-        self.assertEqual(test_loader[1]['num_workers'], 2)
+        self.assertTrue(train_loader[1]["shuffle"])
+        self.assertFalse(test_loader[1]["shuffle"])
+        self.assertEqual(train_loader[1]["batch_size"], 8)
+        self.assertEqual(test_loader[1]["num_workers"], 2)
 
 
 class TestGlueLoaders(unittest.TestCase):
     def test_nfs_disk_override_restores_global_function_after_failure(self) -> None:
         original_disk_usage = shutil.disk_usage
 
-        with self.assertRaisesRegex(RuntimeError, 'synthetic failure'):
+        with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
             with data_loader._nfs_disk_space_override():
-                usage = shutil.disk_usage('/unused')
+                usage = shutil.disk_usage("/unused")
                 self.assertEqual(usage.free, 1 << 40)
-                raise RuntimeError('synthetic failure')
+                raise RuntimeError("synthetic failure")
 
         self.assertIs(shutil.disk_usage, original_disk_usage)
 
     def test_dataset_adapter_uses_task_fields_and_label_dtype(self) -> None:
         tokenizer = _RecordingTokenizer()
         regression = GLUEDataset(
-            [{'sentence1': 'left', 'sentence2': 'right', 'label': 2.5}],
+            [{"sentence1": "left", "sentence2": "right", "label": 2.5}],
             tokenizer,
-            'stsb',
+            "stsb",
             max_length=16,
         )[0]
         classification = GLUEDataset(
-            [{'question': 'question', 'sentence': 'answer', 'label': 1}],
+            [{"question": "question", "sentence": "answer", "label": 1}],
             tokenizer,
-            'qnli',
+            "qnli",
             max_length=8,
         )[0]
 
-        self.assertEqual(tokenizer.calls[0][0], ('left', 'right'))
-        self.assertEqual(tokenizer.calls[0][1]['max_length'], 16)
-        self.assertEqual(tokenizer.calls[1][0], ('question', 'answer'))
-        self.assertEqual(regression['labels'].dtype, torch.float32)
-        self.assertEqual(classification['labels'].dtype, torch.int64)
-        self.assertEqual(regression['input_ids'].shape, (2,))
+        self.assertEqual(tokenizer.calls[0][0], ("left", "right"))
+        self.assertEqual(tokenizer.calls[0][1]["max_length"], 16)
+        self.assertEqual(tokenizer.calls[1][0], ("question", "answer"))
+        self.assertEqual(regression["labels"].dtype, torch.float32)
+        self.assertEqual(classification["labels"].dtype, torch.int64)
+        self.assertEqual(regression["input_ids"].shape, (2,))
 
     def test_split_builder_preserves_order_and_shared_configuration(self) -> None:
         with mock.patch.object(
             data_loader,
-            'get_glue_dataloader',
-            side_effect=lambda **kwargs: kwargs['split'],
+            "get_glue_dataloader",
+            side_effect=lambda **kwargs: kwargs["split"],
         ) as loader:
             result = data_loader._get_glue_split_loaders(
-                'mnli',
-                (('train', 10), ('validation_matched', 3)),
+                "mnli",
+                (("train", 10), ("validation_matched", 3)),
                 batch_size=4,
-                data_dir='/tmp/glue',
+                data_dir="/tmp/glue",
                 max_length=64,
                 num_workers=2,
             )
 
-        self.assertEqual(result, ('train', 'validation_matched'))
+        self.assertEqual(result, ("train", "validation_matched"))
         self.assertEqual(
-            [call.kwargs['subset'] for call in loader.call_args_list],
+            [call.kwargs["subset"] for call in loader.call_args_list],
             [10, 3],
         )
         for call in loader.call_args_list:
-            self.assertEqual(call.kwargs['dataset_name'], 'mnli')
-            self.assertEqual(call.kwargs['batch_size'], 4)
-            self.assertEqual(call.kwargs['data_dir'], '/tmp/glue')
+            self.assertEqual(call.kwargs["dataset_name"], "mnli")
+            self.assertEqual(call.kwargs["batch_size"], 4)
+            self.assertEqual(call.kwargs["data_dir"], "/tmp/glue")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,11 @@
 import unittest
+from unittest import mock
 
+import numpy as np
 import torch
 
 from experiments.lib.residual_masks import (
+    _ordered_score_key_chunks,
     apply_layer_mask,
     apply_mask_from_device_states,
     cache_mask_states_on_device,
@@ -36,8 +39,9 @@ class TestResidualMasks(unittest.TestCase):
 
     def test_exact_keep_mask_rejects_invalid_counts_and_scores(self) -> None:
         for invalid_count in (True, 1.5, float("nan")):
-            with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
-                ValueError, "prune_count must be an integer"
+            with (
+                self.subTest(prune_count=invalid_count),
+                self.assertRaisesRegex(ValueError, "prune_count must be an integer"),
             ):
                 exact_keep_mask(torch.ones(3), invalid_count)
         with self.assertRaisesRegex(ValueError, "must be finite"):
@@ -59,10 +63,13 @@ class TestResidualMasks(unittest.TestCase):
             )
         )
         for invalid_count in (-1, 4):
-            with self.subTest(prune_count=invalid_count), self.assertRaisesRegex(
-                ValueError, "prune_count must be in"
+            with (
+                self.subTest(prune_count=invalid_count),
+                self.assertRaisesRegex(ValueError, "prune_count must be in"),
             ):
                 exact_keep_mask_from_order(order, invalid_count)
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            exact_keep_mask_from_order(order.reshape(1, -1), 1)
 
     def test_cached_score_orders_match_direct_masks_with_ties(self) -> None:
         layers = [["left", "right"], ["last"]]
@@ -96,6 +103,27 @@ class TestResidualMasks(unittest.TestCase):
             layer_score_orders([["empty"]], {"empty": torch.empty(0)})
         with self.assertRaisesRegex(ValueError, "Prune counts must match"):
             layer_masks([["scores"]], {"scores": torch.ones(2)}, [])
+        with self.assertRaisesRegex(ValueError, "Score orders must match"):
+            layer_masks([["scores"]], {"scores": torch.ones(2)}, [1], [])
+        with self.assertRaisesRegex(ValueError, "wrong number"):
+            layer_masks(
+                [["scores"]],
+                {"scores": torch.ones(2)},
+                [1],
+                [torch.tensor([0])],
+            )
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            layer_mask_at_count([], {}, 0)
+        with self.assertRaisesRegex(ValueError, "at least one score"):
+            layer_mask_at_count(["empty"], {"empty": torch.empty(0)}, 0)
+
+    def test_global_mask_rejects_invalid_tensor_sets(self) -> None:
+        with self.assertRaisesRegex(ValueError, "non-empty"):
+            global_mask([], {}, 0)
+        with self.assertRaisesRegex(ValueError, "unique"):
+            global_mask(["score", "score"], {"score": torch.ones(1)}, 1)
+        with self.assertRaisesRegex(ValueError, "at least one score"):
+            global_mask(["empty"], {"empty": torch.empty(0)}, 0)
 
     def test_global_mask_preserves_shapes_and_exact_budget(self) -> None:
         scores = {
@@ -108,6 +136,85 @@ class TestResidualMasks(unittest.TestCase):
         self.assertEqual(masks["matrix"].shape, scores["matrix"].shape)
         self.assertEqual(masks["vector"].shape, scores["vector"].shape)
         self.assertEqual(sum((~mask).sum().item() for mask in masks.values()), 3)
+
+    def test_global_mask_matches_flat_reference_across_random_inputs(self) -> None:
+        generator = torch.Generator().manual_seed(20260813)
+        for count in range(12):
+            scores = {
+                "first": torch.randn(17, generator=generator),
+                "second": torch.randn(3, 5, generator=generator),
+                "third": torch.randn(9, generator=generator),
+            }
+            names = list(scores)
+            total = sum(value.numel() for value in scores.values())
+            expected = layer_mask_at_count(names, scores, count * (total // 11))
+            actual = global_mask(names, scores, count * (total // 11))
+            for name in names:
+                self.assertTrue(torch.equal(actual[name], expected[name]))
+
+    def test_global_mask_matches_stable_reference_for_cross_tensor_ties(self) -> None:
+        scores = {
+            "first": torch.tensor([float("-inf"), -1.0]),
+            "second": torch.tensor([-0.0, 0.0, 1.0, 1.0]),
+            "third": torch.tensor([1.0, 2.0]),
+        }
+        # Infinities remain invalid under both old and bounded-memory paths.
+        with self.assertRaisesRegex(ValueError, "finite"):
+            global_mask(list(scores), scores, 3)
+        scores["first"][0] = -1.0
+        for count in range(9):
+            expected = layer_mask_at_count(list(scores), scores, count)
+            actual = global_mask(list(scores), scores, count)
+            for name in scores:
+                self.assertTrue(torch.equal(actual[name], expected[name]))
+
+    def test_global_mask_processes_scores_in_bounded_chunks(self) -> None:
+        scores = {"weight": torch.arange(23, dtype=torch.float32)}
+        with mock.patch("experiments.lib.residual_masks._GLOBAL_SELECTION_CHUNK_ELEMENTS", 5):
+            actual = global_mask(["weight"], scores, 11)
+        self.assertTrue(
+            torch.equal(
+                actual["weight"],
+                torch.tensor([False] * 11 + [True] * 12),
+            )
+        )
+
+    def test_score_chunks_bound_noncontiguous_reshape_copies(self) -> None:
+        scores = torch.arange(60, dtype=torch.float64).reshape(3, 4, 5).permute(2, 0, 1)
+        self.assertFalse(scores.is_contiguous())
+
+        chunks = list(_ordered_score_key_chunks(scores, chunk_elements=7))
+        reference = list(_ordered_score_key_chunks(scores.contiguous(), chunk_elements=7))
+
+        self.assertTrue(chunks)
+        self.assertLessEqual(max(chunk.numel() for chunk in chunks), 7)
+        self.assertTrue(torch.equal(torch.cat(chunks), torch.cat(reference)))
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            list(_ordered_score_key_chunks(scores, chunk_elements=0))
+
+    def test_global_mask_matches_independent_stable_numpy_reference(self) -> None:
+        generator = torch.Generator().manual_seed(314159)
+        for dtype in (torch.float16, torch.float32, torch.float64):
+            for prune_count in (0, 1, 13, 29, 39):
+                scores = {
+                    "left": torch.randn(4, 5, generator=generator, dtype=dtype).t(),
+                    "middle": torch.tensor(
+                        [-0.0, 0.0, 1.0, 1.0, -1.0, -1.0],
+                        dtype=dtype,
+                    ),
+                    "right": torch.randn(14, generator=generator, dtype=dtype),
+                }
+                names = list(scores)
+                flattened = np.concatenate(
+                    [score.detach().float().reshape(-1).numpy() for score in scores.values()]
+                )
+                order = np.argsort(flattened, kind="stable")
+                expected_keep = np.ones(flattened.size, dtype=bool)
+                expected_keep[order[:prune_count]] = False
+
+                actual = global_mask(names, scores, prune_count)
+                actual_keep = np.concatenate([actual[name].reshape(-1).numpy() for name in names])
+                self.assertTrue(np.array_equal(actual_keep, expected_keep))
 
     def test_mask_metrics_and_overlap(self) -> None:
         scores = {
@@ -175,9 +282,7 @@ class TestResidualMasks(unittest.TestCase):
         self.assertTrue(torch.equal(model.bias, torch.full((2,), -3.0)))
         self.assertTrue(torch.equal(model.running_mean, torch.full((2,), -5.0)))
         self.assertTrue(torch.equal(model.running_var, current["running_var"]))
-        self.assertTrue(
-            torch.equal(model.num_batches_tracked, current["num_batches_tracked"])
-        )
+        self.assertTrue(torch.equal(model.num_batches_tracked, current["num_batches_tracked"]))
 
     def test_device_state_cache_applies_mask_exactly(self) -> None:
         model = torch.nn.Linear(2, 2, bias=False)

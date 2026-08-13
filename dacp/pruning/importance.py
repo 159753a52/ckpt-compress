@@ -1,9 +1,10 @@
 """统一重要性得分计算接口。"""
 
-import torch
 import math
-from typing import Dict, Optional
 from abc import ABC, abstractmethod
+from typing import Dict, Optional, Type, Union
+
+import torch
 
 from .validation import validate_unit_interval
 
@@ -23,30 +24,59 @@ def _validate_same_shape(
         )
 
 
+def _validate_tensor_pair(
+    name: str,
+    primary: torch.Tensor,
+    auxiliary: torch.Tensor,
+    primary_label: str,
+    auxiliary_label: str,
+) -> None:
+    _validate_same_shape(name, primary, auxiliary, primary_label, auxiliary_label)
+    if primary.device != auxiliary.device:
+        raise ValueError(
+            f"{primary_label} and {auxiliary_label} devices for {name!r} must match"
+        )
+    for label, tensor in ((primary_label, primary), (auxiliary_label, auxiliary)):
+        if not tensor.is_floating_point() or tensor.is_complex():
+            raise TypeError(f"{label} for {name!r} must be real floating point")
+        if not torch.isfinite(tensor).all().item():
+            raise ValueError(f"{label} for {name!r} must contain only finite values")
+
+
+def _require_mapping_keys(
+    expected: Dict[str, torch.Tensor],
+    actual: Dict[str, torch.Tensor],
+    label: str,
+) -> None:
+    missing = sorted(set(expected).difference(actual))
+    if missing:
+        raise ValueError(f"{label} is missing tensors for: {missing}")
+
+
 class ImportanceScorer(ABC):
     """重要性得分计算的抽象基类。"""
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """方法名称。"""
         pass
-    
+
     @property
     def requires_gradients(self) -> bool:
         """是否需要梯度信息。"""
         return False
-    
+
     @property
     def requires_hessian(self) -> bool:
         """是否需要 Hessian 信息。"""
         return False
-    
+
     @property
     def requires_reference(self) -> bool:
         """是否需要参考权重（如 ExCP 的前一检查点）。"""
         return False
-    
+
     @abstractmethod
     def score(
         self,
@@ -60,60 +90,58 @@ class ImportanceScorer(ABC):
 
 class MagnitudeScorer(ImportanceScorer):
     """Magnitude-based: |w_i|"""
-    
+
     @property
     def name(self) -> str:
         return "magnitude"
-    
+
     def score(self, weights, gradients=None, reference_weights=None):
         return {name: torch.abs(w) for name, w in weights.items()}
 
 
 class FirstOrderScorer(ImportanceScorer):
     """Inshrinkerator-style 一阶: |g_i · w_i|"""
-    
+
     @property
     def name(self) -> str:
         return "first-order"
-    
+
     @property
     def requires_gradients(self) -> bool:
         return True
-    
+
     def score(self, weights, gradients=None, reference_weights=None):
         if gradients is None:
             raise ValueError("First-order scoring requires gradients")
+        _require_mapping_keys(weights, gradients, "Gradients")
         scores = {}
         for name, w in weights.items():
-            g = gradients.get(name, torch.zeros_like(w))
-            _validate_same_shape(name, g, w, "Gradient", "weight")
+            g = gradients[name]
+            _validate_tensor_pair(name, g, w, "Gradient", "weight")
             scores[name] = torch.abs(g * w)
         return scores
 
 
-
 class ResidualMagnitudeScorer(ImportanceScorer):
     """ExCP-style: |W_t - W_ref| 残差 magnitude。"""
-    
+
     @property
     def name(self) -> str:
         return "residual-magnitude"
-    
+
     @property
     def requires_reference(self) -> bool:
         return True
-    
+
     def score(self, weights, gradients=None, reference_weights=None):
+        if reference_weights is None:
+            raise ValueError("Residual-magnitude scoring requires reference_weights")
+        _require_mapping_keys(weights, reference_weights, "Reference weights")
         scores = {}
         for name, w in weights.items():
-            if reference_weights and name in reference_weights:
-                reference = reference_weights[name]
-                _validate_same_shape(
-                    name, reference, w, "Reference weight", "weight"
-                )
-                scores[name] = torch.abs(w - reference)
-            else:
-                scores[name] = torch.abs(w)
+            reference = reference_weights[name]
+            _validate_tensor_pair(name, reference, w, "Reference weight", "weight")
+            scores[name] = torch.abs(w - reference)
         return scores
 
 
@@ -122,7 +150,7 @@ class RandomScorer(ImportanceScorer):
 
     @property
     def name(self) -> str:
-        return 'random'
+        return "random"
 
     def score(self, weights, gradients=None, reference_weights=None):
         scores = {}
@@ -135,7 +163,8 @@ class RandomScorer(ImportanceScorer):
 # 注册表
 # ============================================================
 
-IMPORTANCE_REGISTRY = {}
+IMPORTANCE_REGISTRY: Dict[str, Union[Type[ImportanceScorer], ImportanceScorer]] = {}
+
 
 def register_importance(cls):
     """装饰器：注册重要性得分方法。"""
@@ -143,10 +172,13 @@ def register_importance(cls):
     IMPORTANCE_REGISTRY[instance.name] = cls
     return cls
 
+
 def get_importance_scorer(name: str, **kwargs) -> ImportanceScorer:
     """根据名称获取重要性得分计算器。"""
     if name not in IMPORTANCE_REGISTRY:
-        raise ValueError(f"Unknown importance method: {name}. Available: {list(IMPORTANCE_REGISTRY.keys())}")
+        raise ValueError(
+            f"Unknown importance method: {name}. Available: {list(IMPORTANCE_REGISTRY.keys())}"
+        )
     registered = IMPORTANCE_REGISTRY[name]
     if isinstance(registered, ImportanceScorer):
         if kwargs:
@@ -155,11 +187,16 @@ def get_importance_scorer(name: str, **kwargs) -> ImportanceScorer:
                 f"constructor arguments: {sorted(kwargs)}"
             )
         return registered
-    return registered(**kwargs)
+    scorer = registered(**kwargs)
+    if not isinstance(scorer, ImportanceScorer):
+        raise TypeError(f"Registered scorer {name!r} did not create an ImportanceScorer")
+    return scorer
+
 
 def list_importance_methods():
     """列出所有已注册的重要性方法。"""
     return list(IMPORTANCE_REGISTRY.keys())
+
 
 # 注册内置方法
 register_importance(MagnitudeScorer)
@@ -171,6 +208,7 @@ register_importance(RandomScorer)
 # ============================================================
 # 2D 组合得分与 Protection
 # ============================================================
+
 
 def combine_scores_2d_with_protection(
     magnitude_scores: Dict[str, torch.Tensor],
@@ -197,12 +235,12 @@ def combine_scores_2d_with_protection(
     """
     protection_ratio = validate_unit_interval("protection_ratio", protection_ratio)
     alpha = validate_unit_interval("alpha", alpha)
+    if set(magnitude_scores) != set(damage_scores):
+        raise ValueError("Magnitude and damage scores must have identical parameter keys")
     combined = {}
 
     for name in damage_scores:
-        if name not in magnitude_scores:
-            continue
-        _validate_same_shape(
+        _validate_tensor_pair(
             name,
             magnitude_scores[name],
             damage_scores[name],
@@ -219,12 +257,8 @@ def combine_scores_2d_with_protection(
             continue
 
         # 百分位排名 ∈ [0, (n-1)/n]
-        mag_rank = torch.argsort(
-            torch.argsort(mag, stable=True), stable=True
-        ).float() / n
-        dam_rank = torch.argsort(
-            torch.argsort(dam, stable=True), stable=True
-        ).float() / n
+        mag_rank = torch.argsort(torch.argsort(mag, stable=True), stable=True).float() / n
+        dam_rank = torch.argsort(torch.argsort(dam, stable=True), stable=True).float() / n
 
         # 加权组合：α·magnitude + (1-α)·damage
         comb = alpha * mag_rank + (1.0 - alpha) * dam_rank
@@ -258,13 +292,12 @@ def apply_magnitude_protection(
         修改后的得分 {name: tensor}，protected 参数得分极高
     """
     protection_ratio = validate_unit_interval("protection_ratio", protection_ratio)
+    if set(scores) != set(weights):
+        raise ValueError("Scores and weights must have identical parameter keys")
     protected = {}
 
     for name, score in scores.items():
-        if name not in weights:
-            protected[name] = score.clone()
-            continue
-        _validate_same_shape(name, score, weights[name], "Score", "weight")
+        _validate_tensor_pair(name, score, weights[name], "Score", "weight")
 
         s = score.clone().float()
         mag = weights[name].abs().flatten().float()

@@ -12,11 +12,17 @@ K-means 量化器
 - 加权策略：w_i = σ·频率 + (1-σ)·幅度，平衡分辨率分配
 """
 
-import torch
+from typing import Any, Dict, Mapping, Optional, Tuple, TypeAlias
+
 import numpy as np
-from typing import Tuple, Dict, Any, Optional
+import numpy.typing as npt
+import torch
 
 from ._validation import relative_mse, validate_quantization_input
+
+FloatArray: TypeAlias = npt.NDArray[np.float64]
+IntArray: TypeAlias = npt.NDArray[np.int64]
+BoolArray: TypeAlias = npt.NDArray[np.bool_]
 
 
 def _dtype_from_str(dtype_str: str) -> torch.dtype:
@@ -24,16 +30,16 @@ def _dtype_from_str(dtype_str: str) -> torch.dtype:
     if not isinstance(dtype_str, str):
         raise ValueError(f"Unsupported tensor dtype metadata: {dtype_str!r}")
     mapping = {
-        'torch.float16': torch.float16,
-        'torch.float32': torch.float32,
-        'torch.float64': torch.float64,
-        'torch.bfloat16': torch.bfloat16,
-        'torch.int8': torch.int8,
-        'torch.int16': torch.int16,
-        'torch.int32': torch.int32,
-        'torch.int64': torch.int64,
-        'torch.uint8': torch.uint8,
-        'torch.bool': torch.bool,
+        "torch.float16": torch.float16,
+        "torch.float32": torch.float32,
+        "torch.float64": torch.float64,
+        "torch.bfloat16": torch.bfloat16,
+        "torch.int8": torch.int8,
+        "torch.int16": torch.int16,
+        "torch.int32": torch.int32,
+        "torch.int64": torch.int64,
+        "torch.uint8": torch.uint8,
+        "torch.bool": torch.bool,
     }
     normalized = dtype_str if dtype_str.startswith("torch.") else f"torch.{dtype_str}"
     try:
@@ -42,7 +48,10 @@ def _dtype_from_str(dtype_str: str) -> torch.dtype:
         raise ValueError(f"Unsupported tensor dtype metadata: {dtype_str!r}") from exc
 
 
-def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
+def _ddsketch_histogram(
+    values: FloatArray,
+    alpha: float = 0.01,
+) -> Tuple[FloatArray, IntArray, int]:
     """DDSketch 对数空间直方图（仅正值 / 绝对值）。
 
     将输入数值投影到 log_γ 空间，生成 (桶中心值, 桶频率) 直方图。
@@ -71,12 +80,18 @@ def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
     abs_nonzero = abs_vals[nonzero_mask]
 
     if len(abs_nonzero) == 0:
-        return np.array([0.0]), np.array([len(values)]), len(values)
+        return (
+            np.asarray([0.0], dtype=np.float64),
+            np.asarray([len(values)], dtype=np.int64),
+            len(values),
+        )
 
     # 对数空间桶索引（仅正值，无需符号区分）
     bucket_indices = np.ceil(np.log(abs_nonzero) / log_gamma).astype(np.int64)
 
-    unique_keys, inverse, counts = np.unique(bucket_indices, return_inverse=True, return_counts=True)
+    unique_keys, inverse, counts = np.unique(
+        bucket_indices, return_inverse=True, return_counts=True
+    )
 
     # 还原桶中心值：取每个桶中所有绝对值的均值
     centers = np.zeros(len(unique_keys))
@@ -87,8 +102,12 @@ def _ddsketch_histogram(values: np.ndarray, alpha: float = 0.01):
     return centers, counts, zero_count
 
 
-def _weighted_kmeans_pp_init(data: np.ndarray, weights: np.ndarray, k: int,
-                             rng: np.random.RandomState) -> np.ndarray:
+def _weighted_kmeans_pp_init(
+    data: FloatArray,
+    weights: FloatArray,
+    k: int,
+    rng: np.random.RandomState,
+) -> FloatArray:
     """加权 K-means++ 初始化。
 
     Args:
@@ -119,11 +138,16 @@ def _weighted_kmeans_pp_init(data: np.ndarray, weights: np.ndarray, k: int,
             idx = rng.choice(n, p=prob)
         centers.append(data[idx])
 
-    return np.array(centers)
+    return np.asarray(centers, dtype=np.float64)
 
 
-def _weighted_kmeans(data: np.ndarray, weights: np.ndarray, k: int,
-                     max_iter: int = 50, seed: int = 42) -> np.ndarray:
+def _weighted_kmeans(
+    data: FloatArray,
+    weights: FloatArray,
+    k: int,
+    max_iter: int = 50,
+    seed: int = 42,
+) -> FloatArray:
     """在直方图桶上做加权 K-means 聚类。
 
     Args:
@@ -139,7 +163,7 @@ def _weighted_kmeans(data: np.ndarray, weights: np.ndarray, k: int,
 
     # 如果数据点不够 k 个，直接返回
     if len(data) <= k:
-        return data.copy()
+        return np.asarray(data.copy(), dtype=np.float64)
 
     # K-means++ 初始化
     centroids = _weighted_kmeans_pp_init(data, weights, k, rng)
@@ -163,7 +187,7 @@ def _weighted_kmeans(data: np.ndarray, weights: np.ndarray, k: int,
             break
         centroids = new_centroids
 
-    return np.sort(centroids)
+    return np.asarray(np.sort(centroids), dtype=np.float64)
 
 
 class KMeansQuantizer:
@@ -188,8 +212,14 @@ class KMeansQuantizer:
         recovered = quantizer.dequantize(quantized, metadata)
     """
 
-    def __init__(self, n_clusters: int = 256, max_iter: int = 50, seed: int = 42,
-                 alpha: float = 0.01, sigma: float = 0.2):
+    def __init__(
+        self,
+        n_clusters: int = 256,
+        max_iter: int = 50,
+        seed: int = 42,
+        alpha: float = 0.01,
+        sigma: float = 0.2,
+    ):
         """
         Args:
             n_clusters: 簇数量（量化级别），全部分配给幅度
@@ -215,7 +245,7 @@ class KMeansQuantizer:
     def quantize(
         self,
         weight: torch.Tensor,
-        shape: Tuple[int, ...] = None,
+        shape: Optional[Tuple[int, ...]] = None,
         mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """
@@ -233,7 +263,9 @@ class KMeansQuantizer:
         """
         validate_quantization_input("weight", weight)
         if shape is None:
-            shape = weight.shape
+            shape = tuple(weight.shape)
+        if any(isinstance(size, bool) or not isinstance(size, int) or size < 0 for size in shape):
+            raise ValueError(f"shape must contain non-negative integers, got {shape}")
         if int(np.prod(shape)) != weight.numel():
             raise ValueError(
                 f"shape {tuple(shape)} does not match weight with {weight.numel()} values"
@@ -247,10 +279,15 @@ class KMeansQuantizer:
                 raise ValueError(
                     f"mask shape {tuple(mask.shape)} must match weight shape {tuple(weight.shape)}"
                 )
-            mask_flat = mask.detach().flatten().cpu().numpy().astype(bool)
+            mask_cpu = mask.detach().cpu()
+            if mask_cpu.dtype != torch.bool and not bool(
+                torch.all((mask_cpu == 0) | (mask_cpu == 1)).item()
+            ):
+                raise ValueError("mask must contain only 0 or 1")
+            mask_flat: BoolArray = mask_cpu.flatten().numpy().astype(bool)
         else:
             # 无 mask 时，排除精确零值（可能来自之前的剪枝）
-            mask_flat = np.abs(weight_flat) > 1e-30
+            mask_flat = np.asarray(np.abs(weight_flat) > 1e-30, dtype=np.bool_)
 
         active_values = weight_flat[mask_flat]
 
@@ -258,29 +295,29 @@ class KMeansQuantizer:
             # 全部被剪枝，无需量化
             indices = torch.full(shape, -1, dtype=torch.int64)
             metadata = {
-                'centroids': np.array([0.0]),
-                'signs': np.zeros(np.prod(shape)),
-                'shape': shape,
-                'n_clusters': 0,
-                'dtype': str(weight.dtype),
-                'mask_flat': mask_flat,
+                "centroids": np.array([0.0]),
+                "signs": np.zeros(np.prod(shape)),
+                "shape": shape,
+                "n_clusters": 0,
+                "dtype": str(weight.dtype),
+                "mask_flat": mask_flat,
             }
             return indices, metadata
 
         # 若活跃位置全部为 0，直接返回单零中心，避免重复零桶导致的不稳定行为
         active_abs = np.abs(active_values)
         if np.max(active_abs) <= 1e-30:
-            full_labels = np.full(len(weight_flat), -1, dtype=np.int64)
+            full_labels: IntArray = np.full(len(weight_flat), -1, dtype=np.int64)
             full_labels[mask_flat] = 0
-            full_signs = np.zeros(len(weight_flat), dtype=np.float64)
+            full_signs: FloatArray = np.zeros(len(weight_flat), dtype=np.float64)
             indices = torch.from_numpy(full_labels).to(torch.int64).view(shape)
             metadata = {
-                'centroids': np.array([0.0]),
-                'signs': full_signs,
-                'shape': shape,
-                'n_clusters': 1,
-                'dtype': str(weight.dtype),
-                'mask_flat': mask_flat,
+                "centroids": np.array([0.0]),
+                "signs": full_signs,
+                "shape": shape,
+                "n_clusters": 1,
+                "dtype": str(weight.dtype),
+                "mask_flat": mask_flat,
             }
             return indices, metadata
 
@@ -290,7 +327,8 @@ class KMeansQuantizer:
 
         # 第一阶段：DDSketch 对数直方图（仅正值）
         bucket_centers, bucket_counts, zero_count = _ddsketch_histogram(
-            active_abs, alpha=self.alpha)
+            active_abs, alpha=self.alpha
+        )
 
         # 极少量零值（来自恰好为 0 的非剪枝权重），加入零桶
         if zero_count > 0:
@@ -308,14 +346,14 @@ class KMeansQuantizer:
         # 第二阶段：在桶上做加权 K-means（所有 centroid 用于幅度）
         k = min(self.n_clusters, len(bucket_centers))
         centroids = _weighted_kmeans(
-            bucket_centers, weights, k,
-            max_iter=self.max_iter, seed=self.seed)
+            bucket_centers, weights, k, max_iter=self.max_iter, seed=self.seed
+        )
 
         # 将活跃参数分配到最近的中心（在绝对值空间）
         sorted_idx = np.argsort(centroids)
         sorted_centroids = centroids[sorted_idx]
         if len(sorted_centroids) == 1:
-            active_labels = np.zeros(len(active_abs), dtype=np.int64)
+            active_labels: IntArray = np.zeros(len(active_abs), dtype=np.int64)
         else:
             insert_pos = np.searchsorted(sorted_centroids, active_abs)
             insert_pos = np.clip(insert_pos, 1, len(sorted_centroids) - 1)
@@ -326,7 +364,7 @@ class KMeansQuantizer:
                 insert_pos - 1,
                 insert_pos,
             )
-            active_labels = sorted_idx[sorted_labels]
+            active_labels = np.asarray(sorted_idx[sorted_labels], dtype=np.int64)
 
         # 构建完整索引：活跃位置填充聚类索引，非活跃位置填 -1
         full_labels = np.full(len(weight_flat), -1, dtype=np.int64)
@@ -339,12 +377,12 @@ class KMeansQuantizer:
         indices = torch.from_numpy(full_labels).to(torch.int64).view(shape)
 
         metadata = {
-            'centroids': centroids,  # 全部为正值（幅度 centroid）
-            'signs': full_signs,
-            'shape': shape,
-            'n_clusters': k,
-            'dtype': str(weight.dtype),
-            'mask_flat': mask_flat,
+            "centroids": centroids,  # 全部为正值（幅度 centroid）
+            "signs": full_signs,
+            "shape": shape,
+            "n_clusters": k,
+            "dtype": str(weight.dtype),
+            "mask_flat": mask_flat,
         }
 
         return indices, metadata
@@ -352,7 +390,7 @@ class KMeansQuantizer:
     def dequantize(
         self,
         indices: torch.Tensor,
-        metadata: Dict[str, Any]
+        metadata: Mapping[str, Any],
     ) -> torch.Tensor:
         """
         从量化索引恢复权重。
@@ -367,15 +405,49 @@ class KMeansQuantizer:
         Returns:
             weight: 恢复的权重张量
         """
-        centroids = metadata['centroids']
-        signs = metadata['signs']
-        shape = metadata['shape']
+        if not isinstance(indices, torch.Tensor) or indices.dtype not in {
+            torch.int8,
+            torch.int16,
+            torch.int32,
+            torch.int64,
+            torch.uint8,
+        }:
+            raise TypeError("indices must be an integer torch.Tensor")
+        try:
+            raw_shape = metadata["shape"]
+            centroids: FloatArray = np.asarray(metadata["centroids"], dtype=np.float64)
+            signs: FloatArray = np.asarray(metadata["signs"], dtype=np.float64)
+            n_clusters = metadata["n_clusters"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("KMeans metadata is missing or malformed") from exc
+        if not isinstance(raw_shape, (list, tuple, torch.Size)) or any(
+            isinstance(size, bool) or not isinstance(size, int) or size < 0 for size in raw_shape
+        ):
+            raise ValueError("KMeans metadata shape must contain non-negative integers")
+        shape = tuple(raw_shape)
+        if shape != tuple(indices.shape):
+            raise ValueError("KMeans metadata shape must match the indices tensor")
+        if centroids.ndim != 1 or centroids.size == 0 or not np.isfinite(centroids).all():
+            raise ValueError("KMeans centroids must be a non-empty finite vector")
+        if signs.shape != (indices.numel(),) or not np.isfinite(signs).all():
+            raise ValueError("KMeans signs must be a finite vector matching indices")
+        if not np.isin(signs, (-1.0, 0.0, 1.0)).all():
+            raise ValueError("KMeans signs must contain only -1, 0, or 1")
+        if isinstance(n_clusters, bool) or not isinstance(n_clusters, int) or n_clusters < 0:
+            raise ValueError("KMeans n_clusters must be a non-negative integer")
 
-        indices_flat = indices.flatten().cpu().numpy()
+        indices_flat: IntArray = indices.detach().flatten().cpu().numpy().astype(np.int64)
+        if np.any(indices_flat < -1) or np.any(indices_flat >= len(centroids)):
+            raise ValueError("KMeans indices must be -1 or reference a centroid")
+        if n_clusters == 0:
+            if np.any(indices_flat != -1):
+                raise ValueError("KMeans zero-cluster metadata requires only pruned indices")
+        elif n_clusters != len(centroids):
+            raise ValueError("KMeans n_clusters must match the centroid vector")
 
         # 恢复幅度：-1 位置安全映射到 0
         active_mask = indices_flat >= 0
-        weight_flat = np.zeros(len(indices_flat), dtype=np.float64)
+        weight_flat: FloatArray = np.zeros(len(indices_flat), dtype=np.float64)
         weight_flat[active_mask] = centroids[indices_flat[active_mask]]
 
         # 乘以符号恢复签名值
@@ -383,17 +455,13 @@ class KMeansQuantizer:
 
         weight = torch.from_numpy(weight_flat).view(shape)
 
-        if 'dtype' in metadata:
-            dtype = _dtype_from_str(metadata['dtype'])
+        if "dtype" in metadata:
+            dtype = _dtype_from_str(metadata["dtype"])
             weight = weight.to(dtype)
 
         return weight
 
-    def compute_quantization_error(
-        self,
-        original: torch.Tensor,
-        recovered: torch.Tensor
-    ) -> float:
+    def compute_quantization_error(self, original: torch.Tensor, recovered: torch.Tensor) -> float:
         """
         计算量化误差（相对 MSE）。
         """

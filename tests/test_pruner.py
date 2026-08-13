@@ -1,11 +1,12 @@
 import unittest
+from unittest import mock
 
 import torch
 
 from dacp.pruning import Pruner
 from dacp.pruning.importance import (
-    FirstOrderScorer,
     IMPORTANCE_REGISTRY,
+    FirstOrderScorer,
     ImportanceScorer,
     MagnitudeScorer,
     ResidualMagnitudeScorer,
@@ -27,18 +28,14 @@ class TestExactPruningMask(unittest.TestCase):
     def test_ties_and_boundaries_keep_an_exact_budget(self) -> None:
         scores = torch.tensor([0.0, 0.0, 0.0, 1.0])
 
-        self.assertTrue(
-            torch.equal(exact_pruning_mask(scores, 0), torch.ones(4))
-        )
+        self.assertTrue(torch.equal(exact_pruning_mask(scores, 0), torch.ones(4)))
         self.assertTrue(
             torch.equal(
                 exact_pruning_mask(scores, 2),
                 torch.tensor([0.0, 0.0, 1.0, 1.0]),
             )
         )
-        self.assertTrue(
-            torch.equal(exact_pruning_mask(scores, 4), torch.zeros(4))
-        )
+        self.assertTrue(torch.equal(exact_pruning_mask(scores, 4), torch.zeros(4)))
 
         with self.assertRaisesRegex(ValueError, "prune_count"):
             exact_pruning_mask(scores, 5)
@@ -64,9 +61,7 @@ class TestExactPruningMask(unittest.TestCase):
 
         self.assertIs(returned_model, model)
         self.assertEqual(masks["left"].dtype, torch.float32)
-        self.assertTrue(
-            torch.equal(masks["left"], torch.tensor([0.0, 0.0, 1.0, 1.0]))
-        )
+        self.assertTrue(torch.equal(masks["left"], torch.tensor([0.0, 0.0, 1.0, 1.0])))
         self.assertTrue(torch.equal(masks["right"], torch.ones(1)))
         self.assertTrue(torch.equal(model.left, torch.tensor([0.0, 0.0, 3.0, 4.0])))
         self.assertTrue(torch.equal(model.right, torch.tensor([5.0])))
@@ -81,9 +76,52 @@ class TestExactPruningMask(unittest.TestCase):
             apply_pruning(model, {"left": torch.ones(4)}, {"left": True})
         with self.assertRaisesRegex(ValueError, "must match"):
             apply_pruning(model, {"left": torch.ones(2)}, {"left": 0.5})
+        with self.assertRaisesRegex(ValueError, "match score keys"):
+            apply_pruning(model, {"left": torch.ones(4)}, {"right": 0.5})
+        with self.assertRaisesRegex(ValueError, "missing model parameters"):
+            apply_pruning(model, {"missing": torch.ones(1)}, {"missing": 0.5})
+
+    def test_apply_pruning_validation_failure_is_atomic(self) -> None:
+        model = _TwoParameterModel()
+        original_left = model.left.detach().clone()
+        scores = {
+            "left": torch.arange(4.0),
+            "right": torch.ones(2),
+        }
+
+        with self.assertRaisesRegex(ValueError, "Score shape"):
+            apply_pruning(model, scores, {"left": 0.5, "right": 0.5})
+
+        self.assertTrue(torch.equal(model.left, original_left))
 
 
 class TestPrunerContracts(unittest.TestCase):
+    def test_component_outputs_are_validated_at_pruner_boundary(self) -> None:
+        pruner = Pruner()
+        pruner.scorer = mock.Mock(
+            requires_gradients=False,
+            requires_reference=False,
+            score=mock.Mock(return_value={"layer": "not-a-tensor"}),
+        )
+        with self.assertRaisesRegex(TypeError, "names to tensors"):
+            pruner.compute_scores({"layer": torch.ones(1)})
+
+        pruner.scorer.score.return_value = {"other": torch.ones(1)}
+        with self.assertRaisesRegex(ValueError, "keys must match weights"):
+            pruner.compute_scores({"layer": torch.ones(1)})
+
+        pruner.scorer.score.return_value = {"layer": torch.full((1,), float("nan"))}
+        with self.assertRaisesRegex(ValueError, "finite"):
+            pruner.compute_scores({"layer": torch.ones(1)})
+
+        pruner.allocator = mock.Mock(allocate=mock.Mock(return_value={"other": 0.5}))
+        with self.assertRaisesRegex(ValueError, "one ratio"):
+            pruner.compute_layer_ratios({"layer": torch.ones(1)}, 0.5)
+
+        pruner.allocator.allocate.return_value = {"layer": float("nan")}
+        with self.assertRaisesRegex(ValueError, "invalid ratio"):
+            pruner.compute_layer_ratios({"layer": torch.ones(1)}, 0.5)
+
     def test_component_kwargs_are_forwarded_to_the_selected_component(self) -> None:
         class _ScaledMagnitude(ImportanceScorer):
             def __init__(self, scale: float = 1.0) -> None:
@@ -124,16 +162,23 @@ class TestPrunerContracts(unittest.TestCase):
             Pruner(importance="residual-magnitude").compute_scores(weights)
 
     def test_direct_scorers_reject_invalid_auxiliary_tensors(self) -> None:
-        weights = {"layer": torch.ones(2, 2)}
+        weights = {"layer": torch.ones(2, 2), "other": torch.ones(1)}
 
         with self.assertRaisesRegex(ValueError, "requires gradients"):
             FirstOrderScorer().score(weights)
         with self.assertRaisesRegex(ValueError, "Gradient and weight shapes"):
-            FirstOrderScorer().score(weights, {"layer": torch.ones(2)})
+            FirstOrderScorer().score({"layer": weights["layer"]}, {"layer": torch.ones(2)})
+        with self.assertRaisesRegex(ValueError, "missing tensors"):
+            FirstOrderScorer().score(weights, {"layer": torch.ones(2, 2)})
         with self.assertRaisesRegex(ValueError, "Reference weight and weight shapes"):
             ResidualMagnitudeScorer().score(
-                weights,
+                {"layer": weights["layer"]},
                 reference_weights={"layer": torch.ones(2)},
+            )
+        with self.assertRaisesRegex(ValueError, "missing tensors"):
+            ResidualMagnitudeScorer().score(
+                weights,
+                reference_weights={"layer": torch.ones(2, 2)},
             )
 
     def test_registered_scorer_instances_are_not_called_as_factories(self) -> None:
@@ -164,6 +209,16 @@ class TestPrunerContracts(unittest.TestCase):
         self.assertEqual(protected["layer"][-1], torch.finfo(torch.float32).max)
 
     def test_score_combination_validates_shape_and_hyperparameters(self) -> None:
+        with self.assertRaisesRegex(ValueError, "identical parameter keys"):
+            combine_scores_2d_with_protection(
+                {"left": torch.ones(2)},
+                {"right": torch.ones(2)},
+            )
+        with self.assertRaisesRegex(ValueError, "identical parameter keys"):
+            apply_magnitude_protection(
+                {"left": torch.ones(2)},
+                {"right": torch.ones(2)},
+            )
         with self.assertRaisesRegex(ValueError, "shapes"):
             combine_scores_2d_with_protection(
                 {"layer": torch.ones(2)},

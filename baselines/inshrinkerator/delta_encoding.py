@@ -7,15 +7,15 @@ Inshrinkerator 增量编码模块。
 - 游程编码（RLE）压缩
 """
 
+import struct
+from typing import List
+
 import torch
-from typing import List, Dict
+
+_MAX_RLE_RUN = 32767
 
 
-def delta_encode(
-    prev: torch.Tensor,
-    curr: torch.Tensor,
-    B: int
-) -> torch.Tensor:
+def delta_encode(prev: torch.Tensor, curr: torch.Tensor, B: int) -> torch.Tensor:
     """
     计算增量编码: D = (prev - curr) mod B。
 
@@ -31,11 +31,7 @@ def delta_encode(
     return D
 
 
-def delta_decode(
-    prev: torch.Tensor,
-    D: torch.Tensor,
-    B: int
-) -> torch.Tensor:
+def delta_decode(prev: torch.Tensor, D: torch.Tensor, B: int) -> torch.Tensor:
     """
     解码增量以恢复当前索引: curr = (prev - D) mod B。
 
@@ -51,11 +47,7 @@ def delta_decode(
     return curr
 
 
-def rearrange_by_prev_bin(
-    q_prev: torch.Tensor,
-    D: torch.Tensor,
-    B: int
-) -> List[torch.Tensor]:
+def rearrange_by_prev_bin(q_prev: torch.Tensor, D: torch.Tensor, B: int) -> List[torch.Tensor]:
     """
     按前一桶重排增量以获得更好的 RLE 压缩。
 
@@ -71,15 +63,13 @@ def rearrange_by_prev_bin(
     """
     grouped = []
     for bin_idx in range(B):
-        mask = (q_prev == bin_idx)
+        mask = q_prev == bin_idx
         grouped.append(D[mask])
     return grouped
 
 
 def restore_rearrangement(
-    q_prev: torch.Tensor,
-    grouped: List[torch.Tensor],
-    B: int
+    q_prev: torch.Tensor, grouped: List[torch.Tensor], B: int
 ) -> torch.Tensor:
     """
     从分组增量恢复原始增量顺序。
@@ -124,10 +114,10 @@ def rle_encode(D: torch.Tensor) -> bytes:
         编码后的字节
     """
     if D.numel() == 0:
-        return b''
+        return b""
 
     D = D.flatten().tolist()
-    encoded = []
+    encoded: List[int] = []
 
     i = 0
     while i < len(D):
@@ -138,20 +128,20 @@ def rle_encode(D: torch.Tensor) -> bytes:
         while i + run_length < len(D) and D[i + run_length] == value:
             run_length += 1
 
-        if run_length > 1:
-            # 存储值和负游程长度
-            encoded.append(value)
-            encoded.append(-run_length)
-        else:
-            # 单个值，直接存储
+        remaining = run_length
+        while remaining > _MAX_RLE_RUN:
+            encoded.extend((value, -_MAX_RLE_RUN))
+            remaining -= _MAX_RLE_RUN
+        if remaining > 1:
+            encoded.extend((value, -remaining))
+        elif remaining == 1:
             encoded.append(value)
 
         i += run_length
 
     # 转换为字节（为简单起见使用变长编码）
     # 目前使用简单的 int16 编码
-    import struct
-    result = struct.pack(f'{len(encoded)}h', *encoded)
+    result = struct.pack(f"<{len(encoded)}h", *encoded)
     return result
 
 
@@ -166,12 +156,17 @@ def rle_decode(encoded: bytes, original_length: int) -> torch.Tensor:
     返回:
         解码后的张量
     """
-    if len(encoded) == 0 or original_length == 0:
+    if original_length < 0:
+        raise ValueError(f"original_length must be non-negative, got {original_length}")
+    if len(encoded) == 0 and original_length == 0:
         return torch.tensor([], dtype=torch.long)
+    if len(encoded) % 2 != 0:
+        raise ValueError("RLE payload must contain complete int16 values")
+    if len(encoded) == 0:
+        raise ValueError("RLE payload is empty for a non-empty tensor")
 
-    import struct
     n_values = len(encoded) // 2  # int16 = 2 字节
-    values = list(struct.unpack(f'{n_values}h', encoded))
+    values = list(struct.unpack(f"<{n_values}h", encoded))
 
     decoded = []
     i = 0
@@ -183,13 +178,15 @@ def rle_decode(encoded: bytes, original_length: int) -> torch.Tensor:
         if i < len(values) and values[i] < 0:
             run_length = -values[i]
             i += 1
+            if run_length < 2:
+                raise ValueError(f"Invalid RLE run length: {run_length}")
             decoded.extend([value] * run_length)
         else:
             decoded.append(value)
 
-    # 确保恰好有 original_length 个元素
-    decoded = decoded[:original_length]
-    while len(decoded) < original_length:
-        decoded.append(0)
+    if len(decoded) != original_length:
+        raise ValueError(
+            f"RLE payload decoded to {len(decoded)} values; expected {original_length}"
+        )
 
     return torch.tensor(decoded, dtype=torch.long)

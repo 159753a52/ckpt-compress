@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import torch
 import torch.nn as nn
@@ -45,7 +45,7 @@ class ShortResidualScope:
     prune_ratio: float
     delta: TensorDict
 
-    def to_result_dict(self) -> Dict[str, object]:
+    def to_result_dict(self) -> Dict[str, Any]:
         return {
             "transformer_layers": len(self.layers),
             "eligible_tensors": len(self.eligible_names),
@@ -104,7 +104,7 @@ def build_short_gate_masks(
     scope: ShortResidualScope,
     taylor_scores: Mapping[str, torch.Tensor],
     max_layer_ratio: float,
-) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
+) -> Tuple[Dict[str, MaskDict], Dict[str, Any]]:
     """Fit allocations and construct the short gate's four equal-budget masks."""
     started = time.perf_counter()
     fits = fit_layer_weibull_mom(scope.layers, taylor_scores)
@@ -158,22 +158,22 @@ def diagnose_short_gate_masks(
     scope: ShortResidualScope,
     masks: Mapping[str, MaskDict],
     taylor_scores: Mapping[str, torch.Tensor],
-) -> Dict[str, Dict[str, object]]:
+) -> Dict[str, Dict[str, Any]]:
     """Compute the established proxy, sparsity, layer-rate, and overlap schema."""
     if tuple(masks) != SHORT_GATE_METHODS:
         raise ValueError("Short-gate masks must follow the result method protocol")
     exact_metrics = mask_metrics(masks[TAYLOR_EXACT_GLOBAL_METHOD], taylor_scores)
     exact_proxy_cost = float(exact_metrics["proxy_cost"])
-    diagnostics: Dict[str, Dict[str, object]] = {}
+    diagnostics: Dict[str, Dict[str, Any]] = {}
     for method, method_masks in masks.items():
-        metrics: Dict[str, object] = mask_metrics(method_masks, taylor_scores)
+        metrics: Dict[str, Any] = dict(mask_metrics(method_masks, taylor_scores))
         pruned = int(metrics["pruned"])
         proxy_cost = float(metrics["proxy_cost"])
         metrics["eligible_sparsity"] = pruned / scope.eligible_count
         metrics["whole_model_sparsity"] = pruned / scope.model_count
         metrics["layer_rates"] = layer_rates(scope.layers, method_masks)
-        metrics["additive_regret_vs_exact"] = (
-            (proxy_cost - exact_proxy_cost) / max(abs(exact_proxy_cost), 1e-30)
+        metrics["additive_regret_vs_exact"] = (proxy_cost - exact_proxy_cost) / max(
+            abs(exact_proxy_cost), 1e-30
         )
         metrics["overlap_with_exact"] = mask_overlap(
             method_masks,

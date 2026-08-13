@@ -7,15 +7,18 @@ ExCP K-means 量化模块。
 - 支持 int4 打包以提高存储效率
 """
 
-import torch
+import math
 from typing import Tuple
+
+import torch
 
 
 def kmeans_quantize_nonzero(
     x: torch.Tensor,
     n_bits: int = 4,
     max_iter: int = 100,
-    tol: float = 1e-4
+    tol: float = 1e-4,
+    seed: int = 42,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     使用 K-means 量化张量，保留零值。
@@ -34,11 +37,26 @@ def kmeans_quantize_nonzero(
         - indices: 量化索引（与 x 形状相同）
         - centers: 聚类中心（长度为 2^n_bits）
     """
+    if not isinstance(n_bits, int) or isinstance(n_bits, bool):
+        raise TypeError("n_bits must be an integer")
+    if not 1 <= n_bits <= 4:
+        raise ValueError(f"n_bits must be in [1, 4] for int4 packing, got {n_bits}")
+    if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
+        raise ValueError(f"seed must be a non-negative integer, got {seed}")
+    if max_iter < 1:
+        raise ValueError(f"max_iter must be positive, got {max_iter}")
+    if not math.isfinite(tol) or tol <= 0:
+        raise ValueError(f"tol must be finite and positive, got {tol}")
+    if not x.is_floating_point() or x.is_complex():
+        raise TypeError("x must be a real floating-point tensor")
+    if not torch.isfinite(x).all().item():
+        raise ValueError("x must contain only finite values")
+
     original_shape = x.shape
-    x_flat = x.flatten()
+    x_flat = x.detach().flatten()
 
     # 量化级别数
-    n_levels = 2 ** n_bits
+    n_levels = 2**n_bits
     n_nonzero_centers = n_levels - 1  # 索引 0 保留给零值
 
     # 处理边界情况
@@ -48,7 +66,7 @@ def kmeans_quantize_nonzero(
         return indices.reshape(original_shape), centers
 
     # 分离零值和非零值
-    zero_mask = (x_flat == 0)
+    zero_mask = x_flat == 0
     nonzero_mask = ~zero_mask
     nonzero_values = x_flat[nonzero_mask]
 
@@ -78,11 +96,18 @@ def kmeans_quantize_nonzero(
         nonzero_centers = unique_nonzero[:actual_n_centers]
     else:
         # K-means++ 初始化
-        nonzero_centers = _kmeans_plusplus_init(nonzero_values, actual_n_centers)
+        generator = torch.Generator(device=x.device).manual_seed(seed)
+        nonzero_centers = _kmeans_plusplus_init(
+            nonzero_values,
+            actual_n_centers,
+            generator=generator,
+        )
 
     # 内存友好的 searchsorted 赋值辅助函数
     def _assign_nearest(vals, ctrs):
         """用 searchsorted 找最近中心，避免 O(N*K) 距离矩阵。"""
+        if ctrs.numel() == 1:
+            return torch.zeros(vals.shape, dtype=torch.long, device=vals.device)
         sorted_idx = torch.argsort(ctrs)
         sorted_ctrs = ctrs[sorted_idx]
         pos = torch.searchsorted(sorted_ctrs, vals)
@@ -98,8 +123,8 @@ def kmeans_quantize_nonzero(
 
         new_centers = torch.zeros_like(nonzero_centers)
         for i in range(actual_n_centers):
-            mask = (assignments == i)
-            if mask.sum() > 0:
+            mask = assignments == i
+            if mask.any().item():
                 new_centers[i] = nonzero_values[mask].mean()
             else:
                 new_centers[i] = nonzero_centers[i]
@@ -116,14 +141,16 @@ def kmeans_quantize_nonzero(
     indices[nonzero_mask] = nonzero_indices
 
     # 填充中心（索引 0 已经是 0）
-    centers[1:actual_n_centers + 1] = nonzero_centers
+    centers[1 : actual_n_centers + 1] = nonzero_centers
 
     return indices.reshape(original_shape), centers
 
 
 def _kmeans_plusplus_init(
     values: torch.Tensor,
-    k: int
+    k: int,
+    *,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """
     K-means++ 聚类中心初始化。
@@ -138,7 +165,9 @@ def _kmeans_plusplus_init(
     # 子采样以避免 torch.multinomial 的 2^24 限制和 O(N*K) 距离矩阵
     MAX_SAMPLE = min(100000, values.numel())
     if values.numel() > MAX_SAMPLE:
-        perm = torch.randperm(values.numel())[:MAX_SAMPLE]
+        perm = torch.randperm(values.numel(), device=values.device, generator=generator)[
+            :MAX_SAMPLE
+        ]
         sampled = values[perm]
     else:
         sampled = values
@@ -146,19 +175,19 @@ def _kmeans_plusplus_init(
     n = sampled.numel()
     centers = torch.zeros(k, dtype=sampled.dtype, device=sampled.device)
 
-    idx = torch.randint(0, n, (1,)).item()
+    idx = torch.randint(0, n, (1,), device=sampled.device, generator=generator).item()
     centers[0] = sampled[idx]
 
     for i in range(1, k):
         distances = torch.abs(sampled.unsqueeze(1) - centers[:i].unsqueeze(0))
         min_distances = distances.min(dim=1).values
-        probs = min_distances ** 2
+        probs = min_distances**2
         prob_sum = probs.sum()
-        if prob_sum > 0:
+        if prob_sum.item() > 0:
             probs = probs / prob_sum
         else:
             probs = torch.ones_like(probs) / n
-        idx = torch.multinomial(probs, 1).item()
+        idx = torch.multinomial(probs, 1, generator=generator).item()
         centers[i] = sampled[idx]
 
     return centers
@@ -166,7 +195,7 @@ def _kmeans_plusplus_init(
 
 def dequantize(
     indices: torch.Tensor,
-    centers: torch.Tensor
+    centers: torch.Tensor,
 ) -> torch.Tensor:
     """
     使用中心将索引反量化回值。
@@ -178,7 +207,19 @@ def dequantize(
     返回:
         反量化的张量（与 indices 形状相同）
     """
-    return centers[indices]
+    if indices.dtype not in {
+        torch.uint8,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    }:
+        raise TypeError("indices must be an integer tensor")
+    if centers.ndim != 1 or centers.numel() == 0:
+        raise ValueError("centers must be a non-empty one-dimensional tensor")
+    if indices.numel() and (indices.min().item() < 0 or indices.max().item() >= centers.numel()):
+        raise ValueError("indices reference a missing quantization center")
+    return centers[indices.long()]
 
 
 def pack_int4(indices: torch.Tensor) -> torch.Tensor:
@@ -191,7 +232,18 @@ def pack_int4(indices: torch.Tensor) -> torch.Tensor:
     返回:
         打包后的张量（长度减半，向上取整）
     """
-    indices = indices.flatten().to(torch.uint8)
+    if indices.dtype not in {
+        torch.uint8,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    }:
+        raise TypeError("indices must be an integer tensor")
+    indices = indices.detach().flatten()
+    if indices.numel() and (indices.min().item() < 0 or indices.max().item() > 15):
+        raise ValueError("int4 indices must be in [0, 15]")
+    indices = indices.to(torch.uint8)
     n = indices.numel()
 
     # 如果需要，填充到偶数长度
@@ -218,7 +270,23 @@ def unpack_int4(packed: torch.Tensor, original_length: int) -> torch.Tensor:
     返回:
         解包后的索引张量
     """
-    packed = packed.flatten()
+    if not isinstance(original_length, int) or isinstance(original_length, bool):
+        raise TypeError("original_length must be an integer")
+    if original_length < 0:
+        raise ValueError(f"original_length must be non-negative, got {original_length}")
+    if packed.dtype not in {
+        torch.uint8,
+        torch.int8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    }:
+        raise TypeError("packed must be an integer tensor")
+    packed = packed.detach().flatten()
+    if original_length > packed.numel() * 2:
+        raise ValueError("packed payload is too short for original_length")
+    if packed.numel() and (packed.min().item() < 0 or packed.max().item() > 255):
+        raise ValueError("packed values must be bytes in [0, 255]")
 
     # 解包高半字节和低半字节
     high = (packed >> 4) & 0x0F

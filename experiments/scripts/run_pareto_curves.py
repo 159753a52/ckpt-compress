@@ -1,17 +1,19 @@
-"""
-Fig 4: Pareto 曲线 — 剪枝比例 vs 质量
+"""Legacy single-checkpoint Pareto diagnostic.
+
+This script is not the authoritative paired paper-evidence runner and does not
+presuppose which method should perform best.
+Pareto diagnostic: 剪枝比例 vs 质量
 
 扫描多个稀疏率，绘制每种方法的 Pareto 曲线。
-展示高剪枝比例下 Ours 的优势更明显。
 
 对比方法:
   - magnitude+uniform
   - first-order+uniform (Inshrinkerator-style)
   - second-order-hvp+uniform (ablation)
-  - second-order-hvp+gamma-adaptive (Ours)
+  - second-order-hvp+gamma-adaptive
 
 运行示例:
-    python experiments/scripts/run_fig4_pareto.py \
+    python experiments/scripts/run_pareto_curves.py \
         --model gpt2-small --dataset wikitext103 \
         --min_ratio 0.1 --max_ratio 0.9 --step 0.1 \
         --num_steps 100 --eval_batches 20 \
@@ -88,7 +90,7 @@ def plot_pareto(results_by_method, task_type, args):
 
 
 def main():
-    parser = create_base_parser('Fig 4: Pareto 曲线')
+    parser = create_base_parser('Legacy single-checkpoint Pareto diagnostic')
     add_scoring_args(parser)
     parser.add_argument('--min_ratio', type=float, default=0.1)
     parser.add_argument('--max_ratio', type=float, default=0.9)
@@ -101,7 +103,7 @@ def main():
     prune_ratios = [round(r, 2) for r in prune_ratios]
     
     print("=" * 70)
-    print("Fig 4: Pareto 曲线")
+    print("Legacy single-checkpoint Pareto diagnostic")
     print(f"模型: {args.model} | 数据集: {args.dataset}")
     print(f"剪枝率范围: {prune_ratios}")
     print("=" * 70)

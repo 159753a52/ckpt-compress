@@ -4,18 +4,26 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Dict, List, Mapping, Sequence, Tuple
+from functools import wraps
+from typing import (
+    Any,
+    Callable,
+    Concatenate,
+    Dict,
+    List,
+    Mapping,
+    ParamSpec,
+    Sequence,
+    Tuple,
+    TypedDict,
+    TypeVar,
+)
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from experiments.lib.residual_budget import trust_region_counts
-from experiments.lib.residual_spectral import (
-    budget_tangent_dct_directions,
-    directional_layer_counts,
-    reconstruct_directional_gradient,
-)
 from experiments.lib.residual_masks import (
     apply_layer_mask,
     apply_mask_from_device_states,
@@ -26,17 +34,68 @@ from experiments.lib.residual_masks import (
 )
 from experiments.lib.residual_runtime import lm_loss, synchronize_device
 
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def _rollback_model_state_on_error(
+    function: Callable[
+        Concatenate[nn.Module, Mapping[str, torch.Tensor], _P],
+        _R,
+    ],
+) -> Callable[Concatenate[nn.Module, Mapping[str, torch.Tensor], _P], _R]:
+    """Restore the uncompressed input state if a calibration probe fails."""
+
+    @wraps(function)
+    def wrapped(
+        model: nn.Module,
+        current_state: Mapping[str, torch.Tensor],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _R:
+        was_training = model.training
+        try:
+            return function(model, current_state, *args, **kwargs)
+        except BaseException:
+            model.load_state_dict(current_state, strict=True)
+            model.train(was_training)
+            raise
+
+    return wrapped
+
+
+class _TrustCandidate(TypedDict):
+    trust_radius: float
+    counts: List[int]
+    mean_selection_loss: float
+    paired_delta_vs_uniform: float
+    paired_delta_standard_error: float | None
+
+
+from experiments.lib.residual_spectral import (
+    budget_tangent_dct_directions,
+    directional_layer_counts,
+    reconstruct_directional_gradient,
+)
+
 
 def batch_loss_values(
     model: nn.Module,
     batches: Sequence[Mapping[str, torch.Tensor]],
     device: str,
 ) -> List[float]:
+    if not batches:
+        raise ValueError("batches must contain at least one calibration batch")
+    was_training = model.training
     model.eval()
-    with torch.no_grad():
-        return [lm_loss(model, batch, device).item() for batch in batches]
+    try:
+        with torch.no_grad():
+            return [float(lm_loss(model, batch, device).item()) for batch in batches]
+    finally:
+        model.train(was_training)
 
 
+@_rollback_model_state_on_error
 def calibrate_trust_region_allocation(
     model: nn.Module,
     current_state: Mapping[str, torch.Tensor],
@@ -53,7 +112,7 @@ def calibrate_trust_region_allocation(
     candidate_trust_radii: Sequence[float],
     device: str,
     score_orders: Sequence[torch.Tensor] | None = None,
-) -> Tuple[List[int], Dict[str, object]]:
+) -> Tuple[List[int], Dict[str, Any]]:
     """Estimate true-loss marginals near uniform and select a bounded rate step."""
     if not probe_batches or not selection_batches:
         raise ValueError("Probe and selection batches must both be non-empty")
@@ -79,9 +138,7 @@ def calibrate_trust_region_allocation(
             base_count + count_delta,
         )
         if lower_count >= upper_count:
-            raise ValueError(
-                f"Layer {index} has no room for a finite-difference probe"
-            )
+            raise ValueError(f"Layer {index} has no room for a finite-difference probe")
 
         score_order = score_orders[index] if score_orders is not None else None
         upper_masks = layer_mask_at_count(
@@ -140,22 +197,22 @@ def calibrate_trust_region_allocation(
                 "lower_mean_loss": float(np.mean(lower_losses)),
                 "upper_mean_loss": float(np.mean(upper_losses)),
                 "marginal_loss": marginal,
-                "marginal_standard_error": float(
-                    np.std(paired_derivatives, ddof=1)
-                    / math.sqrt(len(paired_derivatives))
-                )
-                if len(paired_derivatives) > 1
-                else None,
+                "marginal_standard_error": (
+                    float(np.std(paired_derivatives, ddof=1) / math.sqrt(len(paired_derivatives)))
+                    if len(paired_derivatives) > 1
+                    else None
+                ),
             }
         )
         del upper_masks, lower_masks
 
-    candidates = [
+    candidates: List[_TrustCandidate] = [
         {
             "trust_radius": 0.0,
             "counts": list(uniform_layer_counts),
             "mean_selection_loss": float(np.mean(uniform_selection_losses)),
             "paired_delta_vs_uniform": 0.0,
+            "paired_delta_standard_error": None,
         }
     ]
     for trust_radius in sorted(set(candidate_trust_radii)):
@@ -177,20 +234,19 @@ def calibrate_trust_region_allocation(
         )
         losses = batch_loss_values(model, selection_batches, device)
         deltas = [
-            candidate - baseline
-            for candidate, baseline in zip(losses, uniform_selection_losses)
+            candidate - baseline for candidate, baseline in zip(losses, uniform_selection_losses)
         ]
         candidates.append(
             {
-                "trust_radius": trust_radius,
-                "counts": counts,
+                "trust_radius": float(trust_radius),
+                "counts": list(counts),
                 "mean_selection_loss": float(np.mean(losses)),
                 "paired_delta_vs_uniform": float(np.mean(deltas)),
-                "paired_delta_standard_error": float(
-                    np.std(deltas, ddof=1) / math.sqrt(len(deltas))
-                )
-                if len(deltas) > 1
-                else None,
+                "paired_delta_standard_error": (
+                    float(np.std(deltas, ddof=1) / math.sqrt(len(deltas)))
+                    if len(deltas) > 1
+                    else None
+                ),
             }
         )
         del candidate_masks
@@ -226,6 +282,7 @@ def calibrate_trust_region_allocation(
     return list(selected["counts"]), metadata
 
 
+@_rollback_model_state_on_error
 def calibrate_spectral_allocation(
     model: nn.Module,
     current_state: Mapping[str, torch.Tensor],
@@ -241,7 +298,7 @@ def calibrate_spectral_allocation(
     trust_radius: float,
     device: str,
     score_orders: Sequence[torch.Tensor] | None = None,
-) -> Tuple[Dict[int, List[int]], Dict[str, object]]:
+) -> Tuple[Dict[int, List[int]], Dict[str, Any]]:
     """Estimate a low-rank rate gradient from budget-preserving spectral probes."""
     if not probe_batches:
         raise ValueError("Spectral probing requires at least one batch")
@@ -333,19 +390,13 @@ def calibrate_spectral_allocation(
         evaluation_seconds += time.perf_counter() - evaluation_started
         del minus_masks
 
-        plus_rates = [
-            count / size for count, size in zip(plus_counts, layer_sizes)
-        ]
-        minus_rates = [
-            count / size for count, size in zip(minus_counts, layer_sizes)
-        ]
+        plus_rates = [count / size for count, size in zip(plus_counts, layer_sizes)]
+        minus_rates = [count / size for count, size in zip(minus_counts, layer_sizes)]
         actual_direction = [
-            (plus - minus) / (2.0 * probe_radius)
-            for plus, minus in zip(plus_rates, minus_rates)
+            (plus - minus) / (2.0 * probe_radius) for plus, minus in zip(plus_rates, minus_rates)
         ]
         paired_derivatives = [
-            (plus - minus) / (2.0 * probe_radius)
-            for plus, minus in zip(plus_losses, minus_losses)
+            (plus - minus) / (2.0 * probe_radius) for plus, minus in zip(plus_losses, minus_losses)
         ]
         response = float(np.mean(paired_derivatives))
         design.append(actual_direction)
@@ -357,17 +408,16 @@ def calibrate_spectral_allocation(
                 "minus_counts": minus_counts,
                 "actual_direction": actual_direction,
                 "response": response,
-                "response_standard_error": float(
-                    np.std(paired_derivatives, ddof=1)
-                    / math.sqrt(len(paired_derivatives))
-                )
-                if len(paired_derivatives) > 1
-                else None,
+                "response_standard_error": (
+                    float(np.std(paired_derivatives, ddof=1) / math.sqrt(len(paired_derivatives)))
+                    if len(paired_derivatives) > 1
+                    else None
+                ),
             }
         )
 
-    counts_by_rank = {}
-    reconstructions = {}
+    counts_by_rank: Dict[int, List[int]] = {}
+    reconstructions: Dict[str, Dict[str, Any]] = {}
     for rank in unique_ranks:
         gradient, reconstruction = reconstruct_directional_gradient(
             design[:rank],
@@ -382,9 +432,10 @@ def calibrate_spectral_allocation(
             max_layer_ratio,
         )
         counts_by_rank[rank] = counts
-        reconstruction["gradient"] = gradient
-        reconstruction["layer_counts"] = counts
-        reconstructions[str(rank)] = reconstruction
+        reconstruction_payload: Dict[str, Any] = dict(reconstruction)
+        reconstruction_payload["gradient"] = gradient
+        reconstruction_payload["layer_counts"] = counts
+        reconstructions[str(rank)] = reconstruction_payload
 
     with torch.no_grad():
         named_params = dict(model.named_parameters())

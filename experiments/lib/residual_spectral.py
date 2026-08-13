@@ -6,6 +6,7 @@ import math
 from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
+import numpy.typing as npt
 
 from experiments.lib.residual_budget import bounded_largest_remainder_counts
 
@@ -21,14 +22,12 @@ def budget_tangent_dct_directions(
         raise ValueError("rank must be in [1, number of layers)")
 
     sizes = np.asarray(layer_sizes, dtype=np.float64)
-    layer_indices = np.arange(len(layer_sizes), dtype=np.float64)
+    layer_indices: npt.NDArray[np.float64] = np.arange(len(layer_sizes), dtype=np.float64)
     directions = []
     for frequency in range(1, rank + 1):
-        direction = np.cos(
-            math.pi * (layer_indices + 0.5) * frequency / len(layer_sizes)
-        )
+        direction = np.cos(math.pi * (layer_indices + 0.5) * frequency / len(layer_sizes))
         direction -= np.dot(sizes, direction) / sizes.sum()
-        maximum = np.max(np.abs(direction))
+        maximum = float(np.max(np.abs(direction)))
         if maximum <= 1e-12:
             raise ValueError(f"Degenerate spectral direction at frequency {frequency}")
         directions.append((direction / maximum).tolist())
@@ -77,11 +76,13 @@ def directional_layer_counts(
     if any(rate < 0 or rate > max_layer_ratio for rate in rates):
         raise ValueError("Spectral probe leaves the feasible layer-rate box")
     real_counts = [size * rate for size, rate in zip(layer_sizes, rates)]
-    return bounded_largest_remainder_counts(
-        real_counts,
-        target,
-        lower_bounds,
-        upper_bounds,
+    return list(
+        bounded_largest_remainder_counts(
+            real_counts,
+            target,
+            lower_bounds,
+            upper_bounds,
+        )
     )
 
 

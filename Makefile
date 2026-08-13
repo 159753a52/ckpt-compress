@@ -1,7 +1,36 @@
 # ckpt-compress Makefile
 # 用于简化实验运行和开发流程
 
-.PHONY: help install dev test lint clean all table1 table2 table3 fig4 fig5 fig6 gamma sensitivity violin
+.PHONY: help install dev test test-cov test-paper-cov typecheck-paper lint format clean paper-plan wheel
+
+PAPER_PYTHON_FILES := \
+	dacp/utils/paths.py \
+	experiments/lib/paper_baselines.py \
+	experiments/lib/paper_manifest.py \
+	experiments/lib/paper_result_validation.py \
+	experiments/lib/paper_results.py \
+	experiments/lib/paper_runner.py \
+	experiments/lib/evaluation.py \
+	experiments/lib/losses.py \
+	experiments/lib/residual_masks.py \
+	experiments/lib/residual_weibull.py \
+	experiments/scripts/finetune/finetune_pythia_410m.py \
+	experiments/scripts/run_paper_experiments.py \
+	scripts/validate_distribution.py \
+	tests/test_data.py \
+	tests/test_evaluation.py \
+	tests/test_experiments_lib_init.py \
+	tests/test_finetune_cli.py \
+	tests/test_finetune_evaluation.py \
+	tests/test_losses.py \
+	tests/test_paper_experiments.py \
+	tests/test_paper_results.py \
+	tests/test_paths.py \
+	tests/test_residual_masks.py \
+	tests/test_validate_distribution.py
+CHANGED_PYTHON_FILES := $(shell git diff HEAD --name-only --diff-filter=ACMR -- '*.py') \
+	$(shell git ls-files --others --exclude-standard -- '*.py')
+CHECK_PYTHON_FILES := $(sort $(PAPER_PYTHON_FILES) $(CHANGED_PYTHON_FILES))
 
 # 默认目标
 help:
@@ -11,21 +40,14 @@ help:
 	@echo "  install     - 安装项目（生产环境）"
 	@echo "  dev         - 安装项目（开发环境）"
 	@echo "  test        - 运行所有测试"
-	@echo "  lint        - 代码检查（black + isort + mypy）"
+	@echo "  test-cov    - 报告整个 dacp 包覆盖率（当前不设虚假全局门禁）"
+	@echo "  test-paper-cov - 对论文核心选择模块执行 90% 覆盖率门禁"
+	@echo "  typecheck-paper - 检查全部可发布生产 Python（排除测试与 ExCP upstream）"
+	@echo "  lint        - 当前论文路径的编译、diff 与 black 检查"
 	@echo "  format      - 格式化代码"
-	@echo "  clean       - 清理实验结果和缓存"
-	@echo ""
-	@echo "实验目标:"
-	@echo "  table1      - Table 1: 主实验（importance × allocation 对比）"
-	@echo "  table2      - Table 2: 联合压缩（Pruning + INT4 Quantization）"
-	@echo "  table3      - Table 3: 消融实验"
-	@echo "  fig4        - Figure 4: Pareto 曲线"
-	@echo "  fig5        - Figure 5: Importance score 热力图"
-	@echo "  fig6        - Figure 6: Fault-tolerant 训练"
-	@echo "  gamma       - §9.1-9.2: Gamma 分布验证"
-	@echo "  sensitivity - §9.3: 敏感性分析 + 计时分解"
-	@echo "  violin      - §9.4: 层分布 Violin 图"
-	@echo "  all         - 运行全部实验"
+	@echo "  clean       - 仅清理 Python/测试缓存（不删除实验结果）"
+	@echo "  paper-plan  - 显示默认论文实验清单，不启动 GPU 任务"
+	@echo "  wheel       - 构建可安装 wheel"
 
 # 安装
 install:
@@ -36,72 +58,45 @@ dev: install
 
 # 测试
 test:
-	pytest tests/
+	python -m pytest -q
 
 test-cov:
-	pytest --cov=dacp --cov-report=html --cov-report=term
+	python -m pytest --cov=dacp --cov-report=html --cov-report=term --cov-fail-under=0
 
-test-unit:
-	pytest tests/unit/
+test-paper-cov:
+	python -m pytest -q \
+		tests/test_paper_experiments.py tests/test_residual_masks.py tests/test_paths.py \
+		--cov=experiments.lib.paper_runner \
+		--cov=experiments.lib.residual_masks \
+		--cov=dacp.utils.paths \
+		--cov-report=term --cov-fail-under=90
 
-test-integration:
-	pytest tests/integration/
+typecheck-paper:
+	python scripts/list_production_python.py mypy -- \
+		--explicit-package-bases --follow-imports=skip \
+		--disable-error-code=import-untyped
 
 # 代码质量
 lint:
-	black --check dacp/ baselines/ experiments/
-	isort --check-only dacp/ baselines/ experiments/
-	mypy dacp/
+	python -m compileall -q dacp baselines experiments scripts tests
+	git diff --check
+	python -m isort --check-only $(CHECK_PYTHON_FILES)
+	python -m black --check $(CHECK_PYTHON_FILES)
+	$(MAKE) typecheck-paper
 
 format:
-	black dacp/ baselines/ experiments/
-	isort dacp/ baselines/ experiments/
+	python -m isort $(CHECK_PYTHON_FILES)
+	python -m black $(CHECK_PYTHON_FILES)
 
-# 实验
-table1:
-	python experiments/scripts/run_method_comparison.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
+paper-plan:
+	python experiments/scripts/run_paper_experiments.py --dry-run
 
-table2:
-	python experiments/scripts/run_joint_compression.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-table3:
-	python experiments/scripts/run_ablation_study.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-fig4:
-	python experiments/scripts/run_pareto_curves.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-fig5:
-	python experiments/scripts/run_pruning_heatmap.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-fig6:
-	python experiments/scripts/run_fault_tolerant_training.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-gamma:
-	python experiments/scripts/run_gamma_validation.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-sensitivity:
-	python experiments/scripts/run_sensitivity_analysis.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-violin:
-	python experiments/scripts/run_layer_distribution_violin.py \
-		--model gpt2-medium --dataset wikitext103 --device cuda
-
-all: table1 table2 table3 fig4 fig5 fig6 gamma sensitivity violin
-	@echo "所有实验已完成"
+wheel:
+	python -m pip wheel . --no-deps --wheel-dir dist
 
 # 清理
 clean:
-	@echo "清理实验结果..."
-	rm -rf experiments/results/*
-	@echo "清理 Python 缓存..."
+	@echo "清理 Python 和测试缓存（保留 results/）..."
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
@@ -119,14 +114,3 @@ download-models:
 	python scripts/download_models.py --all
 
 download: download-data download-models
-
-# 文档
-docs:
-	@echo "生成文档（待实现）"
-	# sphinx-build -b html docs/ docs/_build/
-
-# 发布
-release:
-	@echo "发布到 PyPI（待实现）"
-	# python -m build
-	# twine upload dist/*

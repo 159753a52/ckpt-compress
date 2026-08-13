@@ -1,8 +1,9 @@
 """
-Table 2: 联合压缩对比（Pruning + Quantization）
+联合压缩开发诊断（Pruning + Quantization）
 
 对比不同方法在 pruning-only / quant-only / joint 模式下的压缩比和质量。
-包含 ExCP 和 Inshrinkerator 的端到端管线对比。
+包含 ExCP 和 Inshrinkerator 的首次检查点 style adapter 诊断；这些结果不是完整
+端到端复现，也不能用于当前论文主表的 full-fidelity baseline claim。
 
 运行示例:
     python experiments/scripts/run_joint_compression.py \
@@ -11,48 +12,50 @@ Table 2: 联合压缩对比（Pruning + Quantization）
 """
 
 import os
+
 os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 
-import sys
-from pathlib import Path
 import argparse
 import copy
-import torch
+import sys
+from pathlib import Path
+
 import numpy as np
+import torch
 
 ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(ROOT))
 
-from experiments.lib.models import load_model
-from experiments.lib.data import get_data_loaders, cache_batches
-from experiments.lib.evaluation import evaluate
-from experiments.lib.results import save_results, print_results_table
-from experiments.lib.importance_compare.scoring import compute_scores_by_method
-from dacp.pruning import apply_pruning, filter_prunable_params
-from dacp.pruning.allocation import get_allocation_strategy
-from dacp.pruning.importance import combine_scores_2d_with_protection, apply_magnitude_protection
-from dacp.quantization import INT4Quantizer, KMeansQuantizer
 from baselines.excp.excp import ExCPCompressor, ExCPConfig
 from baselines.inshrinkerator.inshrinkerator import InshrinkeratorCompressor, InshrinkeratorConfig
-
+from dacp.pruning import apply_pruning, filter_prunable_params
+from dacp.pruning.allocation import get_allocation_strategy
+from dacp.pruning.importance import apply_magnitude_protection, combine_scores_2d_with_protection
+from dacp.quantization import INT4Quantizer, KMeansQuantizer
+from experiments.lib.data import cache_batches, get_data_loaders
+from experiments.lib.evaluation import evaluate
+from experiments.lib.importance_compare.scoring import compute_scores_by_method
+from experiments.lib.models import load_model
+from experiments.lib.quantization_runtime import ExperimentQuantizer, quantize_dequantize_tensor
+from experiments.lib.results import print_results_table, save_results
 
 PRUNING_METHODS = [
-    {'label': 'Magnitude+Uniform',    'importance': 'magnitude',       'allocation': 'uniform'},
-    {'label': 'First-order+Uniform',  'importance': 'first-order',     'allocation': 'uniform'},
-    {'label': 'Ours (1D)',            'importance': 'second-order-hvp', 'allocation': 'gamma-adaptive'},
+    {"label": "Magnitude+Uniform", "importance": "magnitude", "allocation": "uniform"},
+    {"label": "First-order+Uniform", "importance": "first-order", "allocation": "uniform"},
+    {"label": "Ours (1D)", "importance": "second-order-hvp", "allocation": "gamma-adaptive"},
 ]
 
 # 2D / protected 方法使用 second-order-hvp 的 allocation，但层内剪枝用组合得分
 EXTRA_METHODS_2D = [
-    {'label': 'Ours (2D)',            'importance': '_2d_combined',     'allocation': 'gamma-adaptive'},
-    {'label': 'Ours (Protected)',     'importance': '_protected',       'allocation': 'gamma-adaptive'},
-    {'label': 'Magnitude+DA',        'importance': '_mag_da',          'allocation': 'gamma-adaptive'},
+    {"label": "Ours (2D)", "importance": "_2d_combined", "allocation": "gamma-adaptive"},
+    {"label": "Ours (Protected)", "importance": "_protected", "allocation": "gamma-adaptive"},
+    {"label": "Magnitude+DA", "importance": "_mag_da", "allocation": "gamma-adaptive"},
 ]
 
 
 def compute_compression_ratio(original_size, pruned_params, quant_bits=32):
     """计算压缩比。
-    
+
     original_size: 原始参数总数
     pruned_params: 被剪枝的参数数
     quant_bits: 量化后的位数 (4 for INT4, 32 for no quant)
@@ -63,19 +66,27 @@ def compute_compression_ratio(original_size, pruned_params, quant_bits=32):
     return original_bits / compressed_bits
 
 
-def apply_quantization(model, quantizer):
+def apply_quantization(model, quantizer: ExperimentQuantizer):
     """对模型权重做 INT4 量化再反量化（模拟量化误差）。"""
     with torch.no_grad():
         for name, param in model.named_parameters():
             if param.dim() >= 2:  # 只量化矩阵权重
-                quantized, metadata = quantizer.quantize(param.data)
-                dequantized = quantizer.dequantize(quantized, metadata)
-                param.data.copy_(dequantized)
+                param.data.copy_(quantize_dequantize_tensor(param.data, quantizer))
 
 
-def run_single_config(model_init, scores, prune_ratio, method, cached_eval,
-                      task_type, device, quantize, quant_type='int4', kmeans_clusters=256,
-                      alloc_scores=None):
+def run_single_config(
+    model_init,
+    scores,
+    prune_ratio,
+    method,
+    cached_eval,
+    task_type,
+    device,
+    quantize,
+    quant_type="int4",
+    kmeans_clusters=256,
+    alloc_scores=None,
+):
     """运行单个配置并返回结果。
 
     Args:
@@ -87,26 +98,28 @@ def run_single_config(model_init, scores, prune_ratio, method, cached_eval,
 
     # Pruning
     if prune_ratio > 0 and scores is not None:
-        allocator = get_allocation_strategy(method['allocation'])
-        layer_ratios = allocator.allocate(alloc_scores if alloc_scores is not None else scores, prune_ratio)
-        mask, pruned_count_val, actual = apply_pruning(
-            model, scores, layer_ratios, device=device)
+        allocator = get_allocation_strategy(method["allocation"])
+        layer_ratios = allocator.allocate(
+            alloc_scores if alloc_scores is not None else scores, prune_ratio
+        )
+        mask, pruned_count_val, actual = apply_pruning(model, scores, layer_ratios, device=device)
         pruned_count = int(actual * total_params)
     else:
         actual = 0.0
 
     # Quantization
     quant_bits = 32
-    quant_label = 'None'
+    quant_label = "None"
     if quantize:
-        if quant_type == 'kmeans':
+        quantizer: ExperimentQuantizer
+        if quant_type == "kmeans":
             quantizer = KMeansQuantizer(n_clusters=kmeans_clusters)
             quant_bits = int(np.ceil(np.log2(kmeans_clusters)))  # 256 clusters → 8-bit index
-            quant_label = f'KMeans-{kmeans_clusters}'
+            quant_label = f"KMeans-{kmeans_clusters}"
         else:
             quantizer = INT4Quantizer()
             quant_bits = 4
-            quant_label = 'INT4'
+            quant_label = "INT4"
         apply_quantization(model, quantizer)
 
     # Evaluate
@@ -116,11 +129,11 @@ def run_single_config(model_init, scores, prune_ratio, method, cached_eval,
     cr = compute_compression_ratio(total_params, pruned_count, quant_bits)
 
     result = {
-        'method': method['label'],
-        'prune_ratio': prune_ratio,
-        'actual_prune_ratio': actual,
-        'quantize': quant_label,
-        'compression_ratio': round(cr, 2),
+        "method": method["label"],
+        "prune_ratio": prune_ratio,
+        "actual_prune_ratio": actual,
+        "quantize": quant_label,
+        "compression_ratio": round(cr, 2),
     }
     result.update(metrics)
 
@@ -134,6 +147,7 @@ def run_single_config(model_init, scores, prune_ratio, method, cached_eval,
 def _collect_gradients_simple(model, cached_train, task_type, num_batches, device):
     """收集梯度用于 Inshrinkerator 的敏感度计算。"""
     from experiments.lib.losses import make_task_loss
+
     loss_fn = make_task_loss(task_type)
     model.train()
     model.zero_grad()
@@ -151,12 +165,12 @@ def _collect_gradients_simple(model, cached_train, task_type, num_batches, devic
     return grads
 
 
-def run_excp_e2e(model_init, cached_train, cached_eval, task_type, device,
-                 target_prune_frac, num_steps):
-    """ExCP 端到端：残差编码 + 联合剪枝 + K-means 量化。
+def run_excp_first_checkpoint_diagnostic(model_init, cached_eval, task_type, device):
+    """Run one ExCP-style first-checkpoint compression cycle.
 
-    模拟单次 compress → decompress cycle。
-    ExCP 的剪枝率由 alpha 超参间接控制，这里通过调整 alpha 近似目标稀疏度。
+    ExCP controls sparsity indirectly through its algorithmic thresholds.  This
+    diagnostic therefore reports only measured sparsity and is deliberately not
+    repeated under unrelated target-ratio labels.
     """
     model = copy.deepcopy(model_init).to(device)
     total_params = sum(p.numel() for p in model.parameters())
@@ -170,8 +184,8 @@ def run_excp_e2e(model_init, cached_train, cached_eval, task_type, device,
     O_t = {}
     for name, w in W_t.items():
         O_t[name] = {
-            'exp_avg': torch.zeros_like(w),
-            'exp_avg_sq': torch.ones_like(w) * 0.01,
+            "exp_avg": torch.zeros_like(w),
+            "exp_avg_sq": torch.ones_like(w) * 0.01,
         }
 
     # ExCP compress → decompress (首次 checkpoint，无前一检查点)
@@ -198,11 +212,11 @@ def run_excp_e2e(model_init, cached_train, cached_eval, task_type, device,
     metrics = evaluate(model_eval, cached_eval, task_type, device)
 
     result = {
-        'method': 'ExCP (e2e)',
-        'prune_ratio': target_prune_frac,
-        'actual_prune_ratio': round(actual_sparsity, 4),
-        'quantize': 'KMeans-16 (4-bit)',
-        'compression_ratio': round(cr, 2),
+        "method": "ExCP (first-checkpoint diagnostic)",
+        "actual_prune_ratio": round(actual_sparsity, 4),
+        "quantize": "KMeans-16 (4-bit)",
+        "compression_ratio": round(cr, 2),
+        "fidelity": "style",
     }
     result.update(metrics)
 
@@ -212,18 +226,18 @@ def run_excp_e2e(model_init, cached_train, cached_eval, task_type, device,
     return result
 
 
-def run_inshrinkerator_e2e(model_init, cached_train, cached_eval, task_type,
-                           device, target_prune_frac, num_steps):
-    """Inshrinkerator 端到端：三向分区 + 近似 K-means + 增量编码。
+def run_inshrinkerator_first_checkpoint_diagnostic(
+    model_init, cached_train, cached_eval, task_type, device, target_prune_frac, num_steps
+):
+    """Run one Inshrinkerator-style first-checkpoint compression cycle.
 
-    模拟单次 compress → decompress cycle。
+    This is a style adapter diagnostic rather than a full upstream reproduction.
     """
     model = copy.deepcopy(model_init).to(device)
     total_params = sum(p.numel() for p in model.parameters())
 
     # 收集梯度
-    grads = _collect_gradients_simple(model, cached_train, task_type,
-                                      min(num_steps, 8), device)
+    grads = _collect_gradients_simple(model, cached_train, task_type, min(num_steps, 8), device)
 
     W_t = {n: p.data.detach().cpu() for n, p in model.named_parameters()}
 
@@ -255,11 +269,12 @@ def run_inshrinkerator_e2e(model_init, cached_train, cached_eval, task_type,
     metrics = evaluate(model_eval, cached_eval, task_type, device)
 
     result = {
-        'method': 'Inshrinkerator (e2e)',
-        'prune_ratio': target_prune_frac,
-        'actual_prune_ratio': round(actual_sparsity, 4),
-        'quantize': 'ApproxKMeans-16',
-        'compression_ratio': round(cr, 2),
+        "method": "Inshrinkerator (first-checkpoint diagnostic)",
+        "prune_ratio": target_prune_frac,
+        "actual_prune_ratio": round(actual_sparsity, 4),
+        "quantize": "ApproxKMeans-16",
+        "compression_ratio": round(cr, 2),
+        "fidelity": "style",
     }
     result.update(metrics)
 
@@ -270,42 +285,57 @@ def run_inshrinkerator_e2e(model_init, cached_train, cached_eval, task_type,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Table 2: 联合压缩对比')
-    parser.add_argument('--model', type=str, required=True)
-    parser.add_argument('--dataset', type=str, required=True)
-    parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--prune_ratios', type=str, default='0.2,0.3,0.4')
-    parser.add_argument('--alpha', type=float, default=0.5)
-    parser.add_argument('--num_steps', type=int, default=100)
-    parser.add_argument('--hvp_batches', type=int, default=8)
-    parser.add_argument('--eval_batches', type=int, default=20)
-    parser.add_argument('--batch_size', type=int, default=4)
-    parser.add_argument('--seq_length', type=int, default=512)
-    parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--scoring_mode', type=str, default='all',
-                        choices=['1d', '2d', 'protected', 'all'],
-                        help='得分模式：1d=仅damage score，2d=magnitude+damage rank组合，'
-                             'protected=magnitude保护+damage score，all=全部运行')
-    parser.add_argument('--protection_ratio', type=float, default=0.001,
-                        help='Protection比例（2d/protected模式），默认0.1%%')
-    parser.add_argument('--output_dir', type=str,
-                        default='results/paper_results/joint_compression')
-    parser.add_argument('--skip_e2e', action='store_true',
-                        help='跳过 ExCP 和 Inshrinkerator 端到端阶段')
+    parser = argparse.ArgumentParser(description="联合压缩开发诊断")
+    parser.add_argument("--model", type=str, required=True)
+    parser.add_argument("--dataset", type=str, required=True)
+    parser.add_argument("--checkpoint", type=str, default=None)
+    parser.add_argument("--prune_ratios", type=str, default="0.2,0.3,0.4")
+    parser.add_argument("--alpha", type=float, default=0.5)
+    parser.add_argument("--num_steps", type=int, default=100)
+    parser.add_argument("--hvp_batches", type=int, default=8)
+    parser.add_argument("--eval_batches", type=int, default=20)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--seq_length", type=int, default=512)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument(
+        "--scoring_mode",
+        type=str,
+        default="all",
+        choices=["1d", "2d", "protected", "all"],
+        help="得分模式：1d=仅damage score，2d=magnitude+damage rank组合，"
+        "protected=magnitude保护+damage score，all=全部运行",
+    )
+    parser.add_argument(
+        "--protection_ratio",
+        type=float,
+        default=0.001,
+        help="Protection比例（2d/protected模式），默认0.1%%",
+    )
+    parser.add_argument("--output_dir", type=str, default="results/paper_results/joint_compression")
+    parser.add_argument(
+        "--skip_e2e",
+        action="store_true",
+        help="跳过 ExCP 和 Inshrinkerator 首次检查点 style 诊断（兼容旧参数名）",
+    )
     args = parser.parse_args()
 
-    prune_ratios = [float(r) for r in args.prune_ratios.split(',')]
+    prune_ratios = [float(r) for r in args.prune_ratios.split(",")]
 
     print("=" * 70)
-    print("Table 2: 联合压缩对比 (Pruning + Quantization)")
+    print("联合压缩开发诊断 (Pruning + Quantization)")
     print(f"模型: {args.model} | 数据集: {args.dataset}")
     print("=" * 70)
 
-    model_init, model_family = load_model(args.model, pretrained=True,
-                               checkpoint_path=args.checkpoint, device='cpu',
-                               dataset_name=args.dataset)
+    model_init, model_family = load_model(
+        args.model,
+        pretrained=True,
+        checkpoint_path=args.checkpoint,
+        device="cpu",
+        dataset_name=args.dataset,
+    )
     train_loader, val_loader, task_type = get_data_loaders(
-        args.model, args.dataset, args.batch_size, args.seq_length)
+        args.model, args.dataset, args.batch_size, args.seq_length
+    )
     cached_train = cache_batches(train_loader, args.num_steps, task_type)
     cached_eval = cache_batches(val_loader, args.eval_batches, task_type)
 
@@ -318,11 +348,14 @@ def main():
 
     # 计算所有 importance methods 的 scores
     print("\n[1] 计算 importance scores...")
-    all_methods = list({m['importance'] for m in PRUNING_METHODS})
+    all_methods = list({m["importance"] for m in PRUNING_METHODS})
     model_s = copy.deepcopy(model_init).to(args.device)
     score_cache = compute_scores_by_method(
-        model_s, cached_train, task_type,
-        methods=all_methods, alpha=args.alpha,
+        model_s,
+        cached_train,
+        task_type,
+        methods=all_methods,
+        alpha=args.alpha,
         hvp_batches=args.hvp_batches,
         model_family=model_family,
     )
@@ -332,40 +365,43 @@ def main():
 
     # 构建 2D / protected 变体得分
     score_cache_ext = dict(score_cache)  # 扩展缓存
-    hvp_scores = score_cache.get('second-order-hvp')
-    mag_scores = score_cache.get('magnitude')
+    hvp_scores = score_cache.get("second-order-hvp")
+    mag_scores = score_cache.get("magnitude")
     if hvp_scores is not None and mag_scores is not None:
-        if args.scoring_mode in ('2d', 'all'):
-            score_cache_ext['_2d_combined'] = combine_scores_2d_with_protection(
-                mag_scores, hvp_scores, protection_ratio=args.protection_ratio,
-                alpha=args.alpha)
-            print(f"  2D combined scores computed (alpha={args.alpha}, protection={args.protection_ratio:.2%})")
-        if args.scoring_mode in ('protected', 'all'):
+        if args.scoring_mode in ("2d", "all"):
+            score_cache_ext["_2d_combined"] = combine_scores_2d_with_protection(
+                mag_scores, hvp_scores, protection_ratio=args.protection_ratio, alpha=args.alpha
+            )
+            print(
+                f"  2D combined scores computed (alpha={args.alpha}, protection={args.protection_ratio:.2%})"
+            )
+        if args.scoring_mode in ("protected", "all"):
             weights_cpu = {n: p.detach().cpu() for n, p in model_init.named_parameters()}
             prunable_w = filter_prunable_params(weights_cpu)
-            score_cache_ext['_protected'] = apply_magnitude_protection(
-                hvp_scores, prunable_w, protection_ratio=args.protection_ratio)
+            score_cache_ext["_protected"] = apply_magnitude_protection(
+                hvp_scores, prunable_w, protection_ratio=args.protection_ratio
+            )
             del weights_cpu, prunable_w
             print(f"  Protected scores computed (protection={args.protection_ratio:.2%})")
         # Magnitude+DA: magnitude 层内剪枝 + HVP 层间分配
-        if args.scoring_mode in ('2d', 'all'):
-            score_cache_ext['_mag_da'] = mag_scores
+        if args.scoring_mode in ("2d", "all"):
+            score_cache_ext["_mag_da"] = mag_scores
             print("  Magnitude+DA scores ready (mag intra-layer, HVP allocation)")
 
     # 确定本次运行的方法集
     active_methods = list(PRUNING_METHODS)
-    if args.scoring_mode in ('2d', 'all') and '_2d_combined' in score_cache_ext:
+    if args.scoring_mode in ("2d", "all") and "_2d_combined" in score_cache_ext:
         active_methods.append(EXTRA_METHODS_2D[0])  # Ours (2D)
-    if args.scoring_mode in ('protected', 'all') and '_protected' in score_cache_ext:
+    if args.scoring_mode in ("protected", "all") and "_protected" in score_cache_ext:
         active_methods.append(EXTRA_METHODS_2D[1])  # Ours (Protected)
-    if args.scoring_mode in ('2d', 'all') and '_mag_da' in score_cache_ext:
+    if args.scoring_mode in ("2d", "all") and "_mag_da" in score_cache_ext:
         active_methods.append(EXTRA_METHODS_2D[2])  # Magnitude+DA
 
     # 释放不需要的 score 缓存以节省内存（cgroup ~32GB 限制）
-    needed_keys = {m['importance'] for m in active_methods}
+    needed_keys = {m["importance"] for m in active_methods}
     # gamma-adaptive allocation 需要 second-order-hvp
-    if any(m['importance'] in ('_2d_combined', '_protected', '_mag_da') for m in active_methods):
-        needed_keys.add('second-order-hvp')
+    if any(m["importance"] in ("_2d_combined", "_protected", "_mag_da") for m in active_methods):
+        needed_keys.add("second-order-hvp")
     for key in list(score_cache_ext.keys()):
         if key not in needed_keys:
             del score_cache_ext[key]
@@ -374,117 +410,177 @@ def main():
     for key in list(score_cache.keys()):
         if key not in needed_keys:
             del score_cache[key]
-    import gc; gc.collect()
+    import gc
+
+    gc.collect()
 
     results = []
 
     # Quantization only (no pruning)
     print("\n[2] Quantization only...")
-    for qt, ql in [('int4', 'INT4'), ('kmeans', 'KMeans-256')]:
-        r = run_single_config(model_init, None, 0.0,
-                              {'label': f'Quant-only ({ql})', 'allocation': 'uniform'},
-                              cached_eval, task_type, args.device,
-                              quantize=True, quant_type=qt)
-        r['mode'] = 'quant-only'
+    for qt, ql in [("int4", "INT4"), ("kmeans", "KMeans-256")]:
+        r = run_single_config(
+            model_init,
+            None,
+            0.0,
+            {"label": f"Quant-only ({ql})", "allocation": "uniform"},
+            cached_eval,
+            task_type,
+            args.device,
+            quantize=True,
+            quant_type=qt,
+        )
+        r["mode"] = "quant-only"
         results.append(r)
-        print(f"  {ql} only: CR={r['compression_ratio']:.1f}x | "
-              + " | ".join(f"{k}={v:.4f}" for k, v in r.items()
-                           if isinstance(v, float) and k != 'compression_ratio'))
+        print(
+            f"  {ql} only: CR={r['compression_ratio']:.1f}x | "
+            + " | ".join(
+                f"{k}={v:.4f}"
+                for k, v in r.items()
+                if isinstance(v, float) and k != "compression_ratio"
+            )
+        )
 
     # For each method × ratio × (pruning-only, joint-INT4, joint-KMeans)
     print("\n[3] Pruning + Joint experiments...")
     for method in active_methods:
-        imp_key = method['importance']
+        imp_key = method["importance"]
         # 2D/protected/mag_da 层间分配用原始 damage score，层内用各自得分
-        if imp_key in ('_2d_combined', '_protected', '_mag_da'):
+        if imp_key in ("_2d_combined", "_protected", "_mag_da"):
             scores = score_cache_ext[imp_key]
-            alloc_scores = score_cache_ext.get('second-order-hvp', scores)
+            alloc_scores = score_cache_ext.get("second-order-hvp", scores)
         else:
             scores = score_cache_ext[imp_key]
             alloc_scores = scores
         for ratio in prune_ratios:
             # Pruning only
             r_prune = run_single_config(
-                model_init, scores, ratio, method,
-                cached_eval, task_type, args.device, quantize=False,
-                alloc_scores=alloc_scores if alloc_scores is not scores else None)
-            r_prune['mode'] = 'prune-only'
+                model_init,
+                scores,
+                ratio,
+                method,
+                cached_eval,
+                task_type,
+                args.device,
+                quantize=False,
+                alloc_scores=alloc_scores if alloc_scores is not scores else None,
+            )
+            r_prune["mode"] = "prune-only"
             results.append(r_prune)
 
             # Joint: pruning + INT4
             r_int4 = run_single_config(
-                model_init, scores, ratio, method,
-                cached_eval, task_type, args.device,
-                quantize=True, quant_type='int4',
-                alloc_scores=alloc_scores if alloc_scores is not scores else None)
-            r_int4['mode'] = 'joint'
+                model_init,
+                scores,
+                ratio,
+                method,
+                cached_eval,
+                task_type,
+                args.device,
+                quantize=True,
+                quant_type="int4",
+                alloc_scores=alloc_scores if alloc_scores is not scores else None,
+            )
+            r_int4["mode"] = "joint"
             results.append(r_int4)
 
             # Joint: pruning + KMeans-256
             r_km = run_single_config(
-                model_init, scores, ratio, method,
-                cached_eval, task_type, args.device,
-                quantize=True, quant_type='kmeans',
-                alloc_scores=alloc_scores if alloc_scores is not scores else None)
-            r_km['mode'] = 'joint'
+                model_init,
+                scores,
+                ratio,
+                method,
+                cached_eval,
+                task_type,
+                args.device,
+                quantize=True,
+                quant_type="kmeans",
+                alloc_scores=alloc_scores if alloc_scores is not scores else None,
+            )
+            r_km["mode"] = "joint"
             results.append(r_km)
 
-            print(f"  {method['label']:30s} | prune={ratio:.0%} | "
-                  f"P-only CR={r_prune['compression_ratio']:.1f}x | "
-                  f"INT4 CR={r_int4['compression_ratio']:.1f}x | "
-                  f"KMeans CR={r_km['compression_ratio']:.1f}x")
+            print(
+                f"  {method['label']:30s} | prune={ratio:.0%} | "
+                f"P-only CR={r_prune['compression_ratio']:.1f}x | "
+                f"INT4 CR={r_int4['compression_ratio']:.1f}x | "
+                f"KMeans CR={r_km['compression_ratio']:.1f}x"
+            )
 
     # 增量保存 Phase 3 结果（防止后续阶段崩溃丢失数据）
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    save_results(results, str(output_dir),
-                 f"joint_compression_{args.model}_{args.dataset}_phase3",
-                 vars(args))
+    save_results(
+        results,
+        str(output_dir),
+        f"joint_compression_{args.model}_{args.dataset}_phase3",
+        vars(args),
+    )
     print(f"  [Phase 3 保存完毕: {len(results)} 条结果]")
 
-    # 释放 score cache 腾出内存给端到端 baseline
+    # 释放 score cache 腾出内存给首次检查点 style 诊断
     del score_cache, score_cache_ext
-    import gc; gc.collect()
+    import gc
+
+    gc.collect()
 
     if not args.skip_e2e:
-        # [4] ExCP end-to-end
-        print("\n[4] ExCP 端到端压缩...")
-        for prune_frac in prune_ratios:
-            r_excp = run_excp_e2e(model_init, cached_train, cached_eval, task_type,
-                                  args.device, prune_frac, args.num_steps)
-            r_excp['mode'] = 'excp-e2e'
-            results.append(r_excp)
-            print(f"  ExCP (prune≈{prune_frac:.0%}) | CR={r_excp['compression_ratio']:.1f}x | "
-                  + " | ".join(f"{k}={v:.4f}" for k, v in r_excp.items()
-                               if isinstance(v, float) and k not in ('compression_ratio', 'prune_ratio', 'actual_prune_ratio')))
+        # [4] ExCP first-checkpoint style diagnostic. Its thresholds do not expose
+        # a target sparsity, so one run must not be relabeled as a ratio sweep.
+        print("\n[4] ExCP 首次检查点 style 诊断...")
+        r_excp = run_excp_first_checkpoint_diagnostic(
+            model_init,
+            cached_eval,
+            task_type,
+            args.device,
+        )
+        r_excp["mode"] = "excp-first-checkpoint-diagnostic"
+        results.append(r_excp)
+        print(
+            f"  ExCP (measured prune={r_excp['actual_prune_ratio']:.1%}) | "
+            f"CR={r_excp['compression_ratio']:.1f}x"
+        )
 
-        # [5] Inshrinkerator end-to-end
-        print("\n[5] Inshrinkerator 端到端压缩...")
+        # [5] Inshrinkerator first-checkpoint style diagnostic
+        print("\n[5] Inshrinkerator 首次检查点 style 诊断...")
         for prune_frac in prune_ratios:
-            r_inshrink = run_inshrinkerator_e2e(
-                model_init, cached_train, cached_eval, task_type,
-                args.device, prune_frac, args.num_steps)
-            r_inshrink['mode'] = 'inshrinkerator-e2e'
+            r_inshrink = run_inshrinkerator_first_checkpoint_diagnostic(
+                model_init,
+                cached_train,
+                cached_eval,
+                task_type,
+                args.device,
+                prune_frac,
+                args.num_steps,
+            )
+            r_inshrink["mode"] = "inshrinkerator-first-checkpoint-diagnostic"
             results.append(r_inshrink)
-            print(f"  Inshrinkerator (prune={prune_frac:.0%}) | CR={r_inshrink['compression_ratio']:.1f}x | "
-                  + " | ".join(f"{k}={v:.4f}" for k, v in r_inshrink.items()
-                               if isinstance(v, float) and k not in ('compression_ratio', 'prune_ratio', 'actual_prune_ratio')))
+            print(
+                f"  Inshrinkerator (prune={prune_frac:.0%}) | CR={r_inshrink['compression_ratio']:.1f}x | "
+                + " | ".join(
+                    f"{k}={v:.4f}"
+                    for k, v in r_inshrink.items()
+                    if isinstance(v, float)
+                    and k not in ("compression_ratio", "prune_ratio", "actual_prune_ratio")
+                )
+            )
     else:
-        print("\n[4-5] 跳过 ExCP / Inshrinkerator 端到端（--skip_e2e）")
+        print("\n[4-5] 跳过 ExCP / Inshrinkerator 首次检查点 style 诊断（--skip_e2e）")
 
     # Save
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    save_results(results, str(output_dir),
-                 f"joint_compression_{args.model}_{args.dataset}",
-                 vars(args))
+    save_results(
+        results, str(output_dir), f"joint_compression_{args.model}_{args.dataset}", vars(args)
+    )
 
     print("\n" + "=" * 70)
     print("Results:")
-    print_results_table(results,
-        ['method', 'prune_ratio', 'quantize', 'compression_ratio', 'loss', 'perplexity'])
+    print_results_table(
+        results, ["method", "prune_ratio", "quantize", "compression_ratio", "loss", "perplexity"]
+    )
     print("\n完成！")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

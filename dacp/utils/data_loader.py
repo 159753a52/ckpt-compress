@@ -5,8 +5,9 @@
 """
 
 from contextlib import contextmanager
+from pathlib import Path
 from threading import RLock
-from typing import Dict, Iterator, Mapping, NamedTuple, Optional, Sequence, Tuple
+from typing import Dict, Iterator, Mapping, Optional, Sequence, Tuple
 
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
@@ -15,20 +16,18 @@ from torchvision import datasets, transforms
 try:
     from datasets import load_dataset
     from transformers import GPT2Tokenizer
+
     HAS_HF = True
 except ImportError:
     HAS_HF = False
 
-# GPT-2 tokenizer 本地 fallback 路径（离线服务器用）
-_GPT2_TOKENIZER_FALLBACKS = [
-    '/root/ckpt-compress/data/models/gpt2-medium',  # V100 server
-    '/lihongliang/fangzl/ckpt-compress/models/gpt2_tokenizer',
-]
+from dacp.utils.paths import model_root
 
-class _DiskUsage(NamedTuple):
-    total: int
-    used: int
-    free: int
+
+def _gpt2_tokenizer_fallbacks() -> list[str]:
+    """Return portable local tokenizer candidates in preference order."""
+    configured = model_root()
+    return [str(configured / "gpt2-medium"), str(configured / "gpt2")]
 
 
 _DISK_USAGE_OVERRIDE_LOCK = RLock()
@@ -41,7 +40,17 @@ def _nfs_disk_space_override() -> Iterator[None]:
 
     with _DISK_USAGE_OVERRIDE_LOCK:
         original_disk_usage = shutil.disk_usage
-        shutil.disk_usage = lambda _path: _DiskUsage(1 << 40, 0, 1 << 40)
+        fake_usage = original_disk_usage(Path.cwd())._replace(
+            total=1 << 40,
+            used=0,
+            free=1 << 40,
+        )
+
+        def relaxed_disk_usage(path):
+            del path
+            return fake_usage
+
+        shutil.disk_usage = relaxed_disk_usage
         try:
             yield
         finally:
@@ -53,39 +62,36 @@ def _apply_subset(dataset: Dataset, limit: Optional[int], name: str) -> Dataset:
     if limit is None:
         return dataset
     if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
-        raise ValueError(
-            f"{name} must be None or a non-negative integer, got {limit}"
-        )
+        raise ValueError(f"{name} must be None or a non-negative integer, got {limit}")
     return Subset(dataset, list(range(min(limit, len(dataset)))))
 
 
 def _load_gpt2_tokenizer():
     """加载 GPT-2 tokenizer，支持多路径 fallback。"""
     if not HAS_HF:
-        raise ImportError(
-            "HuggingFace transformers is required to load the GPT-2 tokenizer"
-        )
+        raise ImportError("HuggingFace transformers is required to load the GPT-2 tokenizer")
     import os
+
     # 优先从本地路径加载（避免在线版本兼容性问题）
-    for path in _GPT2_TOKENIZER_FALLBACKS:
+    for path in _gpt2_tokenizer_fallbacks():
         if os.path.isdir(path):
             try:
                 tok = GPT2Tokenizer.from_pretrained(path)
                 # 验证tokenizer能正常工作
-                test = tok.encode('hello')
+                test = tok.encode("hello")
                 if len(test) > 0:
                     return tok
             except Exception:
                 pass
     try:
-        return GPT2Tokenizer.from_pretrained('gpt2', local_files_only=True)
+        return GPT2Tokenizer.from_pretrained("gpt2", local_files_only=True)
     except (OSError, ValueError, TypeError):
         pass
     try:
-        return GPT2Tokenizer.from_pretrained('gpt2')
+        return GPT2Tokenizer.from_pretrained("gpt2")
     except (OSError, ValueError, TypeError):
         pass
-    raise RuntimeError('Cannot load GPT-2 tokenizer from any source')
+    raise RuntimeError("Cannot load GPT-2 tokenizer from any source")
 
 
 def get_cifar10_transforms() -> Tuple[transforms.Compose, transforms.Compose]:
@@ -102,17 +108,21 @@ def get_cifar10_transforms() -> Tuple[transforms.Compose, transforms.Compose]:
     mean = (0.4914, 0.4822, 0.4465)
     std = (0.2023, 0.1994, 0.2010)
 
-    train_transform = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ])
+    train_transform = transforms.Compose(
+        [
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    )
 
-    test_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ])
+    test_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    )
 
     return train_transform, test_transform
 
@@ -140,8 +150,8 @@ def _get_cifar_loaders(
         download=download,
         transform=test_transform,
     )
-    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
-    test_dataset = _apply_subset(test_dataset, test_subset, 'test_subset')
+    train_dataset = _apply_subset(train_dataset, train_subset, "train_subset")
+    test_dataset = _apply_subset(test_dataset, test_subset, "test_subset")
     return (
         DataLoader(
             train_dataset,
@@ -234,26 +244,15 @@ class WikiText2Dataset(Dataset):
     """
 
     def __init__(
-        self,
-        texts: list,
-        tokenizer,
-        seq_length: int = 512,
-        max_samples: Optional[int] = None
+        self, texts: list, tokenizer, seq_length: int = 512, max_samples: Optional[int] = None
     ):
-        if (
-            isinstance(seq_length, bool)
-            or not isinstance(seq_length, int)
-            or seq_length < 1
-        ):
+        if isinstance(seq_length, bool) or not isinstance(seq_length, int) or seq_length < 1:
             raise ValueError(f"seq_length must be a positive integer, got {seq_length}")
         if max_samples is not None and (
-            isinstance(max_samples, bool)
-            or not isinstance(max_samples, int)
-            or max_samples < 0
+            isinstance(max_samples, bool) or not isinstance(max_samples, int) or max_samples < 0
         ):
             raise ValueError(
-                "max_samples must be None or a non-negative integer, "
-                f"got {max_samples}"
+                "max_samples must be None or a non-negative integer, " f"got {max_samples}"
             )
 
         self.tokenizer = tokenizer
@@ -280,8 +279,8 @@ class WikiText2Dataset(Dataset):
                 break
 
         # 切分为固定长度的序列
-        for i in range(0, len(tokens) - seq_length, seq_length):
-            input_ids = tokens[i:i + seq_length]
+        for i in range(0, len(tokens) - seq_length + 1, seq_length):
+            input_ids = tokens[i : i + seq_length]
             self.samples.append(input_ids)
 
             if max_samples is not None and len(self.samples) >= max_samples:
@@ -297,15 +296,15 @@ class WikiText2Dataset(Dataset):
         labels = input_ids.clone()
 
         return {
-            'input_ids': input_ids,
-            'attention_mask': attention_mask,
-            'labels': labels,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
         }
 
 
 def _get_wikitext_dataloader(
     dataset_config: str,
-    split: str = 'train',
+    split: str = "train",
     batch_size: int = 8,
     seq_length: int = 512,
     max_samples: Optional[int] = None,
@@ -316,15 +315,12 @@ def _get_wikitext_dataloader(
     """Build either WikiText loader from one shared data path."""
     if not HAS_HF:
         raise ImportError(
-            "需要安装 transformers 和 datasets 库。"
-            "请运行: pip install transformers datasets"
+            "需要安装 transformers 和 datasets 库。" "请运行: pip install transformers datasets"
         )
 
-    valid_splits = ('train', 'validation', 'test')
+    valid_splits = ("train", "validation", "test")
     if split not in valid_splits:
-        raise ValueError(
-            f"Invalid split: {split}. Must be one of {valid_splits}"
-        )
+        raise ValueError(f"Invalid split: {split}. Must be one of {valid_splits}")
 
     tokenizer = _load_gpt2_tokenizer()
 
@@ -335,21 +331,21 @@ def _get_wikitext_dataloader(
             file_path = local_path
         else:
             split_file_map = {
-                'train': 'train.txt',
-                'validation': 'valid.txt',
-                'test': 'test.txt',
+                "train": "train.txt",
+                "validation": "valid.txt",
+                "test": "test.txt",
             }
             file_path = os.path.join(local_path, split_file_map[split])
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Local data file not found: {file_path}")
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             texts = f.readlines()
         print(f"Loaded {len(texts)} lines from local file: {file_path}")
     else:
-        dataset = load_dataset('wikitext', dataset_config, split=split)
-        texts = dataset['text']
+        dataset = load_dataset("wikitext", dataset_config, split=split)
+        texts = dataset["text"]
 
     wiki_dataset = WikiText2Dataset(
         texts=texts,
@@ -359,7 +355,7 @@ def _get_wikitext_dataloader(
     )
 
     if shuffle is None:
-        shuffle = (split == 'train')
+        shuffle = split == "train"
 
     return DataLoader(
         wiki_dataset,
@@ -371,7 +367,7 @@ def _get_wikitext_dataloader(
 
 
 def get_wikitext2_dataloader(
-    split: str = 'train',
+    split: str = "train",
     batch_size: int = 8,
     seq_length: int = 512,
     max_samples: Optional[int] = None,
@@ -399,7 +395,7 @@ def get_wikitext2_dataloader(
         ImportError: 如果 transformers 或 datasets 未安装
     """
     return _get_wikitext_dataloader(
-        dataset_config='wikitext-2-raw-v1',
+        dataset_config="wikitext-2-raw-v1",
         split=split,
         batch_size=batch_size,
         seq_length=seq_length,
@@ -411,7 +407,7 @@ def get_wikitext2_dataloader(
 
 
 def get_wikitext103_dataloader(
-    split: str = 'train',
+    split: str = "train",
     batch_size: int = 8,
     seq_length: int = 512,
     max_samples: Optional[int] = None,
@@ -444,7 +440,7 @@ def get_wikitext103_dataloader(
         ImportError: 如果 transformers 或 datasets 未安装
     """
     return _get_wikitext_dataloader(
-        dataset_config='wikitext-103-raw-v1',
+        dataset_config="wikitext-103-raw-v1",
         split=split,
         batch_size=batch_size,
         seq_length=seq_length,
@@ -469,7 +465,7 @@ class TinyImageNetDataset(Dataset):
     def __init__(
         self,
         root: str,
-        split: str = 'train',
+        split: str = "train",
         transform=None,
         download: bool = False,
     ):
@@ -487,15 +483,14 @@ class TinyImageNetDataset(Dataset):
         self.root = Path(root)
         self.split = split
         self.transform = transform
-        self.data_dir = self.root / 'tiny-imagenet-200'
+        self.data_dir = self.root / "tiny-imagenet-200"
 
         if download:
             self._download()
 
         if not self.data_dir.exists():
             raise RuntimeError(
-                f"Dataset not found at {self.data_dir}. "
-                "Set download=True to download it."
+                f"Dataset not found at {self.data_dir}. " "Set download=True to download it."
             )
 
         # 加载类别映射
@@ -510,8 +505,8 @@ class TinyImageNetDataset(Dataset):
         import urllib.request
         import zipfile
 
-        url = 'http://cs231n.stanford.edu/tiny-imagenet-200.zip'
-        zip_path = self.root / 'tiny-imagenet-200.zip'
+        url = "http://cs231n.stanford.edu/tiny-imagenet-200.zip"
+        zip_path = self.root / "tiny-imagenet-200.zip"
 
         # 创建目录
         self.root.mkdir(parents=True, exist_ok=True)
@@ -527,7 +522,7 @@ class TinyImageNetDataset(Dataset):
             print(f"Downloaded to {zip_path}")
 
             print("Extracting...")
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
                 zip_ref.extractall(self.root)
             print(f"Extracted to {self.data_dir}")
 
@@ -541,12 +536,12 @@ class TinyImageNetDataset(Dataset):
 
     def _load_class_mapping(self):
         """加载类别映射。"""
-        wnids_file = self.data_dir / 'wnids.txt'
+        wnids_file = self.data_dir / "wnids.txt"
         if not wnids_file.exists():
             raise RuntimeError(f"wnids.txt not found at {wnids_file}")
 
         class_to_idx = {}
-        with open(wnids_file, 'r') as f:
+        with open(wnids_file, "r") as f:
             for idx, line in enumerate(f):
                 class_id = line.strip()
                 class_to_idx[class_id] = idx
@@ -557,29 +552,29 @@ class TinyImageNetDataset(Dataset):
         """加载样本路径和标签。"""
         samples = []
 
-        if self.split == 'train':
+        if self.split == "train":
             # 训练集：每个类别一个文件夹
-            train_dir = self.data_dir / 'train'
+            train_dir = self.data_dir / "train"
             for class_id in self.classes:
-                class_dir = train_dir / class_id / 'images'
+                class_dir = train_dir / class_id / "images"
                 if not class_dir.exists():
                     continue
 
                 label = self.class_to_idx[class_id]
-                for img_file in class_dir.glob('*.JPEG'):
+                for img_file in class_dir.glob("*.JPEG"):
                     samples.append((str(img_file), label))
 
-        elif self.split == 'val':
+        elif self.split == "val":
             # 验证集：所有图像在一个文件夹，标签在 annotations 文件中
-            val_dir = self.data_dir / 'val'
-            val_annotations = val_dir / 'val_annotations.txt'
+            val_dir = self.data_dir / "val"
+            val_annotations = val_dir / "val_annotations.txt"
 
             if not val_annotations.exists():
                 raise RuntimeError(f"val_annotations.txt not found at {val_annotations}")
 
-            with open(val_annotations, 'r') as f:
+            with open(val_annotations, "r") as f:
                 for line in f:
-                    parts = line.strip().split('\t')
+                    parts = line.strip().split("\t")
                     if len(parts) < 2:
                         continue
 
@@ -589,7 +584,7 @@ class TinyImageNetDataset(Dataset):
                     if class_id not in self.class_to_idx:
                         continue
 
-                    img_path = val_dir / 'images' / img_name
+                    img_path = val_dir / "images" / img_name
                     label = self.class_to_idx[class_id]
                     samples.append((str(img_path), label))
 
@@ -616,7 +611,7 @@ class TinyImageNetDataset(Dataset):
         img_path, label = self.samples[idx]
 
         # 加载图像
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(img_path).convert("RGB")
 
         # 应用变换
         if self.transform is not None:
@@ -636,17 +631,21 @@ def get_tiny_imagenet_transforms():
     mean = (0.485, 0.456, 0.406)
     std = (0.229, 0.224, 0.225)
 
-    train_transform = transforms.Compose([
-        transforms.RandomCrop(64, padding=8),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ])
+    train_transform = transforms.Compose(
+        [
+            transforms.RandomCrop(64, padding=8),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    )
 
-    val_transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ])
+    val_transform = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    )
 
     return train_transform, val_transform
 
@@ -678,21 +677,21 @@ def get_tiny_imagenet_loaders(
     # 加载数据集
     train_dataset = TinyImageNetDataset(
         root=data_dir,
-        split='train',
+        split="train",
         transform=train_transform,
         download=download,
     )
 
     val_dataset = TinyImageNetDataset(
         root=data_dir,
-        split='val',
+        split="val",
         transform=val_transform,
         download=download,
     )
 
     # 如果指定则应用子集
-    train_dataset = _apply_subset(train_dataset, train_subset, 'train_subset')
-    val_dataset = _apply_subset(val_dataset, val_subset, 'val_subset')
+    train_dataset = _apply_subset(train_dataset, train_subset, "train_subset")
+    val_dataset = _apply_subset(val_dataset, val_subset, "val_subset")
 
     # 创建数据加载器
     train_loader = DataLoader(
@@ -719,15 +718,15 @@ def get_tiny_imagenet_loaders(
 # =============================================================================
 
 _GLUE_TEXT_FIELDS = {
-    'cola': ('sentence',),
-    'sst2': ('sentence',),
-    'mrpc': ('sentence1', 'sentence2'),
-    'qqp': ('question1', 'question2'),
-    'stsb': ('sentence1', 'sentence2'),
-    'mnli': ('premise', 'hypothesis'),
-    'qnli': ('question', 'sentence'),
-    'rte': ('sentence1', 'sentence2'),
-    'wnli': ('sentence1', 'sentence2'),
+    "cola": ("sentence",),
+    "sst2": ("sentence",),
+    "mrpc": ("sentence1", "sentence2"),
+    "qqp": ("question1", "question2"),
+    "stsb": ("sentence1", "sentence2"),
+    "mnli": ("premise", "hypothesis"),
+    "qnli": ("question", "sentence"),
+    "rte": ("sentence1", "sentence2"),
+    "wnli": ("sentence1", "sentence2"),
 }
 
 
@@ -736,11 +735,11 @@ def _glue_text_values(item: Mapping, dataset_name: str) -> Tuple[str, ...]:
     fields = _GLUE_TEXT_FIELDS.get(dataset_name)
     if fields is not None:
         return tuple(item[field] for field in fields)
-    if 'sentence1' in item and 'sentence2' in item:
-        return item['sentence1'], item['sentence2']
-    if 'premise' in item and 'hypothesis' in item:
-        return item['premise'], item['hypothesis']
-    return (item.get('sentence', ''),)
+    if "sentence1" in item and "sentence2" in item:
+        return item["sentence1"], item["sentence2"]
+    if "premise" in item and "hypothesis" in item:
+        return item["premise"], item["hypothesis"]
+    return (item.get("sentence", ""),)
 
 
 class GLUEDataset(Dataset):
@@ -759,14 +758,14 @@ class GLUEDataset(Dataset):
         item = self.dataset[idx]
         inputs = self.tokenizer(
             *_glue_text_values(item, self.dataset_name),
-            padding='max_length',
+            padding="max_length",
             truncation=True,
             max_length=self.max_length,
-            return_tensors='pt',
+            return_tensors="pt",
         )
-        label_dtype = torch.float32 if self.dataset_name == 'stsb' else torch.long
+        label_dtype = torch.float32 if self.dataset_name == "stsb" else torch.long
         encoded = {key: value.squeeze(0) for key, value in inputs.items()}
-        encoded['labels'] = torch.tensor(item['label'], dtype=label_dtype)
+        encoded["labels"] = torch.tensor(item["label"], dtype=label_dtype)
         return encoded
 
 
@@ -818,30 +817,32 @@ def get_glue_dataloader(
         DataLoader: 数据加载器
     """
     if not HAS_HF:
-        raise ImportError("HuggingFace datasets and transformers are required. "
-                         "Install with: pip install datasets transformers")
+        raise ImportError(
+            "HuggingFace datasets and transformers are required. "
+            "Install with: pip install datasets transformers"
+        )
 
     from datasets import load_dataset
     from transformers import AutoTokenizer
 
     # 绕过 NFS 磁盘空间检查误报（df 显示 100% 但实际有空间）
     with _nfs_disk_space_override():
-        dataset = load_dataset('glue', dataset_name, cache_dir=data_dir, split=split)
+        dataset = load_dataset("glue", dataset_name, cache_dir=data_dir, split=split)
 
     # 加载 tokenizer（使用 BERT tokenizer）
-    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
     # 创建数据集
     glue_dataset = GLUEDataset(dataset, tokenizer, dataset_name, max_length)
 
     # 应用子集
-    glue_dataset = _apply_subset(glue_dataset, subset, 'subset')
+    glue_dataset = _apply_subset(glue_dataset, subset, "subset")
 
     # 创建数据加载器
     dataloader = DataLoader(
         glue_dataset,
         batch_size=batch_size,
-        shuffle=(split == 'train'),
+        shuffle=(split == "train"),
         num_workers=num_workers,
         pin_memory=True,
     )
@@ -874,8 +875,8 @@ def get_sst2_loaders(
         (train_loader, val_loader) 元组
     """
     train_loader, val_loader = _get_glue_split_loaders(
-        'sst2',
-        (('train', train_subset), ('validation', val_subset)),
+        "sst2",
+        (("train", train_subset), ("validation", val_subset)),
         batch_size,
         data_dir,
         max_length,
@@ -912,19 +913,17 @@ def get_mnli_loaders(
     返回:
         (train_loader, val_matched_loader, val_mismatched_loader) 元组
     """
-    train_loader, val_matched_loader, val_mismatched_loader = (
-        _get_glue_split_loaders(
-            'mnli',
-            (
-                ('train', train_subset),
-                ('validation_matched', val_matched_subset),
-                ('validation_mismatched', val_mismatched_subset),
-            ),
-            batch_size,
-            data_dir,
-            max_length,
-            num_workers,
-        )
+    train_loader, val_matched_loader, val_mismatched_loader = _get_glue_split_loaders(
+        "mnli",
+        (
+            ("train", train_subset),
+            ("validation_matched", val_matched_subset),
+            ("validation_mismatched", val_mismatched_subset),
+        ),
+        batch_size,
+        data_dir,
+        max_length,
+        num_workers,
     )
 
     return train_loader, val_matched_loader, val_mismatched_loader
@@ -955,8 +954,8 @@ def get_stsb_loaders(
         (train_loader, val_loader) 元组
     """
     train_loader, val_loader = _get_glue_split_loaders(
-        'stsb',
-        (('train', train_subset), ('validation', val_subset)),
+        "stsb",
+        (("train", train_subset), ("validation", val_subset)),
         batch_size,
         data_dir,
         max_length,

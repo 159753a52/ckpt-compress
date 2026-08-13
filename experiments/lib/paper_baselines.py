@@ -71,9 +71,7 @@ def resolve_method_contracts(names: Sequence[str]) -> list[MethodContract]:
         raise ValueError(f"Duplicate paper methods: {duplicates}")
     unknown = [name for name in names if name not in METHOD_CONTRACTS]
     if unknown:
-        raise ValueError(
-            f"Unknown paper methods {unknown}; available={sorted(METHOD_CONTRACTS)}"
-        )
+        raise ValueError(f"Unknown paper methods {unknown}; available={sorted(METHOD_CONTRACTS)}")
     return [METHOD_CONTRACTS[name] for name in names]
 
 
@@ -85,15 +83,20 @@ def validate_claim_gate(
     required = gate.get("required_baseline_fidelity", "style")
     if required not in {"style", "full"}:
         raise ValueError(f"Unsupported required_baseline_fidelity: {required}")
-    owners = set(gate.get("baseline_owners", ()))
+    raw_owners = gate.get("baseline_owners", ())
+    if not isinstance(raw_owners, list) or not all(
+        isinstance(owner, str) and owner for owner in raw_owners
+    ):
+        raise ValueError("baseline_owners must be a list of non-empty strings")
+    owners = set(raw_owners)
+    if len(owners) != len(raw_owners):
+        raise ValueError("baseline_owners must not contain duplicates")
     baselines = [contract for contract in contracts if contract.owner in owners]
     missing = owners - {contract.owner for contract in baselines}
     if missing:
         raise ValueError(f"Claim gate is missing baselines: {sorted(missing)}")
     if required == "full":
-        incomplete = [
-            contract.name for contract in baselines if contract.fidelity != "full"
-        ]
+        incomplete = [contract.name for contract in baselines if contract.fidelity != "full"]
         if incomplete:
             raise ValueError(
                 "Full-baseline claim requires full implementations; style adapters "

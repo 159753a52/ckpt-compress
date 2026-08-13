@@ -15,11 +15,7 @@ import experiments.lib.residual_long_config as long_config
 import experiments.lib.residual_method_assembly as method_assembly
 import experiments.scripts.run_residual_recovery_long as long_runner
 from experiments.lib.residual_masks import layer_masks, layer_score_orders
-from experiments.lib.residual_methods import (
-    build_masks,
-    quantile_method_id,
-    spectral_method_id,
-)
+from experiments.lib.residual_methods import build_masks, quantile_method_id, spectral_method_id
 from experiments.lib.residual_protocol import FIXED_METHODS, NO_COMPRESSION_METHOD
 from experiments.lib.residual_training import partition_seed_batches
 
@@ -32,10 +28,7 @@ class TinyLongRunModel(torch.nn.Module):
 
 
 def clone_parameters(model: torch.nn.Module) -> dict[str, torch.Tensor]:
-    return {
-        name: parameter.detach().cpu().clone()
-        for name, parameter in model.named_parameters()
-    }
+    return {name: parameter.detach().cpu().clone() for name, parameter in model.named_parameters()}
 
 
 class TestResidualLongRunner(unittest.TestCase):
@@ -62,9 +55,7 @@ class TestResidualLongRunner(unittest.TestCase):
         if isinstance(expected, (list, tuple)):
             self.assertIsInstance(actual, type(expected), path)
             self.assertEqual(len(actual), len(expected), path)
-            for index, (actual_item, expected_item) in enumerate(
-                zip(actual, expected)
-            ):
+            for index, (actual_item, expected_item) in enumerate(zip(actual, expected)):
                 self.assert_nested_state_equal(
                     actual_item,
                     expected_item,
@@ -146,8 +137,7 @@ class TestResidualLongRunner(unittest.TestCase):
 
         template = TinyLongRunModel()
         reference_state = {
-            name: value.detach().clone()
-            for name, value in template.state_dict().items()
+            name: value.detach().clone() for name, value in template.state_dict().items()
         }
         reference_optimizer = torch.optim.AdamW(
             template.parameters(),
@@ -243,12 +233,8 @@ class TestResidualLongRunner(unittest.TestCase):
                     parameter.grad = torch.full_like(parameter, 0.25 * index)
                 optimizer.step()
                 scheduler.step()
-                post_step_optimizer_state.update(
-                    copy.deepcopy(optimizer.state_dict())
-                )
-                post_step_scheduler_state.update(
-                    copy.deepcopy(scheduler.state_dict())
-                )
+                post_step_optimizer_state.update(copy.deepcopy(optimizer.state_dict()))
+                post_step_scheduler_state.update(copy.deepcopy(scheduler.state_dict()))
                 with torch.no_grad():
                     for parameter in model.parameters():
                         parameter.fill_(1.0)
@@ -258,8 +244,7 @@ class TestResidualLongRunner(unittest.TestCase):
                 "steps": len(batches),
                 "seconds": 0.0,
                 "train_losses": [0.0] * len(batches),
-                "learning_rates": [float(optimizer.param_groups[0]["lr"])]
-                * len(batches),
+                "learning_rates": [float(optimizer.param_groups[0]["lr"])] * len(batches),
             }
 
         def scoring_side_effect(
@@ -327,39 +312,49 @@ class TestResidualLongRunner(unittest.TestCase):
             reference_optimizer_state=reference_optimizer_state,
         )
 
-        with mock.patch.object(
-            long_runner,
-            "evaluate_lm",
-            side_effect=evaluate_side_effect,
-        ), mock.patch.object(
-            long_runner,
-            "train_segment",
-            side_effect=train_side_effect,
-        ), mock.patch.object(
-            long_runner,
-            "eligible_layers",
-            side_effect=lambda model: events.append("eligible") or layers,
-        ), mock.patch.object(
-            long_runner,
-            "compute_block_taylor_scores",
-            side_effect=scoring_side_effect,
-        ), mock.patch.object(
-            method_assembly,
-            "calibrate_trust_region_allocation",
-            side_effect=trust_side_effect,
-        ), mock.patch.object(
-            method_assembly,
-            "calibrate_spectral_allocation",
-            side_effect=spectral_side_effect,
-        ), mock.patch.object(
-            method_assembly,
-            "calibrate_quantile_smooth_allocation",
-            side_effect=quantile_side_effect,
-        ), mock.patch.object(
-            long_runner,
-            "write_json",
-            side_effect=write_side_effect,
-        ), redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(
+                long_runner,
+                "evaluate_lm",
+                side_effect=evaluate_side_effect,
+            ),
+            mock.patch.object(
+                long_runner,
+                "train_segment",
+                side_effect=train_side_effect,
+            ),
+            mock.patch.object(
+                long_runner,
+                "eligible_layers",
+                side_effect=lambda model: events.append("eligible") or layers,
+            ),
+            mock.patch.object(
+                long_runner,
+                "compute_block_taylor_scores",
+                side_effect=scoring_side_effect,
+            ),
+            mock.patch.object(
+                method_assembly,
+                "calibrate_trust_region_allocation",
+                side_effect=trust_side_effect,
+            ),
+            mock.patch.object(
+                method_assembly,
+                "calibrate_spectral_allocation",
+                side_effect=spectral_side_effect,
+            ),
+            mock.patch.object(
+                method_assembly,
+                "calibrate_quantile_smooth_allocation",
+                side_effect=quantile_side_effect,
+            ),
+            mock.patch.object(
+                long_runner,
+                "write_json",
+                side_effect=write_side_effect,
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
             result = long_runner.run_seed(context, seed, seed_index=1, seed_count=1)
 
         self.assertIsNone(result)

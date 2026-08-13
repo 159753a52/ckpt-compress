@@ -8,6 +8,8 @@ Reproduces the core pruning allocation idea from the Inshrinkerator paper:
 
 import json
 import logging
+import os
+import uuid
 from dataclasses import dataclass, field, asdict
 from itertools import product
 from pathlib import Path
@@ -373,8 +375,16 @@ def save_search_result(result: SearchResult, output_dir: str, name: str) -> str:
     out.mkdir(parents=True, exist_ok=True)
     path = out / f"{name}.json"
     data = asdict(result)
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2, default=str)
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("x", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
     return str(path)
 
 

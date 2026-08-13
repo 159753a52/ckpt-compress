@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Dict, List, Mapping, Sequence, Tuple
 
 import torch
 import torch.nn as nn
 
-from dacp.pruning.masks import (
-    exact_keep_mask as _exact_keep_mask,
-    validate_prune_count,
-)
-
+from dacp.pruning.masks import exact_keep_mask as _exact_keep_mask
+from dacp.pruning.masks import validate_prune_count
 
 TensorDict = Dict[str, torch.Tensor]
 MaskDict = Dict[str, torch.Tensor]
+_GLOBAL_SELECTION_CHUNK_ELEMENTS = 1 << 20
+_FLOAT32_KEY_MASK = (1 << 32) - 1
 
 
 def exact_keep_mask(values: torch.Tensor, prune_count: int) -> torch.Tensor:
@@ -47,9 +47,7 @@ def layer_score_orders(
     for names in layers:
         if not names:
             raise ValueError("Structural layers must be non-empty")
-        flat_scores = torch.cat(
-            [scores[name].detach().float().flatten().cpu() for name in names]
-        )
+        flat_scores = torch.cat([scores[name].detach().float().flatten().cpu() for name in names])
         if flat_scores.numel() == 0:
             raise ValueError("Structural layers must contain at least one score")
         if not torch.isfinite(flat_scores).all().item():
@@ -124,7 +122,135 @@ def global_mask(
     scores: Mapping[str, torch.Tensor],
     prune_count: int,
 ) -> MaskDict:
-    return layer_mask_at_count(names, scores, prune_count)
+    """Build an exact global mask without concatenating all model scores.
+
+    Float32 scores are mapped to monotonic integer keys. Two histogram passes
+    locate the exact 32-bit threshold, and a final pass resolves threshold ties
+    in ``names``/flattened-index order. Peak temporary memory is bounded by one
+    fixed-size score chunk rather than the total eligible parameter count.
+    """
+    if not names:
+        raise ValueError("Global mask names must be non-empty")
+    if len(set(names)) != len(names):
+        raise ValueError("Global mask names must be unique")
+    total = sum(scores[name].numel() for name in names)
+    if total == 0:
+        raise ValueError("Global mask must contain at least one score")
+    prune_count = validate_prune_count(prune_count, total)
+
+    high_histogram = torch.zeros(1 << 16, dtype=torch.int64)
+    for name in names:
+        for keys in _ordered_score_key_chunks(scores[name]):
+            high_histogram += torch.bincount(keys >> 16, minlength=1 << 16)
+
+    if prune_count == 0 or prune_count == total:
+        keep_value = prune_count == 0
+        return {
+            name: torch.full_like(scores[name], keep_value, dtype=torch.bool, device="cpu")
+            for name in names
+        }
+
+    high_bucket, before_high = _bucket_for_rank(high_histogram, prune_count)
+    low_histogram = torch.zeros(1 << 16, dtype=torch.int64)
+    for name in names:
+        for keys in _ordered_score_key_chunks(scores[name]):
+            in_bucket = (keys >> 16) == high_bucket
+            if in_bucket.any().item():
+                low_histogram += torch.bincount(
+                    keys[in_bucket] & 0xFFFF,
+                    minlength=1 << 16,
+                )
+    low_bucket, before_low = _bucket_for_rank(
+        low_histogram,
+        prune_count - before_high,
+    )
+    threshold_key = (high_bucket << 16) | low_bucket
+    strictly_lower = before_high + before_low
+    ties_to_prune = prune_count - strictly_lower
+
+    masks: MaskDict = {}
+    remaining_ties = ties_to_prune
+    for name in names:
+        score = scores[name]
+        flat_keep = torch.ones(score.numel(), dtype=torch.bool)
+        offset = 0
+        for keys in _ordered_score_key_chunks(score):
+            remove = keys < threshold_key
+            if remaining_ties:
+                tied = torch.nonzero(keys == threshold_key, as_tuple=False).flatten()
+                take = min(remaining_ties, tied.numel())
+                if take:
+                    remove[tied[:take]] = True
+                    remaining_ties -= take
+            flat_keep[offset : offset + keys.numel()] = ~remove
+            offset += keys.numel()
+        masks[name] = flat_keep.view_as(score)
+    if remaining_ties:
+        raise RuntimeError("Global threshold tie handling did not meet the prune budget")
+    return masks
+
+
+def _ordered_score_key_chunks(
+    values: torch.Tensor,
+    chunk_elements: int | None = None,
+) -> Iterator[torch.Tensor]:
+    """Yield order-preserving float32 bit keys for bounded-size CPU chunks."""
+    if chunk_elements is None:
+        chunk_elements = _GLOBAL_SELECTION_CHUNK_ELEMENTS
+    if (
+        isinstance(chunk_elements, bool)
+        or not isinstance(chunk_elements, int)
+        or chunk_elements < 1
+    ):
+        raise ValueError("chunk_elements must be a positive integer")
+    for value_chunk in _ordered_value_chunks(values.detach(), chunk_elements):
+        chunk = value_chunk.to(
+            device="cpu",
+            dtype=torch.float32,
+        ).contiguous()
+        if not torch.isfinite(chunk).all().item():
+            raise ValueError("Mask scores must be finite")
+        bits = chunk.view(torch.int32).to(torch.int64) & _FLOAT32_KEY_MASK
+        negative = (bits & (1 << 31)) != 0
+        keys = torch.where(
+            negative,
+            (~bits) & _FLOAT32_KEY_MASK,
+            bits ^ (1 << 31),
+        )
+        # The existing comparator treats signed zeros as one stable tie group.
+        keys[chunk == 0] = 1 << 31
+        yield keys
+
+
+def _ordered_value_chunks(
+    values: torch.Tensor,
+    chunk_elements: int,
+) -> Iterator[torch.Tensor]:
+    """Yield logical C-order views/copies without flattening a whole strided tensor."""
+    if values.numel() == 0:
+        return
+    if values.numel() <= chunk_elements:
+        yield values.reshape(-1)
+        return
+
+    # Slice the outermost dimension until any reshape copy is bounded by one
+    # chunk. Recursing preserves the same order as ``values.reshape(-1)``.
+    trailing_elements = values[0].numel()
+    if trailing_elements <= chunk_elements:
+        rows_per_chunk = max(1, chunk_elements // trailing_elements)
+        for offset in range(0, values.shape[0], rows_per_chunk):
+            yield values[offset : offset + rows_per_chunk].reshape(-1)
+        return
+    for index in range(values.shape[0]):
+        yield from _ordered_value_chunks(values[index], chunk_elements)
+
+
+def _bucket_for_rank(histogram: torch.Tensor, rank: int) -> tuple[int, int]:
+    """Return the bucket containing one-based ``rank`` and count before it."""
+    cumulative = histogram.cumsum(0)
+    bucket = int(torch.searchsorted(cumulative, torch.tensor(rank)).item())
+    before = 0 if bucket == 0 else int(cumulative[bucket - 1].item())
+    return bucket, before
 
 
 def mask_metrics(
@@ -205,12 +331,10 @@ def cache_mask_states_on_device(
 ) -> Tuple[TensorDict, TensorDict]:
     """Transfer mask-selectable states once for repeated whole-model probes."""
     current_device = {
-        name: current_state[name].to(device, non_blocking=True, copy=True)
-        for name in names
+        name: current_state[name].to(device, non_blocking=True, copy=True) for name in names
     }
     reference_device = {
-        name: reference_state[name].to(device, non_blocking=True, copy=True)
-        for name in names
+        name: reference_state[name].to(device, non_blocking=True, copy=True) for name in names
     }
     return current_device, reference_device
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import gc
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -43,7 +43,7 @@ def continue_training(
     learning_rate: float,
     seed: int,
     device: str,
-) -> Dict[str, object]:
+) -> Dict[str, Any]:
     """Run an explicit, matched continuation trajectory after restoration."""
     set_seed(seed)
     optimizer = torch.optim.AdamW(
@@ -89,7 +89,7 @@ def main() -> None:
     started_at = datetime.now(timezone.utc)
     run_name = started_at.strftime("%Y%m%d_%H%M%S") + f"_p{args.prune_ratio:.2f}"
     output_path = args.output_dir / f"{run_name}.json"
-    results: Dict[str, object] = {
+    results: Dict[str, Any] = {
         "status": "started",
         "started_at": started_at.isoformat(),
         "config": {
@@ -214,8 +214,7 @@ def main() -> None:
         )
         write_json(output_path, results)
         print(
-            f"  {method:28s} PPL={metrics['perplexity']:.4f} "
-            f"loss={metrics['loss']:.6f}",
+            f"  {method:28s} PPL={metrics['perplexity']:.4f} " f"loss={metrics['loss']:.6f}",
             flush=True,
         )
 
@@ -225,19 +224,17 @@ def main() -> None:
             flush=True,
         )
         optimizer_state = checkpoint_optimizer_state(args.current_checkpoint)
-        trajectories: List[Tuple[str, MaskDict | None]] = [
-            (NO_COMPRESSION_METHOD, None)
-        ]
+        trajectories: List[Tuple[str, MaskDict | None]] = [(NO_COMPRESSION_METHOD, None)]
         trajectories.extend(masks.items())
-        for method, method_masks in trajectories:
-            if method_masks is None:
+        for method, continuation_masks in trajectories:
+            if continuation_masks is None:
                 model.load_state_dict(current_state, strict=True)
             else:
                 restore_with_mask(
                     model,
                     current_state,
                     reference_state,
-                    method_masks,
+                    continuation_masks,
                     args.device,
                 )
             continuation = continue_training(

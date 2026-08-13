@@ -22,12 +22,13 @@ GPT-2 Small 在 WikiText-103 上微调 1000 步的脚本。
 """
 
 import argparse
+import sys
+import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from pathlib import Path
-import sys
-import time
 from tqdm import tqdm
 
 # 添加项目根目录到路径
@@ -35,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from dacp.models.gpt2 import get_gpt2_small
 from dacp.utils.data_loader import get_wikitext103_dataloader
+from experiments.lib.args import nonnegative_int, positive_int
 
 
 def train_n_steps(
@@ -48,7 +50,7 @@ def train_n_steps(
     use_amp=False,
     log_interval=50,
     save_interval=200,
-    checkpoint_dir='./checkpoints/gpt2_small_wikitext103_1000steps',
+    checkpoint_dir="./checkpoints/gpt2_small_wikitext103_1000steps",
 ):
     """
     训练指定步数。
@@ -83,7 +85,7 @@ def train_n_steps(
     # 创建数据迭代器
     data_iter = iter(train_loader)
 
-    print(f"开始训练 {num_steps} 步...")
+    print(f"开始训练 {num_steps} 个 optimizer steps...")
     print(f"设备: {device}")
     print(f"梯度累积步数: {gradient_accumulation_steps}")
     print(f"混合精度: {use_amp}")
@@ -92,63 +94,59 @@ def train_n_steps(
 
     start_time = time.time()
 
+    micro_steps = 0
     with tqdm(total=num_steps, desc="训练进度") as pbar:
         while step < num_steps:
-            try:
-                # 获取下一个批次
-                batch = next(data_iter)
-            except StopIteration:
-                # 数据集遍历完毕，重新开始
-                data_iter = iter(train_loader)
-                batch = next(data_iter)
+            accumulated_loss = 0.0
+            for _ in range(gradient_accumulation_steps):
+                try:
+                    batch = next(data_iter)
+                except StopIteration:
+                    data_iter = iter(train_loader)
+                    batch = next(data_iter)
 
-            # 将数据移到设备
-            input_ids = batch['input_ids'].to(device)
-            labels = batch['labels'].to(device)
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch.get("attention_mask")
+                if attention_mask is not None:
+                    attention_mask = attention_mask.to(device)
+                labels = batch["labels"].to(device)
 
-            # 前向传播
-            if use_amp:
-                with torch.cuda.amp.autocast():
-                    logits = model(input_ids)
-
-                    # 计算损失
+                if use_amp:
+                    with torch.cuda.amp.autocast():
+                        logits = model(input_ids, attention_mask=attention_mask)
+                        shift_logits = logits[..., :-1, :].contiguous()
+                        shift_labels = labels[..., 1:].contiguous()
+                        loss = (
+                            criterion(
+                                shift_logits.view(-1, shift_logits.size(-1)),
+                                shift_labels.view(-1),
+                            )
+                            / gradient_accumulation_steps
+                        )
+                    scaler.scale(loss).backward()
+                else:
+                    logits = model(input_ids, attention_mask=attention_mask)
                     shift_logits = logits[..., :-1, :].contiguous()
                     shift_labels = labels[..., 1:].contiguous()
-                    loss = criterion(
-                        shift_logits.view(-1, shift_logits.size(-1)),
-                        shift_labels.view(-1)
+                    loss = (
+                        criterion(
+                            shift_logits.view(-1, shift_logits.size(-1)),
+                            shift_labels.view(-1),
+                        )
+                        / gradient_accumulation_steps
                     )
-                    loss = loss / gradient_accumulation_steps
+                    loss.backward()
+                accumulated_loss += loss.item()
+                micro_steps += 1
 
-                # 反向传播
-                scaler.scale(loss).backward()
+            if use_amp:
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                logits = model(input_ids)
-
-                # 计算损失
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = labels[..., 1:].contiguous()
-                loss = criterion(
-                    shift_logits.view(-1, shift_logits.size(-1)),
-                    shift_labels.view(-1)
-                )
-                loss = loss / gradient_accumulation_steps
-
-                # 反向传播
-                loss.backward()
-
-            total_loss += loss.item() * gradient_accumulation_steps
-
-            # 梯度累积
-            if (step + 1) % gradient_accumulation_steps == 0:
-                if use_amp:
-                    scaler.step(optimizer)
-                    scaler.update()
-                else:
-                    optimizer.step()
-                optimizer.zero_grad()
-
+                optimizer.step()
+            optimizer.zero_grad()
             step += 1
+            total_loss += accumulated_loss
             pbar.update(1)
 
             # 日志打印
@@ -158,31 +156,37 @@ def train_n_steps(
                 steps_per_sec = step / elapsed
                 eta = (num_steps - step) / steps_per_sec if steps_per_sec > 0 else 0
 
-                pbar.set_postfix({
-                    'loss': f'{avg_loss:.4f}',
-                    'step/s': f'{steps_per_sec:.2f}',
-                    'ETA': f'{eta/60:.1f}min'
-                })
+                pbar.set_postfix(
+                    {
+                        "loss": f"{avg_loss:.4f}",
+                        "step/s": f"{steps_per_sec:.2f}",
+                        "ETA": f"{eta/60:.1f}min",
+                    }
+                )
 
                 total_loss = 0.0
 
             # 保存检查点
             if step % save_interval == 0:
-                checkpoint_path = checkpoint_dir / f'checkpoint_step_{step}.pt'
+                checkpoint_path = checkpoint_dir / f"checkpoint_step_{step}.pt"
                 save_checkpoint(
                     model=model,
                     optimizer=optimizer,
                     step=step,
+                    micro_steps=micro_steps,
+                    gradient_accumulation_steps=gradient_accumulation_steps,
                     checkpoint_path=checkpoint_path,
                 )
                 print(f"\n检查点已保存: {checkpoint_path}")
 
     # 保存最终检查点
-    final_checkpoint_path = checkpoint_dir / f'checkpoint_step_{num_steps}_final.pt'
+    final_checkpoint_path = checkpoint_dir / f"checkpoint_step_{num_steps}_final.pt"
     save_checkpoint(
         model=model,
         optimizer=optimizer,
         step=num_steps,
+        micro_steps=micro_steps,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         checkpoint_path=final_checkpoint_path,
     )
 
@@ -195,66 +199,76 @@ def train_n_steps(
     print(f"最终检查点: {final_checkpoint_path}")
 
 
-def save_checkpoint(model, optimizer, step, checkpoint_path):
+def save_checkpoint(
+    model,
+    optimizer,
+    step,
+    micro_steps,
+    gradient_accumulation_steps,
+    checkpoint_path,
+):
     """保存检查点。"""
     checkpoint = {
-        'step': step,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
+        "step": step,
+        "optimizer_steps": step,
+        "micro_steps": micro_steps,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
     }
     torch.save(checkpoint, checkpoint_path)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='GPT-2 Small 在 WikiText-103 上微调 1000 步'
-    )
+    parser = argparse.ArgumentParser(description="GPT-2 Small 在 WikiText-103 上微调 1000 步")
 
     # 训练参数
-    parser.add_argument('--num_steps', type=int, default=1000,
-                        help='训练步数 (默认: 1000)')
-    parser.add_argument('--batch_size', type=int, default=4,
-                        help='批次大小 (默认: 4)')
-    parser.add_argument('--seq_length', type=int, default=512,
-                        help='序列长度 (默认: 512)')
-    parser.add_argument('--lr', type=float, default=5e-5,
-                        help='学习率 (默认: 5e-5)')
-    parser.add_argument('--weight_decay', type=float, default=0.01,
-                        help='权重衰减 (默认: 0.01)')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=4,
-                        help='梯度累积步数 (默认: 4)')
+    parser.add_argument(
+        "--num_steps", type=positive_int, default=1000, help="训练步数 (默认: 1000)"
+    )
+    parser.add_argument("--batch_size", type=positive_int, default=4, help="批次大小 (默认: 4)")
+    parser.add_argument("--seq_length", type=positive_int, default=512, help="序列长度 (默认: 512)")
+    parser.add_argument("--lr", type=float, default=5e-5, help="学习率 (默认: 5e-5)")
+    parser.add_argument("--weight_decay", type=float, default=0.01, help="权重衰减 (默认: 0.01)")
+    parser.add_argument(
+        "--gradient_accumulation_steps", type=positive_int, default=4, help="梯度累积步数 (默认: 4)"
+    )
 
     # 数据参数
-    parser.add_argument('--data_dir', type=str, default=None,
-                        help='本地数据目录 (可选)')
-    parser.add_argument('--max_samples', type=int, default=None,
-                        help='最大样本数 (可选，用于快速测试)')
+    parser.add_argument("--data_dir", type=str, default=None, help="本地数据目录 (可选)")
+    parser.add_argument(
+        "--max_samples", type=positive_int, default=None, help="最大样本数 (可选，用于快速测试)"
+    )
 
     # 检查点参数
-    parser.add_argument('--checkpoint_dir', type=str,
-                        default='./checkpoints/gpt2_small_wikitext103_1000steps',
-                        help='检查点保存目录')
-    parser.add_argument('--save_interval', type=int, default=200,
-                        help='检查点保存间隔 (默认: 200)')
-    parser.add_argument('--log_interval', type=int, default=50,
-                        help='日志打印间隔 (默认: 50)')
+    parser.add_argument(
+        "--checkpoint_dir",
+        type=str,
+        default="./checkpoints/gpt2_small_wikitext103_1000steps",
+        help="检查点保存目录",
+    )
+    parser.add_argument(
+        "--save_interval", type=positive_int, default=200, help="检查点保存间隔 (默认: 200)"
+    )
+    parser.add_argument(
+        "--log_interval", type=positive_int, default=50, help="日志打印间隔 (默认: 50)"
+    )
 
     # 其他参数
-    parser.add_argument('--device', type=str, default='cuda',
-                        choices=['cuda', 'cpu'],
-                        help='设备 (默认: cuda)')
-    parser.add_argument('--use_amp', action='store_true',
-                        help='使用混合精度训练')
-    parser.add_argument('--pretrained', action='store_true',
-                        help='使用预训练权重')
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='数据加载工作进程数 (默认: 4)')
+    parser.add_argument(
+        "--device", type=str, default="cuda", choices=["cuda", "cpu"], help="设备 (默认: cuda)"
+    )
+    parser.add_argument("--use_amp", action="store_true", help="使用混合精度训练")
+    parser.add_argument("--pretrained", action="store_true", help="使用预训练权重")
+    parser.add_argument(
+        "--num_workers", type=nonnegative_int, default=4, help="数据加载工作进程数 (默认: 4)"
+    )
 
     args = parser.parse_args()
 
     # 设置设备
-    device = args.device if torch.cuda.is_available() else 'cpu'
-    if args.device == 'cuda' and not torch.cuda.is_available():
+    device = args.device if torch.cuda.is_available() else "cpu"
+    if args.device == "cuda" and not torch.cuda.is_available():
         print("警告: CUDA 不可用，使用 CPU")
 
     print("=" * 80)
@@ -285,7 +299,7 @@ def main():
     # 加载数据
     print("\n加载 WikiText-103 数据集...")
     train_loader = get_wikitext103_dataloader(
-        split='train',
+        split="train",
         batch_size=args.batch_size,
         seq_length=args.seq_length,
         max_samples=args.max_samples,
@@ -321,5 +335,5 @@ def main():
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

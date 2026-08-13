@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 import torch
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from dacp.models.gpt2 import get_gpt2_medium
+from dacp.utils.data_loader import _load_gpt2_tokenizer
+from experiments.lib.args import device_name, positive_int
 from experiments.lib.residual_runtime import (
     batch_hash,
     lm_loss,
@@ -23,8 +27,25 @@ from experiments.lib.residual_runtime import (
     sha256_file,
     write_json,
 )
-from dacp.models.gpt2 import get_gpt2_medium
-from dacp.utils.data_loader import _load_gpt2_tokenizer
+
+
+def _atomic_torch_save(payload: object, destination: Path) -> None:
+    """Save a recovery checkpoint atomically in its destination directory."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+        torch.save(payload, temporary_path)
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,12 +67,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=PROJECT_ROOT.parent.parent / "data/wikitext103",
     )
-    parser.add_argument("--steps", type=int, default=20)
-    parser.add_argument("--batch-size", type=int, default=2)
-    parser.add_argument("--seq-length", type=int, default=128)
+    parser.add_argument("--steps", type=positive_int, default=20)
+    parser.add_argument("--batch-size", type=positive_int, default=2)
+    parser.add_argument("--seq-length", type=positive_int, default=128)
     parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", default="cuda")
+    parser.add_argument("--device", type=device_name, default="cuda")
     return parser.parse_args()
 
 
@@ -72,9 +93,7 @@ def main() -> None:
     model.load_state_dict(source_state, strict=True)
     model.to(args.device).train()
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=args.learning_rate, weight_decay=0.01
-    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=0.01)
     optimizer.load_state_dict(source_optimizer)
     for group in optimizer.param_groups:
         group["lr"] = args.learning_rate
@@ -98,7 +117,6 @@ def main() -> None:
         losses.append(loss.item())
         print(f"  step {step:02d}/{args.steps:02d}: loss={losses[-1]:.6f}", flush=True)
 
-    args.output_checkpoint.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "model_state_dict": {
             name: value.detach().cpu() for name, value in model.state_dict().items()
@@ -119,7 +137,7 @@ def main() -> None:
             "train_losses": losses,
         },
     }
-    torch.save(payload, args.output_checkpoint)
+    _atomic_torch_save(payload, args.output_checkpoint)
     metadata = {
         **payload["short_recovery_provenance"],
         "output_checkpoint": str(args.output_checkpoint.resolve()),

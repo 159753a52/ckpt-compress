@@ -22,9 +22,10 @@ s_i = -g_i·θ_i + 0.5·θ_i·(H·θ)_i
 - 若 -g_i·θ_i < 0：删除该参数会减少损失（参数可能有害）
 """
 
+from typing import Callable, Dict, List, Optional
+
 import torch
-from torch.nn.attention import sdpa_kernel, SDPBackend
-from typing import Dict, List, Callable
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 def compute_importance_scores_magnitude(
@@ -49,9 +50,7 @@ def compute_importance_scores_magnitude(
     return scores
 
 
-def get_flattened_scores(
-    scores: Dict[str, torch.Tensor]
-) -> torch.Tensor:
+def get_flattened_scores(scores: Dict[str, torch.Tensor]) -> torch.Tensor:
     """
     将所有层的重要性得分展平为一维张量。
 
@@ -71,9 +70,7 @@ def get_flattened_scores(
     return torch.cat(flattened)
 
 
-def compute_mean_importance(
-    scores: Dict[str, torch.Tensor]
-) -> float:
+def compute_mean_importance(scores: Dict[str, torch.Tensor]) -> float:
     """
     计算平均重要性得分 s̄ = (1/N) * Σs_i。
 
@@ -86,12 +83,13 @@ def compute_mean_importance(
     flat = get_flattened_scores(scores)
     if flat.numel() == 0:
         return 0.0
-    return flat.mean().item()
+    return float(flat.mean().item())
 
 
 # ============================================================
 # HVP (Hessian-Vector Product) 相关函数
 # ============================================================
+
 
 def _validate_hvp_batch_request(data_batches: list, num_batches: int) -> int:
     """Validate a batched HVP request and return the effective batch count.
@@ -101,17 +99,12 @@ def _validate_hvp_batch_request(data_batches: list, num_batches: int) -> int:
     by the available data.  Failing early here avoids silent empty results and
     the less useful ``data_batches[0]`` IndexError from score helpers.
     """
-    if (
-        isinstance(num_batches, bool)
-        or not isinstance(num_batches, int)
-        or num_batches < 1
-    ):
-        raise ValueError(
-            f"num_batches must be a positive integer, got {num_batches}"
-        )
+    if isinstance(num_batches, bool) or not isinstance(num_batches, int) or num_batches < 1:
+        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
     if not data_batches:
         raise ValueError("data_batches must contain at least one batch")
     return min(num_batches, len(data_batches))
+
 
 def compute_hvp(
     model: torch.nn.Module,
@@ -166,10 +159,7 @@ def compute_hvp(
         )
 
     # 转换为字典格式
-    hvp_dict = {
-        name: hvp.detach()
-        for name, hvp in zip(params.keys(), hvp_result)
-    }
+    hvp_dict = {name: hvp.detach() for name, hvp in zip(params.keys(), hvp_result)}
 
     return hvp_dict
 
@@ -211,10 +201,7 @@ def compute_hvp_batched(
     if hvp_sum is None:
         return {}
 
-    hvp_avg = {
-        name: h / actual_batches
-        for name, h in hvp_sum.items()
-    }
+    hvp_avg = {name: h / actual_batches for name, h in hvp_sum.items()}
 
     return hvp_avg
 
@@ -241,9 +228,7 @@ def _compute_importance_scores_hvp(
     }
 
     print("[HVP] 计算 Hessian-Vector Product...")
-    hvp_result = compute_hvp_batched(
-        model, loss_fn, data_batches, weights, num_batches
-    )
+    hvp_result = compute_hvp_batched(model, loss_fn, data_batches, weights, num_batches)
 
     scores = {}
     for name, theta in weights.items():
@@ -339,7 +324,7 @@ def compute_importance_scores_hvp_abs(
 
 def build_transformer_blocks(
     model: torch.nn.Module,
-    model_family: str = 'gpt2',
+    model_family: str = "gpt2",
 ) -> List[List[str]]:
     """
     将模型参数按 Transformer layer 分组为 block。
@@ -359,16 +344,15 @@ def build_transformer_blocks(
     import re
 
     layer_patterns = {
-        'gpt2':   r'(?:transformer\.)?h\.(\d+)\.',
-        'pythia': r'gpt_neox\.layers\.(\d+)\.',
-        'vit':    r'(?:vit\.)?encoder\.layer\.(\d+)\.',
-        'bert':   r'(?:bert\.)?encoder\.layer\.(\d+)\.',
+        "gpt2": r"(?:transformer\.)?h\.(\d+)\.",
+        "pythia": r"gpt_neox\.layers\.(\d+)\.",
+        "vit": r"(?:vit\.)?encoder\.layer\.(\d+)\.",
+        "bert": r"(?:bert\.)?encoder\.layer\.(\d+)\.",
     }
 
     if model_family not in layer_patterns:
         raise ValueError(
-            f"Unknown model_family: {model_family}. "
-            f"Available: {list(layer_patterns.keys())}"
+            f"Unknown model_family: {model_family}. " f"Available: {list(layer_patterns.keys())}"
         )
 
     pattern = re.compile(layer_patterns[model_family])
@@ -396,7 +380,7 @@ def compute_hvp_blockwise(
     loss_fn: Callable,
     data_batch,
     blocks: List[List[str]],
-    vector: Dict[str, torch.Tensor] = None,
+    vector: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     真正的 Block-wise HVP 计算。
@@ -424,9 +408,7 @@ def compute_hvp_blockwise(
     all_hvp: Dict[str, torch.Tensor] = {}
 
     # 记录所有参数的原始 requires_grad 状态
-    original_requires_grad = {
-        name: p.requires_grad for name, p in named_params.items()
-    }
+    original_requires_grad = {name: p.requires_grad for name, p in named_params.items()}
 
     num_blocks = len(blocks)
     completed = False
@@ -434,8 +416,10 @@ def compute_hvp_blockwise(
     try:
         for block_idx, block_names in enumerate(blocks):
             block_name_set = set(block_names)
-            print(f"[Block-wise HVP] Block {block_idx + 1}/{num_blocks} "
-                  f"({len(block_names)} params)...")
+            print(
+                f"[Block-wise HVP] Block {block_idx + 1}/{num_blocks} "
+                f"({len(block_names)} params)..."
+            )
 
             # 1. 只对当前 block 的参数开启 requires_grad
             for name, p in named_params.items():
@@ -469,9 +453,7 @@ def compute_hvp_blockwise(
                             probe = vector[name].to(g.device)
                         else:
                             probe = named_params[name].data
-                        grad_vector_product = grad_vector_product + (
-                            g * probe
-                        ).sum()
+                        grad_vector_product = grad_vector_product + (g * probe).sum()
 
                 # 6. 二次反向传播 → H_b θ_b
                 hvp_grads = torch.autograd.grad(
@@ -509,7 +491,7 @@ def compute_hvp_blockwise_batched(
     data_batches: list,
     blocks: List[List[str]],
     num_batches: int = 1,
-    vector: Dict[str, torch.Tensor] = None,
+    vector: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     使用多个批次计算平均 block-wise HVP，提高估计稳定性。
@@ -529,8 +511,7 @@ def compute_hvp_blockwise_batched(
 
     for i in range(actual_batches):
         print(f"[Block-wise HVP] Batch {i + 1}/{actual_batches}...")
-        hvp = compute_hvp_blockwise(model, loss_fn, data_batches[i], blocks,
-                                     vector=vector)
+        hvp = compute_hvp_blockwise(model, loss_fn, data_batches[i], blocks, vector=vector)
 
         if hvp_sum is None:
             hvp_sum = {name: h.clone() for name, h in hvp.items()}
@@ -549,11 +530,11 @@ def compute_importance_scores_hvp_blockwise(
     model: torch.nn.Module,
     loss_fn: Callable,
     data_batches: list,
-    model_family: str = 'gpt2',
+    model_family: str = "gpt2",
     num_batches: int = 1,
     alpha: float = 0.5,
     normalize: bool = False,
-    grad_accumulation_batches: int = None,
+    grad_accumulation_batches: Optional[int] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     使用真正的 block-wise HVP 计算参数重要性得分（论文 Algorithm 1）。
@@ -621,9 +602,7 @@ def compute_importance_scores_hvp_blockwise(
     }
 
     # 4. Block-wise HVP 计算
-    hvp_result = compute_hvp_blockwise_batched(
-        model, loss_fn, data_batches, blocks, num_batches
-    )
+    hvp_result = compute_hvp_blockwise_batched(model, loss_fn, data_batches, blocks, num_batches)
 
     # 5. 计算重要性得分: s_i = |-g_i · θ_i + alpha · θ_i · (H_b · θ_b)_i|
     scores = {}

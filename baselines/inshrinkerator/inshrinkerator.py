@@ -8,29 +8,60 @@ Inshrinkerator 压缩器 - 端到端检查点压缩。
 4. RLE 压缩
 """
 
-import torch
-import pickle
 import gzip
-from typing import Dict, Tuple, Optional, Any, List
+import hashlib
+import math
+import pickle
 from dataclasses import dataclass
+from typing import Any, Dict, Mapping, Optional
 
-from .metrics import magnitude, sensitivity
-from .partition import partition, PartitionConfig, PartitionResult
+import torch
+
 from .approx_kmeans import approx_kmeans, quantize_to_centers
 from .delta_encoding import (
-    delta_encode, delta_decode,
-    rearrange_by_prev_bin, restore_rearrangement,
-    rle_encode, rle_decode,
+    delta_decode,
+    delta_encode,
+    rearrange_by_prev_bin,
+    restore_rearrangement,
+    rle_decode,
+    rle_encode,
 )
+from .metrics import magnitude, sensitivity
+from .partition import PartitionConfig, PartitionResult, partition
+
+_DTYPES = {
+    "torch.float16": torch.float16,
+    "torch.bfloat16": torch.bfloat16,
+    "torch.float32": torch.float32,
+    "torch.float64": torch.float64,
+}
 
 
 @dataclass
 class InshrinkeratorConfig:
     """Inshrinkerator 压缩配置。"""
-    n_bins: int = 16           # 量化桶数
+
+    n_bins: int = 16  # 量化桶数
     protect_fraction: float = 0.005  # 保护比例
-    prune_fraction: float = 0.2      # 剪枝比例
-    use_gzip: bool = True      # 是否使用 gzip 进行最终压缩
+    prune_fraction: float = 0.2  # 剪枝比例
+    use_gzip: bool = True  # 是否使用 gzip 进行最终压缩
+    seed: int = 42
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.n_bins, int) or isinstance(self.n_bins, bool):
+            raise TypeError("n_bins must be an integer")
+        if not 1 <= self.n_bins <= 32768:
+            raise ValueError(f"n_bins must be in [1, 32768], got {self.n_bins}")
+        if not isinstance(self.seed, int) or isinstance(self.seed, bool) or self.seed < 0:
+            raise ValueError(f"seed must be a non-negative integer, got {self.seed}")
+        for name, value in (
+            ("protect_fraction", self.protect_fraction),
+            ("prune_fraction", self.prune_fraction),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be finite and in [0, 1], got {value}")
+        if self.protect_fraction + self.prune_fraction > 1.0:
+            raise ValueError("protect_fraction + prune_fraction must not exceed 1")
 
 
 class InshrinkeratorCompressor:
@@ -56,7 +87,7 @@ class InshrinkeratorCompressor:
         self,
         W_t: Dict[str, torch.Tensor],
         grad: Dict[str, torch.Tensor],
-        prev_quantized: Optional[Dict[str, torch.Tensor]] = None
+        prev_quantized: Optional[Dict[str, torch.Tensor]] = None,
     ) -> bytes:
         """
         压缩检查点。
@@ -69,17 +100,25 @@ class InshrinkeratorCompressor:
         返回:
             压缩后的检查点字节数据
         """
-        compressed_data = {
+        compressed_data: Dict[str, Any] = {
             "weights": {},
             "metadata": {
                 "config": self.config,
                 "is_first": prev_quantized is None,
-            }
+            },
         }
+
+        if set(grad) != set(W_t):
+            missing = sorted(set(W_t).difference(grad))
+            extra = sorted(set(grad).difference(W_t))
+            raise ValueError(
+                f"Gradient keys must match weight keys: missing={missing}, extra={extra}"
+            )
 
         for key in W_t:
             W = W_t[key]
-            g = grad.get(key, torch.zeros_like(W))
+            g = grad[key]
+            self._validate_input_tensors(key, W, g)
 
             # 步骤 1: 分区参数
             part_config = PartitionConfig(
@@ -94,18 +133,24 @@ class InshrinkeratorCompressor:
 
             # 步骤 3: 使用近似 K-means 计算中心
             if quantize_values.numel() > 0:
-                centers = approx_kmeans(quantize_values.abs(), self.config.n_bins)
+                centers = approx_kmeans(
+                    quantize_values.abs(),
+                    self.config.n_bins,
+                    seed=self._parameter_seed(key),
+                )
                 # 通过使用符号处理有符号值
                 signs = torch.sign(quantize_values)
                 q_indices = quantize_to_centers(quantize_values.abs(), centers)
             else:
-                centers = torch.zeros(self.config.n_bins)
-                q_indices = torch.tensor([], dtype=torch.long)
-                signs = torch.tensor([])
+                centers = W.new_zeros(self.config.n_bins)
+                q_indices = torch.empty(0, dtype=torch.long, device=W.device)
+                signs = W.new_empty(0)
 
             # 步骤 4: 如果有前一检查点则进行增量编码
             if prev_quantized is not None and key in prev_quantized:
-                prev_q = prev_quantized[key]
+                prev_q = prev_quantized[key].to(part_result.quantize_mask.device)
+                if prev_q.shape != W.shape:
+                    raise ValueError(f"Previous quantized shape does not match weight {key!r}")
                 # 仅对量化部分进行增量编码
                 prev_q_masked = prev_q[part_result.quantize_mask == 1]
                 if prev_q_masked.numel() == q_indices.numel():
@@ -123,23 +168,29 @@ class InshrinkeratorCompressor:
             # 步骤 5: 存储受保护值（将 bfloat16 转换为 float16 以供 numpy 使用）
             protected_values = part_result.get_protected_values(W)
             if protected_values.numel() > 0:
-                protected_np = protected_values.to(torch.float16).numpy()
+                storage_dtype = (
+                    torch.float32
+                    if protected_values.dtype == torch.bfloat16
+                    else protected_values.dtype
+                )
+                protected_np = protected_values.detach().to(storage_dtype).cpu().numpy()
             else:
                 protected_np = None
 
             # 存储压缩数据
             compressed_data["weights"][key] = {
                 "encoded_groups": encoded_groups,
-                "centers": centers.numpy(),
-                "signs": signs.numpy() if signs.numel() > 0 else None,
+                "centers": centers.detach().float().cpu().numpy(),
+                "signs": signs.detach().float().cpu().numpy() if signs.numel() > 0 else None,
                 "protected_values": protected_np,
-                "protect_mask": part_result.protect_mask.numpy(),
-                "prune_mask": part_result.prune_mask.numpy(),
-                "quantize_mask": part_result.quantize_mask.numpy(),
+                "protect_mask": part_result.protect_mask.detach().cpu().numpy(),
+                "prune_mask": part_result.prune_mask.detach().cpu().numpy(),
+                "quantize_mask": part_result.quantize_mask.detach().cpu().numpy(),
                 "shape": list(W.shape),
                 "dtype": str(W.dtype),
                 "use_delta": use_delta,
                 "n_quantized": q_indices.numel(),
+                "encoding_n_bins": self.config.n_bins,
             }
 
         # 序列化
@@ -151,9 +202,7 @@ class InshrinkeratorCompressor:
         return serialized
 
     def decompress(
-        self,
-        compressed: bytes,
-        prev_quantized: Optional[Dict[str, torch.Tensor]] = None
+        self, compressed: bytes, prev_quantized: Optional[Dict[str, torch.Tensor]] = None
     ) -> Dict[str, torch.Tensor]:
         """
         解压检查点。
@@ -180,28 +229,16 @@ class InshrinkeratorCompressor:
             shape = tuple(w_data["shape"])
             n_quantized = w_data["n_quantized"]
 
-            # 解码量化索引
-            encoded_groups = w_data["encoded_groups"]
             centers = torch.from_numpy(w_data["centers"])
-
-            if w_data["use_delta"] and prev_quantized is not None and key in prev_quantized:
-                # 增量解码
-                prev_q = prev_quantized[key]
-                quantize_mask = torch.from_numpy(w_data["quantize_mask"])
-                prev_q_masked = prev_q[quantize_mask == 1]
-
-                # 解码每个组
-                grouped = rearrange_by_prev_bin(prev_q_masked, torch.zeros_like(prev_q_masked), len(centers))
-                decoded_groups = []
-                for i, enc in enumerate(encoded_groups):
-                    group_len = (prev_q_masked == i).sum().item()
-                    decoded_groups.append(rle_decode(enc, group_len))
-
-                D = restore_rearrangement(prev_q_masked, decoded_groups, len(centers))
-                q_indices = delta_decode(prev_q_masked, D, len(centers))
-            else:
-                # 直接解码
-                q_indices = rle_decode(encoded_groups[0], n_quantized)
+            previous = prev_quantized.get(key) if prev_quantized is not None else None
+            encoding_n_bins = self._encoding_n_bins(w_data, len(centers))
+            q_indices = self._decode_quantized_indices(
+                w_data,
+                previous,
+                encoding_n_bins,
+            )
+            if q_indices.numel() and q_indices.max().item() >= len(centers):
+                raise ValueError("Quantized indices reference a missing center")
 
             # 反量化
             if q_indices.numel() > 0:
@@ -235,10 +272,11 @@ class InshrinkeratorCompressor:
 
             # 转换为原始 dtype
             dtype_str = w_data["dtype"]
-            if "float32" in dtype_str:
-                W_reconstructed = W_reconstructed.float()
-            elif "float16" in dtype_str:
-                W_reconstructed = W_reconstructed.half()
+            if not isinstance(dtype_str, str) or dtype_str not in _DTYPES:
+                raise ValueError(
+                    f"Unsupported tensor dtype in Inshrinkerator payload: {dtype_str!r}"
+                )
+            W_reconstructed = W_reconstructed.to(_DTYPES[dtype_str])
 
             W_hat[key] = W_reconstructed
 
@@ -246,7 +284,8 @@ class InshrinkeratorCompressor:
 
     def get_quantized_indices(
         self,
-        compressed: bytes
+        compressed: bytes,
+        prev_quantized: Optional[Dict[str, torch.Tensor]] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         从压缩数据中提取量化索引用于增量编码。
@@ -271,9 +310,16 @@ class InshrinkeratorCompressor:
             shape = tuple(w_data["shape"])
             n_quantized = w_data["n_quantized"]
 
-            # 解码索引
-            encoded_groups = w_data["encoded_groups"]
-            indices = rle_decode(encoded_groups[0], n_quantized)
+            centers = w_data["centers"]
+            previous = prev_quantized.get(key) if prev_quantized is not None else None
+            encoding_n_bins = self._encoding_n_bins(w_data, len(centers))
+            indices = self._decode_quantized_indices(
+                w_data,
+                previous,
+                encoding_n_bins,
+            )
+            if indices.numel() and indices.max().item() >= len(centers):
+                raise ValueError("Quantized indices reference a missing center")
 
             # 创建完整索引张量
             full_indices = torch.zeros(shape, dtype=torch.long).flatten()
@@ -284,6 +330,83 @@ class InshrinkeratorCompressor:
 
         return q_indices
 
+    @staticmethod
+    def _decode_quantized_indices(
+        weight_data: Mapping[str, Any],
+        previous: Optional[torch.Tensor],
+        n_bins: int,
+    ) -> torch.Tensor:
+        """Decode one parameter's compact indices for reconstruction or chaining."""
+        encoded_groups = weight_data["encoded_groups"]
+        n_quantized = int(weight_data["n_quantized"])
+        if not weight_data["use_delta"]:
+            if len(encoded_groups) != 1:
+                raise ValueError("Direct index payload must contain exactly one RLE group")
+            return rle_decode(encoded_groups[0], n_quantized)
+
+        if previous is None:
+            raise ValueError("Delta-encoded indices require the previous quantized tensor")
+        if n_bins < 1 or len(encoded_groups) != n_bins:
+            raise ValueError(
+                f"Delta index payload has {len(encoded_groups)} groups; expected {n_bins}"
+            )
+
+        quantize_mask = torch.from_numpy(weight_data["quantize_mask"]).bool()
+        if previous.shape != quantize_mask.shape:
+            raise ValueError(
+                "Previous quantized tensor shape does not match the current quantize mask"
+            )
+        previous_masked = previous[quantize_mask]
+        if previous_masked.numel() != n_quantized:
+            raise ValueError(
+                "Previous quantized tensor does not cover the current quantized partition"
+            )
+        if previous_masked.numel() and (
+            previous_masked.min().item() < 0 or previous_masked.max().item() >= n_bins
+        ):
+            raise ValueError("Previous quantized indices are outside the encoded bin range")
+
+        decoded_groups = [
+            rle_decode(encoded, int((previous_masked == bin_index).sum().item()))
+            for bin_index, encoded in enumerate(encoded_groups)
+        ]
+        delta = restore_rearrangement(previous_masked, decoded_groups, n_bins)
+        return delta_decode(previous_masked, delta, n_bins)
+
+    @staticmethod
+    def _encoding_n_bins(weight_data: Mapping[str, Any], center_count: int) -> int:
+        raw_value = weight_data.get("encoding_n_bins", center_count)
+        if (
+            not isinstance(raw_value, int)
+            or isinstance(raw_value, bool)
+            or raw_value < max(center_count, 1)
+            or raw_value > 32768
+        ):
+            raise ValueError("Invalid encoding_n_bins in Inshrinkerator payload")
+        return raw_value
+
     @property
     def name(self) -> str:
         return "Inshrinkerator"
+
+    def _parameter_seed(self, name: str) -> int:
+        digest = hashlib.sha256(name.encode("utf-8")).digest()
+        return (self.config.seed + int.from_bytes(digest[:8], "little")) % (2**63)
+
+    @staticmethod
+    def _validate_input_tensors(
+        name: str,
+        weight: torch.Tensor,
+        gradient: torch.Tensor,
+    ) -> None:
+        for label, tensor in (("weight", weight), ("gradient", gradient)):
+            if not isinstance(tensor, torch.Tensor):
+                raise TypeError(f"{label} {name!r} must be a torch.Tensor")
+            if not tensor.is_floating_point() or tensor.is_complex():
+                raise TypeError(f"{label} {name!r} must be a real floating-point tensor")
+            if not torch.isfinite(tensor).all().item():
+                raise ValueError(f"{label} {name!r} must contain only finite values")
+        if gradient.shape != weight.shape:
+            raise ValueError(f"Gradient shape does not match weight {name!r}")
+        if gradient.device != weight.device:
+            raise ValueError(f"Gradient device does not match weight {name!r}")

@@ -12,14 +12,60 @@ Usage:
 """
 
 import json
+import math
+import numbers
+import shutil
+import tempfile
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import yaml
 
 from .result_schema import load_result_bundle, result_metrics
+
+
+def _validate_path_component(value: str, *, field: str) -> str:
+    """Validate a caller-provided directory or filename component."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    if Path(value).is_absolute() or value in {".", ".."}:
+        raise ValueError(f"{field} must be a relative path component")
+    if "/" in value or "\\" in value:
+        raise ValueError(f"{field} must not contain path separators")
+    return value
+
+
+def _validate_json_numbers(value: object, *, path: str = "result") -> None:
+    """Reject non-finite numbers before any evidence file is opened."""
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{path} must not contain non-finite numbers")
+        return
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            _validate_json_numbers(child, path=f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _validate_json_numbers(child, path=f"{path}[{index}]")
+
+
+def _json_text(value: object) -> str:
+    """Serialize validated evidence as standards-compliant JSON."""
+    _validate_json_numbers(value)
+
+    def json_default(item: object) -> object:
+        if isinstance(item, Path):
+            return str(item)
+        if isinstance(item, numbers.Integral) and not isinstance(item, bool):
+            return int(item)
+        if isinstance(item, numbers.Real) and not isinstance(item, bool):
+            return float(item)
+        raise TypeError(f"unsupported result value type: {type(item).__name__}")
+
+    return json.dumps(value, indent=2, default=json_default, allow_nan=False)
 
 
 @lru_cache(maxsize=1)
@@ -33,7 +79,7 @@ def _get_pd():
 class ResultManager:
     """Experiment result manager."""
 
-    def __init__(self, output_dir: str = 'experiments/results'):
+    def __init__(self, output_dir: str = "experiments/results"):
         """Initialize the result manager.
 
         Args:
@@ -57,34 +103,54 @@ class ResultManager:
             run_name: run identifier (usually includes a timestamp)
             config: optional experiment config
         """
-        output_path = self.output_dir / experiment_name / run_name
-        output_path.mkdir(parents=True, exist_ok=True)
+        experiment_name = _validate_path_component(
+            experiment_name, field="experiment_name"
+        )
+        run_name = _validate_path_component(run_name, field="run_name")
+        experiment_path = self.output_dir / experiment_name
+        output_path = experiment_path / run_name
 
-        # full results as JSON
-        results_file = output_path / 'results.json'
-        with open(results_file, 'w', encoding='utf-8') as f:
-            json.dump(results, f, indent=2, default=str)
-
-        # CSV
-        csv_file = output_path / 'results.csv'
-        self._save_csv(results, csv_file)
-
-        # config
-        if config:
-            config_file = output_path / 'config.yaml'
-            with open(config_file, 'w', encoding='utf-8') as f:
-                yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
-
-        # metadata
+        # Serialize before opening any destination so invalid evidence cannot
+        # truncate a previous successful run.
+        results_text = _json_text(results)
         metadata = {
-            'experiment_name': experiment_name,
-            'run_name': run_name,
-            'timestamp': datetime.now().isoformat(),
-            'num_results': len(results),
+            "experiment_name": experiment_name,
+            "run_name": run_name,
+            "timestamp": datetime.now().isoformat(),
+            "num_results": len(results),
         }
-        metadata_file = output_path / 'metadata.json'
-        with open(metadata_file, 'w', encoding='utf-8') as f:
-            json.dump(metadata, f, indent=2)
+        metadata_text = _json_text(metadata)
+        config_text = None
+        if config:
+            _validate_json_numbers(config, path="config")
+            config_text = yaml.safe_dump(
+                config,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=True,
+            )
+        if output_path.exists():
+            raise FileExistsError(f"Result run already exists: {output_path}")
+        experiment_path.mkdir(parents=True, exist_ok=True)
+        staging_path = Path(
+            tempfile.mkdtemp(prefix=f".{run_name}.tmp-", dir=experiment_path)
+        )
+        try:
+            (staging_path / "results.json").write_text(
+                results_text, encoding="utf-8"
+            )
+            self._save_csv(results, staging_path / "results.csv")
+            if config_text is not None:
+                (staging_path / "config.yaml").write_text(
+                    config_text, encoding="utf-8"
+                )
+            (staging_path / "metadata.json").write_text(
+                metadata_text, encoding="utf-8"
+            )
+            staging_path.rename(output_path)
+        except BaseException:
+            shutil.rmtree(staging_path, ignore_errors=True)
+            raise
 
         print(f"Results saved to: {output_path}")
 
@@ -102,28 +168,36 @@ class ResultManager:
         Returns:
             list of result dicts
         """
-        results_file = self.output_dir / experiment_name / run_name / 'results.json'
+        experiment_name = _validate_path_component(
+            experiment_name, field="experiment_name"
+        )
+        run_name = _validate_path_component(run_name, field="run_name")
+        results_file = self.output_dir / experiment_name / run_name / "results.json"
 
         if not results_file.exists():
             raise FileNotFoundError(f"Results not found: {results_file}")
 
-        return load_result_bundle(results_file).records
+        return [dict(record) for record in load_result_bundle(results_file).records]
 
     def list_runs(self, experiment_name: str) -> List[str]:
         """List all runs for an experiment."""
+        experiment_name = _validate_path_component(
+            experiment_name, field="experiment_name"
+        )
         experiment_path = self.output_dir / experiment_name
         if not experiment_path.exists():
             return []
 
         return [
-            d.name for d in experiment_path.iterdir()
-            if d.is_dir() and (d / 'results.json').exists()
+            d.name
+            for d in experiment_path.iterdir()
+            if d.is_dir() and (d / "results.json").exists()
         ]
 
     def compare(
         self,
         run_names: List[str],
-        experiment_name: str = None,
+        experiment_name: Optional[str] = None,
     ):
         """Compare multiple runs.
 
@@ -140,7 +214,7 @@ class ResultManager:
             try:
                 results = self.load(experiment_name or self._infer_experiment(run_name), run_name)
                 for r in results:
-                    r['run_name'] = run_name
+                    r["run_name"] = run_name
                 all_results.extend(results)
             except FileNotFoundError as e:
                 print(f"Warning: {e}")
@@ -159,9 +233,9 @@ class ResultManager:
             print("No data to display")
             return
 
-        _get_pd().set_option('display.max_columns', None)
-        _get_pd().set_option('display.width', None)
-        _get_pd().set_option('display.max_colwidth', None)
+        _get_pd().set_option("display.max_columns", None)
+        _get_pd().set_option("display.width", None)
+        _get_pd().set_option("display.max_colwidth", None)
 
         print("\n" + "=" * 100)
         print("Experiment Results Summary")
@@ -182,20 +256,20 @@ class ResultManager:
         rows = []
         for r in results:
             row = {
-                'method': r.get('method', 'unknown'),
-                'importance': r.get('importance', 'unknown'),
-                'allocation': r.get('allocation', 'unknown'),
-                'prune_ratio': r.get('prune_ratio', 0),
-                'actual_ratio': r.get('actual_ratio', 0),
+                "method": r.get("method"),
+                "importance": r.get("importance"),
+                "allocation": r.get("allocation"),
+                "prune_ratio": r.get("prune_ratio"),
+                "actual_ratio": r.get("actual_ratio"),
             }
 
             for key, value in result_metrics(r).items():
-                row[f'metric_{key}'] = value
+                row[f"metric_{key}"] = value
 
-            baseline = r.get('baseline', {})
+            baseline = r.get("baseline", {})
             if isinstance(baseline, dict):
                 for key, value in baseline.items():
-                    row[f'baseline_{key}'] = value
+                    row[f"baseline_{key}"] = value
 
             rows.append(row)
 
@@ -209,8 +283,8 @@ class ResultManager:
             print("No data to compare")
             return
 
-        pivot_cols = ['method', 'prune_ratio']
-        value_cols = [c for c in df.columns if c.startswith('metric_')]
+        pivot_cols = ["method", "prune_ratio"]
+        value_cols = [c for c in df.columns if c.startswith("metric_")]
 
         if not value_cols:
             print("No metric columns found")
@@ -223,10 +297,7 @@ class ResultManager:
         for metric_col in value_cols:
             print(f"\n{metric_col}:")
             pivot_df = df.pivot_table(
-                index='method',
-                columns='prune_ratio',
-                values=metric_col,
-                aggfunc='first'
+                index="method", columns="prune_ratio", values=metric_col, aggfunc="first"
             )
             print(pivot_df.to_string())
 
@@ -234,18 +305,19 @@ class ResultManager:
 
     def _infer_experiment(self, run_name: str) -> str:
         """Infer experiment name from run name (simplified)."""
-        return 'experiment'
+        return "experiment"
 
 
 # ============================================================
 # Standalone function interface (for scripts to import directly)
 # ============================================================
 
+
 def save_results(
     results: list,
     output_dir: str,
     experiment_name: str,
-    config: dict = None,
+    config: Optional[dict] = None,
 ):
     """Save experiment results to JSON + CSV.
 
@@ -255,32 +327,40 @@ def save_results(
         experiment_name: experiment name (used for filename)
         config: experiment config
     """
+    experiment_name = _validate_path_component(
+        experiment_name, field="experiment_name"
+    )
     output_path = Path(output_dir)
+
+    payload_text = _json_text({"results": results, "config": config})
+    config_text = _json_text(config) if config else None
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = f"{timestamp}_{experiment_name}"
+    base_name = stem
+    suffix = 1
+    while (output_path / base_name).exists():
+        base_name = f"{stem}_{suffix}"
+        suffix += 1
     output_path.mkdir(parents=True, exist_ok=True)
+    final_path = output_path / base_name
+    staging_path = Path(
+        tempfile.mkdtemp(prefix=f".{base_name}.tmp-", dir=output_path)
+    )
+    try:
+        (staging_path / "results.json").write_text(payload_text, encoding="utf-8")
+        _get_pd().DataFrame(results).to_csv(staging_path / "results.csv", index=False)
+        if config_text is not None:
+            (staging_path / "config.json").write_text(config_text, encoding="utf-8")
+        staging_path.rename(final_path)
+    except BaseException:
+        shutil.rmtree(staging_path, ignore_errors=True)
+        raise
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    base_name = f"{timestamp}_{experiment_name}"
-
-    # JSON
-    json_file = output_path / f'{base_name}.json'
-    with open(json_file, 'w', encoding='utf-8') as f:
-        json.dump({'results': results, 'config': config}, f, indent=2, default=str)
-
-    # CSV
-    csv_file = output_path / f'{base_name}.csv'
-    df = _get_pd().DataFrame(results)
-    df.to_csv(csv_file, index=False)
-
-    # config
-    if config:
-        cfg_file = output_path / f'{base_name}_config.json'
-        with open(cfg_file, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=2, default=str)
-
-    print(f"Results saved: {output_path / base_name}.*")
+    print(f"Results saved: {final_path}")
 
 
-def print_results_table(results: list, columns: list = None):
+def print_results_table(results: list, columns: Optional[list] = None):
     """Print a results table.
 
     Args:
@@ -297,9 +377,9 @@ def print_results_table(results: list, columns: list = None):
         if cols:
             df = df[cols]
 
-    _get_pd().set_option('display.max_columns', None)
-    _get_pd().set_option('display.width', None)
-    _get_pd().set_option('display.max_colwidth', 40)
+    _get_pd().set_option("display.max_columns", None)
+    _get_pd().set_option("display.width", None)
+    _get_pd().set_option("display.max_colwidth", 40)
 
     print("\n" + "=" * 100)
     print(df.to_string(index=False))

@@ -32,8 +32,8 @@ def relative_mse(original: torch.Tensor, recovered: torch.Tensor) -> float:
     recovered_float = recovered.detach().to(original_float.device).float()
     mse = torch.mean((original_float - recovered_float) ** 2)
     centered = original_float - original_float.mean()
-    variance = torch.mean(centered ** 2)
-    return (mse / (variance + 1e-8)).item()
+    variance = torch.mean(centered**2)
+    return float((mse / (variance + 1e-8)).item())
 
 
 __all__ = ["relative_mse", "validate_quantization_input"]

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ from experiments.lib.residual_runtime import (
     load_token_batches,
     load_training_checkpoint,
     optimizer_state_to_cpu,
+    set_seed,
     write_json,
 )
 
@@ -26,6 +28,17 @@ class IntegerTokenizer:
 
 
 class TestResidualRuntimeIO(unittest.TestCase):
+    def test_set_seed_validates_input_and_skips_unavailable_cuda(self) -> None:
+        for invalid in (True, -1, 1.5):
+            with self.subTest(seed=invalid), self.assertRaisesRegex(ValueError, "seed"):
+                set_seed(invalid)
+        with (
+            mock.patch.object(residual_runtime.torch.cuda, "is_available", return_value=False),
+            mock.patch.object(residual_runtime.torch.cuda, "manual_seed_all") as cuda_seed,
+        ):
+            set_seed(42)
+        cuda_seed.assert_not_called()
+
     def test_checkpoint_state_supports_all_existing_payload_schemas(self) -> None:
         nested_schemas = ("model_state_dict", "state_dict", "model")
         with tempfile.TemporaryDirectory() as directory:
@@ -35,15 +48,11 @@ class TestResidualRuntimeIO(unittest.TestCase):
                     path = root / f"{key}.pt"
                     torch.save({key: {"weight": torch.tensor([index])}}, path)
                     state = checkpoint_state(path)
-                    self.assertTrue(
-                        torch.equal(state["weight"], torch.tensor([index]))
-                    )
+                    self.assertTrue(torch.equal(state["weight"], torch.tensor([index])))
 
             raw_path = root / "raw.pt"
             torch.save({"weight": torch.tensor([4])}, raw_path)
-            self.assertTrue(
-                torch.equal(checkpoint_state(raw_path)["weight"], torch.tensor([4]))
-            )
+            self.assertTrue(torch.equal(checkpoint_state(raw_path)["weight"], torch.tensor([4])))
 
             priority_path = root / "priority.pt"
             torch.save(
@@ -77,6 +86,57 @@ class TestResidualRuntimeIO(unittest.TestCase):
                 checkpoint_state(missing_model)
             with self.assertRaisesRegex(KeyError, "No optimizer state dict found"):
                 checkpoint_optimizer_state(missing_optimizer)
+
+    def test_training_checkpoint_rejects_malformed_state_and_step(self) -> None:
+        path = Path("checkpoint.pt")
+        valid_optimizer = {"state": {}, "param_groups": []}
+        cases = (
+            (
+                {
+                    "model_state_dict": {"weight": "not-a-tensor"},
+                    "optimizer_state_dict": valid_optimizer,
+                },
+                TypeError,
+                "map names to tensors",
+            ),
+            (
+                {
+                    "model_state_dict": {"weight": torch.ones(1)},
+                    "optimizer_state_dict": {"state": [], "param_groups": []},
+                },
+                TypeError,
+                "invalid structure",
+            ),
+            (
+                {
+                    "model_state_dict": {"weight": torch.ones(1)},
+                    "optimizer_state_dict": valid_optimizer,
+                    "step": True,
+                },
+                ValueError,
+                "non-negative integer",
+            ),
+            (
+                {
+                    "model_state_dict": {"weight": torch.ones(1)},
+                    "optimizer_state_dict": valid_optimizer,
+                    "step": -1,
+                },
+                ValueError,
+                "non-negative integer",
+            ),
+        )
+        for payload, error_type, message in cases:
+            with (
+                self.subTest(payload=payload),
+                mock.patch.object(
+                    residual_runtime.torch,
+                    "load",
+                    return_value=payload,
+                ),
+                self.assertRaisesRegex(error_type, message),
+            ):
+                load_training_checkpoint(path)
 
     def test_training_checkpoint_uses_one_cpu_deserialization(self) -> None:
         path = Path("checkpoint.pt")
@@ -216,6 +276,36 @@ class TestResidualRuntimeIO(unittest.TestCase):
     def test_language_model_evaluation_rejects_empty_batches(self) -> None:
         with self.assertRaisesRegex(ValueError, "at least one evaluation batch"):
             evaluate_lm(object(), [], "cpu")
+
+    def test_language_model_evaluation_counts_only_supervised_tokens(self) -> None:
+        class ConstantModel(torch.nn.Module):
+            def forward(self, input_ids, attention_mask=None):
+                del attention_mask
+                return torch.zeros(*input_ids.shape, 2)
+
+        model = ConstantModel()
+        model.eval()
+        metrics = evaluate_lm(
+            model,
+            [
+                {
+                    "input_ids": torch.tensor([[0, 1, 0]]),
+                    "attention_mask": torch.tensor([[1, 1, 0]]),
+                    "labels": torch.tensor([[0, 1, -100]]),
+                },
+                {
+                    "input_ids": torch.tensor([[1, 0, 1]]),
+                    "attention_mask": torch.tensor([[1, 1, 1]]),
+                    "labels": torch.tensor([[1, 0, 1]]),
+                },
+            ],
+            "cpu",
+        )
+
+        self.assertEqual(metrics["tokens"], 3)
+        self.assertAlmostEqual(metrics["loss"], math.log(2.0))
+        self.assertAlmostEqual(metrics["perplexity"], 2.0)
+        self.assertFalse(model.training)
 
 
 if __name__ == "__main__":

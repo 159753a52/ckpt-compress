@@ -1,12 +1,13 @@
 """Compatibility layer for experiment result JSON schemas."""
 
 import json
+import math
+import numbers
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 import yaml
-
 
 TOP_LEVEL_METRIC_KEYS = (
     "loss",
@@ -18,6 +19,25 @@ TOP_LEVEL_METRIC_KEYS = (
     "val_loss",
     "metric_value",
 )
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"result JSON contains non-standard numeric constant {value}")
+
+
+def _validate_finite_numbers(value: object, *, path: str = "result") -> None:
+    """Reject non-finite evidence in both JSON and YAML compatibility inputs."""
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{path} contains a non-finite number")
+        return
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            _validate_finite_numbers(child, path=f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _validate_finite_numbers(child, path=f"{path}[{index}]")
 
 
 @dataclass(frozen=True)
@@ -52,6 +72,7 @@ def _normalize_config(value: Any, schema: str) -> Dict[str, Any]:
 
 def normalize_result_payload(payload: Any) -> ResultBundle:
     """Normalize all result schemas written by current and legacy experiments."""
+    _validate_finite_numbers(payload)
     if isinstance(payload, list):
         return ResultBundle(_normalize_records(payload, "list"), {}, "list")
     if not isinstance(payload, Mapping):
@@ -99,9 +120,10 @@ def _load_companion_config(result_path: Path) -> Dict[str, Any]:
             continue
         with config_path.open("r", encoding="utf-8") as handle:
             if config_path.suffix == ".json":
-                config = json.load(handle)
+                config = json.load(handle, parse_constant=_reject_json_constant)
             else:
                 config = yaml.safe_load(handle)
+        _validate_finite_numbers(config, path=f"companion config {config_path}")
         # Keep the historical priority of ``*_config.json`` over YAML while
         # allowing later files to supplement fields that are absent from it.
         for key, value in _normalize_config(config, "companion").items():
@@ -113,7 +135,7 @@ def load_result_bundle(path: Any) -> ResultBundle:
     """Load a result JSON file and supplement missing config from companion files."""
     result_path = Path(path)
     with result_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+        payload = json.load(handle, parse_constant=_reject_json_constant)
 
     bundle = normalize_result_payload(payload)
     companion_config = _load_companion_config(result_path)
@@ -123,14 +145,15 @@ def load_result_bundle(path: Any) -> ResultBundle:
 
 def result_metrics(record: Mapping[str, Any]) -> Dict[str, Any]:
     """Merge supported top-level metrics with the optional nested block."""
-    merged = {
-        key: record[key]
-        for key in TOP_LEVEL_METRIC_KEYS
-        if key in record
-    }
+    merged = {key: record[key] for key in TOP_LEVEL_METRIC_KEYS if key in record}
     nested = record.get("metrics")
     if isinstance(nested, Mapping):
-        merged.update(nested)
+        for key, value in nested.items():
+            if key in merged and merged[key] != value:
+                raise ValueError(
+                    f"conflicting metric {key!r}: top-level and nested values differ"
+                )
+            merged[key] = value
     return merged
 
 

@@ -10,10 +10,12 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple, TypeAlias
 
 import numpy as np
+import numpy.typing as npt
 
+FloatArray: TypeAlias = npt.NDArray[np.float64]
 
 _BUDGET_BISECTION_STEPS = 70
 _STEP_SAFETY_FACTOR = 0.99
@@ -23,18 +25,18 @@ _INTEGER_ROUNDING_TOLERANCE = 1e-9
 
 @dataclass(frozen=True)
 class _EmpiricalAllocationProblem:
-    sorted_scores: Sequence[np.ndarray]
-    layer_sizes: np.ndarray
-    lower_bounds: np.ndarray
-    upper_bounds: np.ndarray
+    sorted_scores: Sequence[FloatArray]
+    layer_sizes: npt.NDArray[np.int64]
+    lower_bounds: npt.NDArray[np.int64]
+    upper_bounds: npt.NDArray[np.int64]
     target: int
-    score_normalizers: np.ndarray
+    score_normalizers: FloatArray
 
 
 def _prox_empirical_count(
     y: float,
     alpha: float,
-    sorted_scores: np.ndarray,
+    sorted_scores: FloatArray,
     lower_bound: int,
     upper_bound: int,
 ) -> float:
@@ -58,13 +60,13 @@ def _prox_empirical_count(
 
 
 def _budget_proximal_rates(
-    rates: np.ndarray,
+    rates: FloatArray,
     step_size: float,
     problem: _EmpiricalAllocationProblem,
-) -> np.ndarray:
+) -> FloatArray:
     """Apply the exact empirical-cost prox under one weighted budget."""
 
-    def counts_at_multiplier(multiplier: float) -> np.ndarray:
+    def counts_at_multiplier(multiplier: float) -> FloatArray:
         counts = []
         for rate, scores, size, lower, upper, normalizer in zip(
             rates,
@@ -100,10 +102,10 @@ def _budget_proximal_rates(
         else:
             high = middle
     counts = counts_at_multiplier(0.5 * (low + high))
-    return counts / problem.layer_sizes
+    return np.asarray(counts / problem.layer_sizes, dtype=np.float64)
 
 
-def _empirical_cost(sorted_scores: np.ndarray, count: float) -> float:
+def _empirical_cost(sorted_scores: FloatArray, count: float) -> float:
     integer = min(int(math.floor(count)), len(sorted_scores))
     value = float(np.sum(sorted_scores[:integer], dtype=np.float64))
     if integer < len(sorted_scores):
@@ -112,7 +114,7 @@ def _empirical_cost(sorted_scores: np.ndarray, count: float) -> float:
 
 
 def _integerize_quantile_smooth_counts(
-    continuous_counts: np.ndarray,
+    continuous_counts: FloatArray,
     smoothness: float,
     problem: _EmpiricalAllocationProblem,
 ) -> Tuple[List[int], Dict[str, float | int]]:
@@ -189,11 +191,11 @@ def _integerize_quantile_smooth_counts(
 
 
 def solve_quantile_smooth_counts(
-    sorted_scores: Sequence[np.ndarray],
-    layer_sizes: np.ndarray,
+    sorted_scores: Sequence[FloatArray],
+    layer_sizes: npt.NDArray[np.int64],
     uniform_layer_counts: Sequence[int],
-    lower_bounds: np.ndarray,
-    upper_bounds: np.ndarray,
+    lower_bounds: npt.NDArray[np.int64],
+    upper_bounds: npt.NDArray[np.int64],
     target: int,
     trust_radius: float,
     smoothness_values: Sequence[float],
@@ -209,8 +211,7 @@ def solve_quantile_smooth_counts(
     score_scale = float(np.median(np.abs(target_quantiles)))
     if score_scale <= _ZERO_TOLERANCE:
         score_scale = max(
-            max(abs(float(values[0])), abs(float(values[-1])))
-            for values in sorted_scores
+            max(abs(float(values[0])), abs(float(values[-1]))) for values in sorted_scores
         )
     if score_scale <= _ZERO_TOLERANCE:
         score_scale = max(score_scale, 1.0)
@@ -223,7 +224,7 @@ def solve_quantile_smooth_counts(
         dtype=np.float64,
     )
     if normalization == "global":
-        score_normalizers = np.full(
+        score_normalizers: FloatArray = np.full(
             len(layer_sizes),
             float(layer_sizes.sum()) * score_scale,
             dtype=np.float64,
@@ -231,7 +232,10 @@ def solve_quantile_smooth_counts(
     else:
         if np.any(np.abs(uniform_proxy_costs) <= _ZERO_TOLERANCE):
             raise ValueError("Relative empirical costs require nonzero uniform proxy costs")
-        score_normalizers = len(layer_sizes) * np.abs(uniform_proxy_costs)
+        score_normalizers = np.asarray(
+            len(layer_sizes) * np.abs(uniform_proxy_costs),
+            dtype=np.float64,
+        )
 
     problem = _EmpiricalAllocationProblem(
         sorted_scores=sorted_scores,
@@ -241,7 +245,7 @@ def solve_quantile_smooth_counts(
         target=target,
         score_normalizers=score_normalizers,
     )
-    difference = np.diff(np.eye(len(layer_sizes), dtype=np.float64), axis=0)
+    difference: FloatArray = np.diff(np.eye(len(layer_sizes), dtype=np.float64), axis=0)
     laplacian = difference.T @ difference
     laplacian_largest_eigenvalue = float(np.linalg.eigvalsh(laplacian)[-1])
     initial_rates = np.asarray(uniform_layer_counts, dtype=np.float64) / layer_sizes
@@ -257,9 +261,7 @@ def solve_quantile_smooth_counts(
             residual = 0.0
             converged = True
         else:
-            step_size = _STEP_SAFETY_FACTOR / (
-                smoothness * laplacian_largest_eigenvalue
-            )
+            step_size = _STEP_SAFETY_FACTOR / (smoothness * laplacian_largest_eigenvalue)
             rates = initial_rates.copy()
             extrapolated = rates.copy()
             acceleration = 1.0
@@ -274,16 +276,14 @@ def solve_quantile_smooth_counts(
                     problem,
                 )
                 residual = float(np.max(np.abs(candidate - rates)))
-                next_acceleration = 0.5 * (
-                    1.0 + math.sqrt(1.0 + 4.0 * acceleration**2)
-                )
+                next_acceleration = 0.5 * (1.0 + math.sqrt(1.0 + 4.0 * acceleration**2))
                 if np.dot(extrapolated - candidate, candidate - rates) > 0:
                     next_acceleration = 1.0
                     next_extrapolated = candidate.copy()
                 else:
-                    next_extrapolated = candidate + (
-                        (acceleration - 1.0) / next_acceleration
-                    ) * (candidate - rates)
+                    next_extrapolated = candidate + ((acceleration - 1.0) / next_acceleration) * (
+                        candidate - rates
+                    )
                 rates = candidate
                 extrapolated = next_extrapolated
                 acceleration = next_acceleration
@@ -299,8 +299,7 @@ def solve_quantile_smooth_counts(
         )
         final_rates = np.asarray(counts, dtype=np.float64) / layer_sizes
         layer_proxy_costs = [
-            _empirical_cost(values, count)
-            for values, count in zip(sorted_scores, counts)
+            _empirical_cost(values, count) for values, count in zip(sorted_scores, counts)
         ]
         proxy_cost = sum(layer_proxy_costs)
         normalized_proxy_cost = sum(

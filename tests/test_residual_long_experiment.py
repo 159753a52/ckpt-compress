@@ -18,24 +18,19 @@ class TestResidualLongExperiment(unittest.TestCase):
         pool = [{"input_ids": torch.tensor([[0]]), "labels": torch.tensor([[0]])}]
 
         for invalid_count in (-1, True, 1.5):
-            with self.subTest(count=invalid_count), self.assertRaisesRegex(
-                ValueError, "non-negative"
+            with (
+                self.subTest(count=invalid_count),
+                self.assertRaisesRegex(ValueError, "non-negative"),
             ):
-                residual_training.seeded_training_batches(
-                    pool, invalid_count, seed=0
-                )
+                residual_training.seeded_training_batches(pool, invalid_count, seed=0)
         with self.assertRaisesRegex(ValueError, "pool size"):
             residual_training.seeded_training_batches(pool, 2, seed=0)
 
     def test_partition_rejects_negative_counts_and_step_overflow(self) -> None:
         with self.assertRaisesRegex(ValueError, "hvp_batches"):
-            residual_training.partition_seed_batches(
-                [], 1, 0, -1, 0, 0, seed=0
-            )
+            residual_training.partition_seed_batches([], 1, 0, -1, 0, 0, seed=0)
         with self.assertRaisesRegex(ValueError, "recovery_step cannot"):
-            residual_training.partition_seed_batches(
-                [], 1, 2, 0, 0, 0, seed=0
-            )
+            residual_training.partition_seed_batches([], 1, 2, 0, 0, 0, seed=0)
 
     def test_partition_is_deterministic_disjoint_and_rng_local(self) -> None:
         pool = [
@@ -85,9 +80,7 @@ class TestResidualLongExperiment(unittest.TestCase):
                 "pre_recovery": residual_runtime.batch_hash(partition.pre_recovery),
                 "scoring": residual_runtime.batch_hash(partition.scoring),
                 "allocation_probe": residual_runtime.batch_hash(partition.allocation_probe),
-                "allocation_selection": residual_runtime.batch_hash(
-                    partition.allocation_selection
-                ),
+                "allocation_selection": residual_runtime.batch_hash(partition.allocation_selection),
                 "continuation": residual_runtime.batch_hash(partition.continuation),
             },
         )
@@ -243,22 +236,23 @@ class TestResidualLongExperiment(unittest.TestCase):
             "taylor_quantile_global_smooth_l0p1",
         ]
 
-        def seed_result(offset: float) -> dict:
+        def seed_result(seed: int, offset: float) -> dict:
             method_results = {}
             for index, method in enumerate(methods):
                 immediate = 10.0 - index + offset
                 method_results[method] = {
                     "immediate": {"perplexity": immediate},
-                    "final": {"perplexity": immediate - 2.0},
+                    "final": {"perplexity": immediate - 1.0},
                 }
             return {
+                "seed": seed,
                 "current": {"perplexity": 20.0 + offset},
                 "no_compression_final": {"perplexity": 18.0 + offset},
                 "methods": method_results,
             }
 
         aggregate = residual_reporting.aggregate(
-            {"43": seed_result(1.0), "42": seed_result(0.0)}
+            {"43": seed_result(43, 1.0), "42": seed_result(42, 0.0)}
         )
 
         self.assertEqual(
@@ -276,9 +270,7 @@ class TestResidualLongExperiment(unittest.TestCase):
             [7.0, 8.0],
         )
         self.assertEqual(
-            aggregate["methods"]["taylor_uniform"][
-                "paired_immediate_delta_vs_magnitude"
-            ]["values"],
+            aggregate["methods"]["taylor_uniform"]["paired_immediate_delta_vs_magnitude"]["values"],
             [-3.0, -3.0],
         )
         comparisons = aggregate["paired_comparisons"]
@@ -287,13 +279,13 @@ class TestResidualLongExperiment(unittest.TestCase):
             [-2.0, -2.0],
         )
         self.assertEqual(
-            comparisons["spectral_k1_vs_probe_trust"]["immediate_perplexity_delta"]
-            ["values"],
+            comparisons["spectral_k1_vs_probe_trust"]["immediate_perplexity_delta"]["values"],
             [-1.0, -1.0],
         )
         self.assertEqual(
-            comparisons["quantile_global_smooth_l0p1_vs_weibull"]
-            ["immediate_perplexity_delta"]["values"],
+            comparisons["quantile_global_smooth_l0p1_vs_weibull"]["immediate_perplexity_delta"][
+                "values"
+            ],
             [-4.0, -4.0],
         )
         self.assertEqual(
@@ -308,6 +300,118 @@ class TestResidualLongExperiment(unittest.TestCase):
             residual_reporting.summarize_values([])
         with self.assertRaisesRegex(ValueError, "seed_results must not be empty"):
             residual_reporting.aggregate({})
+
+    def test_reporting_rejects_inconsistent_seed_and_method_sets(self) -> None:
+        def seed_result(seed: int) -> dict:
+            methods = {
+                method: {
+                    "immediate": {"perplexity": 2.0},
+                    "final": {"perplexity": 1.5},
+                }
+                for method in residual_protocol.FIXED_METHODS
+            }
+            return {
+                "seed": seed,
+                "current": {"perplexity": 3.0},
+                "no_compression_final": {"perplexity": 2.5},
+                "methods": methods,
+            }
+
+        with self.assertRaisesRegex(ValueError, "does not match mapping key"):
+            residual_reporting.aggregate({"42": seed_result(43)})
+
+        incomplete = seed_result(43)
+        del incomplete["methods"][residual_protocol.TAYLOR_UNIFORM_METHOD]
+        with self.assertRaisesRegex(ValueError, "method set differs"):
+            residual_reporting.aggregate({"42": seed_result(42), "43": incomplete})
+
+        spectral = seed_result(42)
+        spectral["methods"]["taylor_spectral_k1"] = {
+            "immediate": {"perplexity": 2.0},
+            "final": {"perplexity": 1.5},
+        }
+        quantile = seed_result(43)
+        quantile["methods"]["taylor_quantile_global_smooth_l0p1"] = {
+            "immediate": {"perplexity": 2.0},
+            "final": {"perplexity": 1.5},
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            "method set differs.*taylor_spectral_k1.*taylor_quantile_global",
+        ):
+            residual_reporting.aggregate({"42": spectral, "43": quantile})
+
+        missing_baseline = seed_result(42)
+        del missing_baseline["methods"][residual_protocol.RESIDUAL_MAGNITUDE_UNIFORM_METHOD]
+        with self.assertRaisesRegex(ValueError, "missing required methods"):
+            residual_reporting.aggregate({"42": missing_baseline})
+
+    def test_reporting_rejects_bad_structure_and_non_finite_metrics(self) -> None:
+        with self.assertRaisesRegex(ValueError, "current must be a mapping"):
+            residual_reporting.aggregate(
+                {
+                    "42": {
+                        "seed": 42,
+                        "current": None,
+                        "no_compression_final": {"perplexity": 2.0},
+                        "methods": {},
+                    }
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            residual_reporting.summarize_values([1.0, float("nan")])
+
+        methods = {
+            method: {
+                "immediate": {"perplexity": 2.0},
+                "final": {"perplexity": 1.5},
+            }
+            for method in residual_protocol.FIXED_METHODS
+        }
+        methods[residual_protocol.TAYLOR_UNIFORM_METHOD]["final"]["perplexity"] = float("inf")
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            residual_reporting.aggregate(
+                {
+                    "42": {
+                        "seed": 42,
+                        "current": {"perplexity": 3.0},
+                        "no_compression_final": {"perplexity": 2.5},
+                        "methods": methods,
+                    }
+                }
+            )
+
+        methods[residual_protocol.TAYLOR_UNIFORM_METHOD]["final"]["perplexity"] = 0.0
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            residual_reporting.aggregate(
+                {
+                    "42": {
+                        "seed": 42,
+                        "current": {"perplexity": 3.0},
+                        "no_compression_final": {"perplexity": 2.5},
+                        "methods": methods,
+                    }
+                }
+            )
+
+    def test_runner_result_mapping_access_fails_closed(self) -> None:
+        mapping: dict[str, object] = {"seed_results": {}}
+        self.assertIs(
+            long_runner._mutable_mapping_field(mapping, "seed_results", "results"),
+            mapping["seed_results"],
+        )
+        with self.assertRaisesRegex(TypeError, "must be a mutable mapping"):
+            long_runner._mutable_mapping_field({"seed_results": []}, "seed_results", "results")
+        with self.assertRaisesRegex(TypeError, "keys must be strings"):
+            long_runner._mutable_mapping_field(
+                {"seed_results": {42: {}}}, "seed_results", "results"
+            )
+        with self.assertRaisesRegex(ValueError, "must be a positive integer"):
+            long_runner._positive_int_field(
+                {"eligible_parameters": True},
+                "eligible_parameters",
+                "allocation",
+            )
 
     def test_method_identifier_protocol_preserves_existing_strings(self) -> None:
         self.assertEqual(

@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
+import sys
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, TypedDict
 
 import matplotlib
+
+ROOT = Path(__file__).resolve().parents[2]
+if __package__ in {None, ""} and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
+from experiments.lib.paper_results import SuiteResultStore  # noqa: E402
+from experiments.lib.residual_runtime import sha256_file, write_json  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_DIR = ROOT.parent.parent / "paper/figs"
 
 plt.rcParams.update(
@@ -31,12 +36,23 @@ plt.rcParams.update(
 )
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+class FitRecord(TypedDict, total=False):
+    layer: str
+    n_params: int
+    cdf: dict[str, list[float]]
+    empirical_ks: float
+    weibull_ks: float
+    gamma_ks: float
+    lognormal_ks: float
+
+
+class AllocationCandidate(TypedDict):
+    job_id: str
+    path: Path
+    payload: dict[str, object]
+    record: dict[str, object]
+    ratio: float
+    rates: list[float]
 
 
 def _load_json(path: Path) -> object:
@@ -45,11 +61,12 @@ def _load_json(path: Path) -> object:
 
 
 def load_completed_suite(path: Path) -> tuple[dict[str, object], dict[str, Path]]:
-    """Load a complete suite and verify every registered job digest."""
+    """Load a complete suite and validate every schema-v5 job semantically."""
     path = path.resolve()
     payload = _load_json(path)
     if not isinstance(payload, dict) or payload.get("status") != "complete":
         raise ValueError("Suite manifest must be a completed JSON object")
+    SuiteResultStore.open(path, payload, resume=True)
     completed = payload.get("completed_jobs")
     if not isinstance(completed, dict) or not completed:
         raise ValueError("Suite manifest contains no completed jobs")
@@ -62,41 +79,99 @@ def load_completed_suite(path: Path) -> tuple[dict[str, object], dict[str, Path]
             job_path = path.parent / job_path
         if not job_path.is_file():
             raise FileNotFoundError(f"Missing paper job JSON: {job_path}")
-        expected = entry.get("sha256")
-        actual = sha256_file(job_path)
-        if actual != expected:
-            raise ValueError(f"Paper job digest mismatch: {job_id}")
-        job_payload = _load_json(job_path)
-        if not isinstance(job_payload, dict) or job_payload.get("status") != "complete":
-            raise ValueError(f"Paper job is not complete: {job_id}")
         paths[str(job_id)] = job_path.resolve()
     return payload, paths
 
 
-def load_fit_records(path: Path) -> list[dict[str, object]]:
+def load_fit_records(path: Path) -> list[FitRecord]:
     """Load real empirical-CDF grids emitted by distribution validation."""
     payload = _load_json(path)
-    if not isinstance(payload, dict) or payload.get("status") != "complete":
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != 1
+        or payload.get("status") != "complete"
+    ):
         raise ValueError("Fit source must be a completed JSON object")
     records = payload.get("records")
     if not isinstance(records, list) or len(records) < 4:
         raise ValueError("Fit source must contain at least four layer records")
     required_curves = {"x", "empirical", "weibull", "gamma", "lognormal"}
-    validated = []
+    validated: list[FitRecord] = []
+    seen_layers: set[str] = set()
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("cdf"), dict):
-            continue
+            raise ValueError("Fit source contains a malformed layer record")
         cdf = record["cdf"]
         missing = required_curves - set(cdf)
         if missing:
-            continue
+            raise ValueError(f"Fit record is missing CDF competitors: {sorted(missing)}")
+        if (
+            not isinstance(record.get("layer"), str)
+            or not record["layer"]
+            or isinstance(record.get("n_params"), bool)
+            or not isinstance(record.get("n_params"), int)
+            or record["n_params"] < 1
+        ):
+            raise ValueError("Fit records must identify a non-empty layer with parameters")
+        if record["layer"] in seen_layers:
+            raise ValueError(f"Fit source contains duplicate layer: {record['layer']}")
+        seen_layers.add(record["layer"])
+        if not all(isinstance(cdf[key], list) for key in required_curves):
+            raise ValueError("CDF curves must be JSON arrays")
         lengths = {len(cdf[key]) for key in required_curves}
         if len(lengths) != 1 or 0 in lengths:
             raise ValueError("CDF curves must be non-empty and aligned")
+        numeric_curves = {}
         for key in required_curves:
-            if not all(math.isfinite(float(value)) for value in cdf[key]):
+            try:
+                values = [float(value) for value in cdf[key]]
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"CDF curve contains non-numeric values: {key}") from exc
+            if not all(math.isfinite(value) for value in values):
                 raise ValueError(f"CDF curve contains non-finite values: {key}")
-        validated.append(record)
+            numeric_curves[key] = values
+        x_values = numeric_curves["x"]
+        if (
+            len(x_values) < 2
+            or any(value < 0.0 for value in x_values)
+            or any(right <= left for left, right in zip(x_values, x_values[1:]))
+        ):
+            raise ValueError("CDF x values must be non-negative and strictly increasing")
+        for key in required_curves - {"x"}:
+            values = numeric_curves[key]
+            if any(not 0.0 <= value <= 1.0 for value in values) or any(
+                right < left for left, right in zip(values, values[1:])
+            ):
+                raise ValueError(f"CDF values must be in [0, 1] and non-decreasing: {key}")
+        normalized: FitRecord = {
+            "layer": record["layer"],
+            "n_params": record["n_params"],
+            "cdf": numeric_curves,
+        }
+        for key in ("weibull_ks", "gamma_ks", "lognormal_ks"):
+            raw = record.get(key)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                raise ValueError(f"Fit statistic {key} must be numeric")
+            numeric = float(raw)
+            if not math.isfinite(numeric) or not 0.0 <= numeric <= 1.0:
+                raise ValueError(f"Fit statistic {key} must be finite and in [0, 1]")
+            curve_name = key.removesuffix("_ks")
+            grid_difference = max(
+                abs(empirical - fitted)
+                for empirical, fitted in zip(
+                    numeric_curves["empirical"],
+                    numeric_curves[curve_name],
+                )
+            )
+            if numeric + 1e-12 < grid_difference:
+                raise ValueError(f"Fit statistic {key} is smaller than its CDF grid difference")
+            if key == "weibull_ks":
+                normalized["weibull_ks"] = numeric
+            elif key == "gamma_ks":
+                normalized["gamma_ks"] = numeric
+            else:
+                normalized["lognormal_ks"] = numeric
+        validated.append(normalized)
     if len(validated) < 4:
         raise ValueError("Fit source contains fewer than four complete CDF records")
     return validated
@@ -104,9 +179,7 @@ def load_fit_records(path: Path) -> list[dict[str, object]]:
 
 def _write_provenance(output: Path, payload: Mapping[str, object]) -> None:
     provenance_path = output.with_suffix(".provenance.json")
-    with provenance_path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True, allow_nan=False)
-        handle.write("\n")
+    write_json(provenance_path, payload)
 
 
 def generate_distribution_fit_figure(
@@ -116,7 +189,7 @@ def generate_distribution_fit_figure(
     records = load_fit_records(fit_source)
     selected = sorted(
         records,
-        key=lambda record: (-int(record.get("n_params", 0)), str(record.get("layer"))),
+        key=lambda record: (-record["n_params"], record["layer"]),
     )[:4]
     fig, axes = plt.subplots(2, 2, figsize=(10, 7.2))
     styles = {
@@ -130,7 +203,9 @@ def generate_distribution_fit_figure(
         x = np.asarray(cdf["x"], dtype=float)
         for key, (color, linestyle, width, label) in styles.items():
             ks = record.get(f"{key}_ks")
-            curve_label = label if ks is None else f"{label} ($D$={float(ks):.3f})"
+            if ks is not None and (isinstance(ks, bool) or not isinstance(ks, (int, float))):
+                raise TypeError(f"Validated fit statistic has an invalid type: {key}_ks")
+            curve_label = label if ks is None else f"{label} ($D$={ks:.3f})"
             axis.plot(
                 x,
                 np.asarray(cdf[key], dtype=float),
@@ -139,7 +214,7 @@ def generate_distribution_fit_figure(
                 linewidth=width,
                 label=curve_label,
             )
-        axis.set_title(str(record.get("layer", "unnamed layer")))
+        axis.set_title(record["layer"])
         axis.set_xlabel("Damage score")
         axis.set_ylabel("CDF")
         axis.set_ylim(-0.02, 1.02)
@@ -157,7 +232,7 @@ def generate_distribution_fit_figure(
             "kind": "distribution_fit_quality",
             "source": str(fit_source.resolve()),
             "source_sha256": sha256_file(fit_source),
-            "layers": [record.get("layer") for record in selected],
+            "layers": [record["layer"] for record in selected],
         },
     )
     return output
@@ -166,30 +241,62 @@ def generate_distribution_fit_figure(
 def _select_allocation_record(
     job_paths: Mapping[str, Path],
     requested_job: str | None,
-) -> tuple[str, Path, dict[str, object], dict[str, object]]:
-    candidates = []
+) -> AllocationCandidate:
+    candidates: list[tuple[tuple[bool, float, int], AllocationCandidate]] = []
     for job_id, path in job_paths.items():
         if requested_job and job_id != requested_job:
             continue
         payload = _load_json(path)
-        config = payload.get("config", {})
-        for record in payload.get("results", []):
+        if not isinstance(payload, dict):
+            raise ValueError(f"Paper job must be a JSON object: {path}")
+        config = payload.get("config")
+        records = payload.get("results")
+        if not isinstance(config, dict) or not isinstance(records, list):
+            raise ValueError(f"Paper job has invalid config/results: {path}")
+        ratio_raw = config.get("prune_ratio")
+        if isinstance(ratio_raw, bool) or not isinstance(ratio_raw, (int, float)):
+            raise ValueError(f"Paper job has invalid prune ratio: {path}")
+        ratio = float(ratio_raw)
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError(f"Paper job contains a malformed result: {path}")
             if record.get("method") != "dacp" or not record.get("cycles"):
                 continue
-            rates = record["cycles"][0].get("compression", {}).get("mask", {}).get(
-                "layer_rates"
+            cycles = record["cycles"]
+            if not isinstance(cycles, list) or not cycles or not isinstance(cycles[0], dict):
+                continue
+            compression = cycles[0].get("compression")
+            mask = compression.get("mask") if isinstance(compression, dict) else None
+            raw_rates = mask.get("layer_rates") if isinstance(mask, dict) else None
+            seed = record.get("seed")
+            if (
+                not isinstance(raw_rates, list)
+                or isinstance(seed, bool)
+                or not isinstance(seed, int)
+            ):
+                continue
+            rates = [float(value) for value in raw_rates]
+            preference = (
+                config.get("name") != "bert_large_mnli",
+                abs(ratio - 0.3),
+                seed,
             )
-            if rates:
-                preference = (
-                    config.get("name") != "bert_large_mnli",
-                    abs(float(config.get("prune_ratio", 0.0)) - 0.3),
-                    int(record.get("seed", 0)),
+            candidates.append(
+                (
+                    preference,
+                    {
+                        "job_id": job_id,
+                        "path": path,
+                        "payload": payload,
+                        "record": record,
+                        "ratio": ratio,
+                        "rates": rates,
+                    },
                 )
-                candidates.append((preference, job_id, path, payload, record))
+            )
     if not candidates:
         raise ValueError("No completed DACP cycle with layer_rates was found")
-    _, job_id, path, payload, record = min(candidates, key=lambda item: item[0])
-    return job_id, path, payload, record
+    return min(candidates, key=lambda item: item[0])[1]
 
 
 def generate_allocation_figure(
@@ -198,14 +305,12 @@ def generate_allocation_figure(
     requested_job: str | None = None,
 ) -> Path:
     _, job_paths = load_completed_suite(suite_path)
-    job_id, job_path, payload, record = _select_allocation_record(
-        job_paths, requested_job
-    )
-    config = payload["config"]
-    ratio = float(config["prune_ratio"])
-    rates = np.asarray(
-        record["cycles"][0]["compression"]["mask"]["layer_rates"], dtype=float
-    )
+    selected = _select_allocation_record(job_paths, requested_job)
+    job_id = selected["job_id"]
+    job_path = selected["path"]
+    record = selected["record"]
+    ratio = selected["ratio"]
+    rates = np.asarray(selected["rates"], dtype=float)
     if rates.ndim != 1 or not rates.size or not np.isfinite(rates).all():
         raise ValueError("DACP layer rates must be a finite one-dimensional array")
 

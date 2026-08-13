@@ -4,10 +4,7 @@ from unittest import mock
 
 import torch
 
-from experiments.lib.gamma_sensitivity import (
-    fit_gamma_mom_problem,
-    solve_gamma_mom_rates,
-)
+from experiments.lib.gamma_sensitivity import fit_gamma_mom_problem, solve_gamma_mom_rates
 
 
 class TestGammaSensitivity(unittest.TestCase):
@@ -37,9 +34,10 @@ class TestGammaSensitivity(unittest.TestCase):
 
         rates, metadata = solve_gamma_mom_rates(problem, 0.3, xtol=1e-10)
 
-        weighted = sum(
-            layer.size * rates[layer.name] for layer in problem.layers
-        ) / problem.total_parameters
+        weighted = (
+            sum(layer.size * rates[layer.name] for layer in problem.layers)
+            / problem.total_parameters
+        )
         self.assertAlmostEqual(weighted, 0.3, places=8)
         self.assertEqual(rates["few"], 0.3)
         self.assertEqual(rates["constant"], 0.3)
@@ -84,23 +82,28 @@ class TestGammaSensitivity(unittest.TestCase):
         scores = {"left": torch.arange(1.0, 11.0)}
         model = torch.nn.Linear(1, 1)
 
-        with mock.patch.object(
-            sensitivity,
-            "compute_scores_by_method",
-            return_value={"second-order-hvp": scores},
-        ), mock.patch.object(
-            sensitivity,
-            "apply_pruning",
-            return_value=(model, {}, 0.3),
-        ), mock.patch.object(
-            sensitivity,
-            "evaluate",
-            return_value={"perplexity": 2.0},
-        ), mock.patch.object(
-            sensitivity,
-            "fit_gamma_mom_problem",
-            wraps=sensitivity.fit_gamma_mom_problem,
-        ) as fit:
+        with (
+            mock.patch.object(
+                sensitivity,
+                "compute_scores_by_method",
+                return_value={"second-order-hvp": scores},
+            ),
+            mock.patch.object(
+                sensitivity,
+                "apply_pruning",
+                return_value=(model, {}, 0.3),
+            ),
+            mock.patch.object(
+                sensitivity,
+                "evaluate",
+                return_value={"perplexity": 2.0},
+            ),
+            mock.patch.object(
+                sensitivity,
+                "fit_gamma_mom_problem",
+                wraps=sensitivity.fit_gamma_mom_problem,
+            ) as fit,
+        ):
             rows = sensitivity.sweep_bisection_tol(
                 args,
                 model,
@@ -115,6 +118,70 @@ class TestGammaSensitivity(unittest.TestCase):
             set(rows[0]),
             {"bisection_tol", "alloc_time_s", "actual_ratio", "perplexity"},
         )
+
+    def test_timing_breakdown_uses_solver_rates_for_pruning(self) -> None:
+        import experiments.scripts.run_sensitivity_analysis as sensitivity
+
+        args = SimpleNamespace(
+            device="cpu",
+            alpha=0.5,
+            hvp_batches=1,
+            chunk_size=10,
+            prune_ratio=0.3,
+        )
+        model = torch.nn.Linear(2, 1, bias=False)
+        scores = {"weight": torch.arange(1.0, 11.0).reshape(1, 10)}
+        expected_rates = {"weight": 0.3}
+
+        with (
+            mock.patch.object(
+                sensitivity,
+                "compute_scores_by_method",
+                return_value={"second-order-hvp": scores},
+            ),
+            mock.patch.object(
+                sensitivity,
+                "solve_gamma_mom_rates",
+                return_value=(expected_rates, {"status": "converged"}),
+            ),
+            mock.patch.object(
+                sensitivity,
+                "apply_pruning",
+                return_value=(model, {}, 0.3),
+            ) as apply_pruning,
+        ):
+            breakdown = sensitivity.timing_breakdown(
+                args,
+                model,
+                None,
+                None,
+                "lm",
+            )
+
+        self.assertEqual(breakdown["actual_ratio"], 0.3)
+        self.assertEqual(breakdown["num_layers"], 1)
+        self.assertIs(apply_pruning.call_args.args[2], expected_rates)
+
+    def test_weibull_plot_passes_device_by_keyword(self) -> None:
+        import experiments.scripts.plot_weibull_fit as plot_weibull
+
+        load_failure = RuntimeError("stop after model load")
+        with (
+            mock.patch.object(
+                plot_weibull.torch.cuda,
+                "is_available",
+                return_value=False,
+            ),
+            mock.patch.object(
+                plot_weibull,
+                "load_model",
+                side_effect=load_failure,
+            ) as load_model,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "stop after model load"):
+                plot_weibull.plot_weibull_fit()
+
+        load_model.assert_called_once_with("gpt2-small", device="cpu")
 
 
 if __name__ == "__main__":

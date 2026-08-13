@@ -4,9 +4,10 @@
 对比度量，用于验证 block-diagonal HVP 近似的精度。
 """
 
-import torch
-import numpy as np
 from typing import Dict, List, Mapping, Tuple
+
+import numpy as np
+import torch
 from scipy import stats as scipy_stats
 
 # 超过此阈值时使用随机采样（全局 + 逐层通用）
@@ -19,12 +20,20 @@ def _aligned_score_pairs(
     scores_approx: Mapping[str, torch.Tensor],
 ) -> List[Tuple[str, torch.Tensor, torch.Tensor]]:
     """Align score tensors and validate the shared comparison contract."""
-    common_keys = sorted(set(scores_ref) & set(scores_approx))
-    if not common_keys:
-        raise ValueError("Score mappings must share at least one parameter")
+    reference_keys = set(scores_ref)
+    approximate_keys = set(scores_approx)
+    if reference_keys != approximate_keys:
+        missing = sorted(reference_keys - approximate_keys)
+        unexpected = sorted(approximate_keys - reference_keys)
+        raise ValueError(
+            "Score mappings must contain identical parameter keys; "
+            f"missing from approximation={missing}, unexpected in approximation={unexpected}"
+        )
+    if not reference_keys:
+        raise ValueError("Score mappings must include at least one parameter")
 
     pairs = []
-    for name in common_keys:
+    for name in sorted(reference_keys):
         ref_tensor = scores_ref[name].detach().float().cpu()
         approx_tensor = scores_approx[name].detach().float().cpu()
         if ref_tensor.shape != approx_tensor.shape:
@@ -52,18 +61,14 @@ def _validate_prune_ratio(prune_ratio: float) -> float:
             f"prune_ratio must be a finite number in [0, 1], got {prune_ratio}"
         ) from exc
     if not np.isfinite(ratio) or not 0.0 <= ratio <= 1.0:
-        raise ValueError(
-            f"prune_ratio must be a finite number in [0, 1], got {prune_ratio}"
-        )
+        raise ValueError(f"prune_ratio must be a finite number in [0, 1], got {prune_ratio}")
     return ratio
 
 
 def _exact_pruned_mask(scores: torch.Tensor, prune_count: int) -> torch.Tensor:
     """Return a stable boolean mask with exactly ``prune_count`` true entries."""
     if not 0 <= prune_count <= scores.numel():
-        raise ValueError(
-            f"prune_count must be in [0, {scores.numel()}], got {prune_count}"
-        )
+        raise ValueError(f"prune_count must be in [0, {scores.numel()}], got {prune_count}")
     mask = torch.zeros(scores.numel(), dtype=torch.bool)
     if prune_count:
         order = torch.argsort(scores, stable=True)
@@ -74,23 +79,16 @@ def _exact_pruned_mask(scores: torch.Tensor, prune_count: int) -> torch.Tensor:
 def _correlation_pair(ref: np.ndarray, approx: np.ndarray) -> Dict[str, float]:
     """Compute finite correlations, defining constant-score edge cases."""
     ref_constant = len(ref) == 0 or np.allclose(ref, ref[0], atol=1e-12, rtol=0.0)
-    approx_constant = len(approx) == 0 or np.allclose(
-        approx, approx[0], atol=1e-12, rtol=0.0
-    )
+    approx_constant = len(approx) == 0 or np.allclose(approx, approx[0], atol=1e-12, rtol=0.0)
     if ref_constant or approx_constant:
-        identical_constants = ref_constant and approx_constant and np.array_equal(
-            ref, approx
-        )
+        identical_constants = ref_constant and approx_constant and np.array_equal(ref, approx)
         value = 1.0 if identical_constants else 0.0
         return {"spearman": value, "pearson": value}
-    if len(ref) < 3:
-        return {"spearman": 0.0, "pearson": 0.0}
     spearman = scipy_stats.spearmanr(ref, approx).statistic
     pearson = scipy_stats.pearsonr(ref, approx).statistic
-    return {
-        "spearman": float(spearman) if np.isfinite(spearman) else 0.0,
-        "pearson": float(pearson) if np.isfinite(pearson) else 0.0,
-    }
+    if not np.isfinite(spearman) or not np.isfinite(pearson):
+        raise ValueError("Correlation computation returned a non-finite value")
+    return {"spearman": float(spearman), "pearson": float(pearson)}
 
 
 def compute_relative_l2_error(
@@ -114,10 +112,15 @@ def compute_relative_l2_error(
 
     for name, ref, approx in pairs:
         norm_ref = torch.norm(ref).item()
+        difference_norm = torch.norm(ref - approx).item()
         if norm_ref < 1e-12:
+            if difference_norm >= 1e-12:
+                raise ValueError(
+                    f"Relative L2 error is undefined for zero reference scores in {name!r}"
+                )
             result[name] = 0.0
         else:
-            result[name] = torch.norm(ref - approx).item() / norm_ref
+            result[name] = difference_norm / norm_ref
         all_ref.append(ref)
         all_approx.append(approx)
 
@@ -125,7 +128,13 @@ def compute_relative_l2_error(
         cat_ref = torch.cat(all_ref)
         cat_approx = torch.cat(all_approx)
         norm_global = torch.norm(cat_ref).item()
-        result['__global__'] = torch.norm(cat_ref - cat_approx).item() / max(norm_global, 1e-12)
+        difference_norm = torch.norm(cat_ref - cat_approx).item()
+        if norm_global < 1e-12:
+            if difference_norm >= 1e-12:
+                raise ValueError("Relative L2 error is undefined for zero global reference scores")
+            result["__global__"] = 0.0
+        else:
+            result["__global__"] = difference_norm / norm_global
 
     return result
 
@@ -176,7 +185,7 @@ def compute_rank_correlation(
             cat_ref_s, cat_approx_s = cat_ref[idx], cat_approx[idx]
         else:
             cat_ref_s, cat_approx_s = cat_ref, cat_approx
-        result['__global__'] = _correlation_pair(cat_ref_s, cat_approx_s)
+        result["__global__"] = _correlation_pair(cat_ref_s, cat_approx_s)
 
     return result
 
@@ -223,7 +232,7 @@ def compute_mask_iou(
     iou = total_intersection / total_union if total_union else 1.0
     agreement = total_agree / total_params
 
-    return {'__global__': iou, '__agreement__': agreement}
+    return {"__global__": iou, "__agreement__": agreement}
 
 
 def compute_gamma(
@@ -241,33 +250,29 @@ def compute_gamma(
     """
     # 典型 Transformer 参数: n_ℓ ≈ 12d² (4d² attention + 8d² MLP)
     model_configs = {
-        'gpt2-small':  {'d': 768,  'n_layers': 12},
-        'gpt2-medium': {'d': 1024, 'n_layers': 24},
-        'bert-base':   {'d': 768,  'n_layers': 12},
-        'bert-large':  {'d': 1024, 'n_layers': 24},
-        'pythia-410m':  {'d': 1024, 'n_layers': 24},
-        'vit-l-32':    {'d': 1024, 'n_layers': 24},
-        'vit-b-16':    {'d': 768,  'n_layers': 12},
+        "gpt2-small": {"d": 768, "n_layers": 12},
+        "gpt2-medium": {"d": 1024, "n_layers": 24},
+        "bert-base": {"d": 768, "n_layers": 12},
+        "bert-large": {"d": 1024, "n_layers": 24},
+        "pythia-410m": {"d": 1024, "n_layers": 24},
+        "vit-l-32": {"d": 1024, "n_layers": 24},
+        "vit-b-16": {"d": 768, "n_layers": 12},
     }
 
-    if (
-        isinstance(seq_length, bool)
-        or not isinstance(seq_length, int)
-        or seq_length < 1
-    ):
+    if isinstance(seq_length, bool) or not isinstance(seq_length, int) or seq_length < 1:
         raise ValueError(f"seq_length must be a positive integer, got {seq_length}")
     if model_name not in model_configs:
         raise ValueError(f"Unknown model: {model_name}")
 
     cfg = model_configs[model_name]
-    d = cfg['d']
+    d = cfg["d"]
     T = seq_length
 
     # ViT: T = (image_size / patch_size)² + 1 (CLS token).  Keep these
     # values aligned with the model constructors in experiments.lib.models.
     vit_specs = {
-        'vit-l-32': (384, 32),
-        'vit-b-16': (224, 16),
+        "vit-l-32": (384, 32),
+        "vit-b-16": (224, 16),
     }
     if model_name in vit_specs:
         image_size, patch_size = vit_specs[model_name]
@@ -277,11 +282,11 @@ def compute_gamma(
     gamma = d * T / n_ell  # = T / (12d)
 
     return {
-        'd': d,
-        'T': T,
-        'n_ell': n_ell,
-        'gamma': gamma,
-        'gamma_pct': gamma * 100,
+        "d": d,
+        "T": T,
+        "n_ell": n_ell,
+        "gamma": gamma,
+        "gamma_pct": gamma * 100,
     }
 
 
@@ -292,6 +297,8 @@ def summarize_comparison(
     gamma_info: Dict[str, float],
 ) -> str:
     """生成对比总结文本。"""
+    global_l2 = l2_errors["__global__"]
+    global_correlations = correlations["__global__"]
     lines = [
         f"=== Block-wise HVP Approximation Analysis ===",
         f"",
@@ -299,9 +306,9 @@ def summarize_comparison(
         f"n_ℓ≈{gamma_info['n_ell']}, γ={gamma_info['gamma_pct']:.2f}%",
         f"",
         f"--- Global Metrics ---",
-        f"Relative L2 Error:  {l2_errors.get('__global__', 0):.6f}",
-        f"Spearman ρ:         {correlations.get('__global__', {}).get('spearman', 0):.6f}",
-        f"Pearson r:          {correlations.get('__global__', {}).get('pearson', 0):.6f}",
+        f"Relative L2 Error:  {global_l2:.6f}",
+        f"Spearman ρ:         {global_correlations['spearman']:.6f}",
+        f"Pearson r:          {global_correlations['pearson']:.6f}",
     ]
 
     for ratio_key, iou_data in mask_ious.items():
@@ -311,12 +318,12 @@ def summarize_comparison(
         )
 
     # 按层的 L2 error (top-5 worst)
-    layer_errors = {k: v for k, v in l2_errors.items() if k != '__global__'}
+    layer_errors = {k: v for k, v in l2_errors.items() if k != "__global__"}
     if layer_errors:
         lines.append("")
         lines.append("--- Top-5 Layers with Largest L2 Error ---")
         for name, err in sorted(layer_errors.items(), key=lambda x: -x[1])[:5]:
-            sp = correlations.get(name, {}).get('spearman', 0)
+            sp = correlations[name]["spearman"]
             lines.append(f"  {name}: L2={err:.6f}, Spearman={sp:.4f}")
 
     return "\n".join(lines)

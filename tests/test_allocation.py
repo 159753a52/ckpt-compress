@@ -113,6 +113,41 @@ class TestGlobalTopKAllocation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "global_prune_ratio"):
             UniformAllocation().allocate(scores, True)
 
+    def test_gamma_adaptive_keeps_exact_budget_across_discrete_ties(self) -> None:
+        scores = {"left": torch.ones(3), "right": torch.ones(2)}
+
+        rates = GammaAdaptiveAllocation().allocate(scores, 0.4)
+
+        self.assertEqual(rates, {"left": 2 / 3, "right": 0.0})
+        self.assertEqual(
+            sum(int(scores[name].numel() * rates[name]) for name in scores),
+            2,
+        )
+
+    def test_weibull_adaptive_honors_exact_budget_and_layer_cap(self) -> None:
+        scores = {
+            "left": torch.linspace(0.1, 2.0, 20),
+            "right": torch.linspace(0.2, 3.0, 20),
+        }
+        allocator = WeibullAdaptiveAllocation(max_layer_ratio=0.6)
+
+        rates = allocator.allocate(scores, 0.5)
+
+        self.assertTrue(all(rate <= 0.6 for rate in rates.values()))
+        self.assertEqual(
+            sum(int(scores[name].numel() * rates[name]) for name in scores),
+            20,
+        )
+        with self.assertRaisesRegex(ValueError, "cannot meet"):
+            WeibullAdaptiveAllocation(max_layer_ratio=0.4).allocate(scores, 0.5)
+
+    def test_count_ratios_round_trip_through_legacy_integer_conversion(self) -> None:
+        scores = {"layer": torch.ones(22)}
+
+        rates = GammaAdaptiveAllocation().allocate(scores, 0.7)
+
+        self.assertEqual(int(scores["layer"].numel() * rates["layer"]), 15)
+
     def test_weibull_layer_cap_is_validated(self) -> None:
         with self.assertRaisesRegex(ValueError, "max_layer_ratio"):
             WeibullAdaptiveAllocation(max_layer_ratio=1.1)

@@ -5,13 +5,15 @@ BERT 模型工具。
 支持 BERT-Base 和 BERT-Large 模型。
 """
 
+from typing import Any, Dict, Optional
+
 import torch
-from typing import Optional, Dict, Any
 
 from ._wrapper import DelegatingModel
 
 try:
-    from transformers import BertForMaskedLM, BertConfig
+    from transformers import BertConfig, BertForMaskedLM
+
     HAS_TRANSFORMERS = True
 except ImportError:
     HAS_TRANSFORMERS = False
@@ -30,7 +32,7 @@ class BERTForExperiment(DelegatingModel):
         model_size: str = "base",
         pretrained: bool = False,
         local_files_only: bool = False,
-        cache_dir: Optional[str] = None
+        cache_dir: Optional[str] = None,
     ):
         """
         初始化 BERT 模型。
@@ -44,9 +46,7 @@ class BERTForExperiment(DelegatingModel):
         super().__init__()
 
         if not HAS_TRANSFORMERS:
-            raise ImportError(
-                "transformers 库未安装。请运行: pip install transformers"
-            )
+            raise ImportError("transformers 库未安装。请运行: pip install transformers")
 
         self.model_size = model_size.lower()
 
@@ -56,13 +56,10 @@ class BERTForExperiment(DelegatingModel):
         if pretrained:
             # 加载预训练模型
             model_name = f"bert-{self.model_size}-uncased"
-            kwargs = {'local_files_only': local_files_only}
+            kwargs: Dict[str, Any] = {"local_files_only": local_files_only}
             if cache_dir is not None:
-                kwargs['cache_dir'] = cache_dir
-            self.model = BertForMaskedLM.from_pretrained(
-                model_name,
-                **kwargs
-            )
+                kwargs["cache_dir"] = cache_dir
+            self.model = BertForMaskedLM.from_pretrained(model_name, **kwargs)
         else:
             # 随机初始化
             if self.model_size == "base":
@@ -90,7 +87,7 @@ class BERTForExperiment(DelegatingModel):
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         token_type_ids: Optional[torch.Tensor] = None,
-        labels: Optional[torch.Tensor] = None
+        labels: Optional[torch.Tensor] = None,
     ):
         """
         前向传播。
@@ -108,7 +105,7 @@ class BERTForExperiment(DelegatingModel):
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
-            labels=labels
+            labels=labels,
         )
 
     def get_model_info(self) -> Dict[str, Any]:
@@ -131,9 +128,7 @@ class BERTForExperiment(DelegatingModel):
 
 
 def get_bert_base(
-    pretrained: bool = False,
-    local_files_only: bool = False,
-    cache_dir: Optional[str] = None
+    pretrained: bool = False, local_files_only: bool = False, cache_dir: Optional[str] = None
 ) -> BERTForExperiment:
     """
     创建 BERT-Base 模型的工厂函数。
@@ -156,14 +151,12 @@ def get_bert_base(
         model_size="base",
         pretrained=pretrained,
         local_files_only=local_files_only,
-        cache_dir=cache_dir
+        cache_dir=cache_dir,
     )
 
 
 def get_bert_large(
-    pretrained: bool = False,
-    local_files_only: bool = False,
-    cache_dir: Optional[str] = None
+    pretrained: bool = False, local_files_only: bool = False, cache_dir: Optional[str] = None
 ) -> BERTForExperiment:
     """
     创建 BERT-Large 模型的工厂函数。
@@ -186,5 +179,5 @@ def get_bert_large(
         model_size="large",
         pretrained=pretrained,
         local_files_only=local_files_only,
-        cache_dir=cache_dir
+        cache_dir=cache_dir,
     )

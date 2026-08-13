@@ -1,7 +1,7 @@
 """Gamma method-of-moments allocation for sensitivity experiments."""
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 from typing import Dict, Mapping, Optional, Tuple
 
 import torch
@@ -21,6 +21,12 @@ class GammaLayerFit:
     @property
     def valid(self) -> bool:
         return self.shape is not None and self.scale is not None
+
+    def parameters(self) -> Tuple[float, float]:
+        """Return a validated fit pair for numeric allocation code."""
+        if self.shape is None or self.scale is None:
+            raise ValueError(f"Gamma layer {self.name!r} has no valid fit parameters")
+        return self.shape, self.scale
 
 
 @dataclass(frozen=True)
@@ -63,7 +69,7 @@ def fit_gamma_mom_problem(
             elif variance < moment_floor or mean < moment_floor:
                 reason = "degenerate_moments"
             else:
-                shape = max(shape_bounds[0], min(mean ** 2 / variance, shape_bounds[1]))
+                shape = max(shape_bounds[0], min(mean**2 / variance, shape_bounds[1]))
                 scale = max(scale_bounds[0], min(variance / mean, scale_bounds[1]))
 
         layers.append(
@@ -114,7 +120,8 @@ def solve_gamma_mom_rates(
     ) -> Dict[str, object]:
         weighted_rate = (
             sum(layer.size * rates[layer.name] for layer in problem.layers) / total
-            if total else 0.0
+            if total
+            else 0.0
         )
         return {
             "status": status,
@@ -149,13 +156,16 @@ def solve_gamma_mom_rates(
         for layer in problem.layers:
             ratio = target_ratio
             if layer.valid:
-                ratio = stats.gamma.cdf(threshold, layer.shape, scale=layer.scale)
+                shape, scale = layer.parameters()
+                ratio = stats.gamma.cdf(threshold, shape, scale=scale)
             expected += layer.size * ratio
         value = expected / total - target_ratio
         return value if math.isfinite(value) else math.nan
 
     lower = 0.0
-    upper = max(max(layer.shape * layer.scale for layer in fitted), 1.0)
+    upper = max(
+        max(shape * scale for shape, scale in (layer.parameters() for layer in fitted)), 1.0
+    )
     bracket_found = False
     for _ in range(max_bracket_expansions + 1):
         value = objective(upper)
@@ -196,7 +206,8 @@ def solve_gamma_mom_rates(
     for layer in problem.layers:
         ratio = target_ratio
         if layer.valid:
-            ratio = stats.gamma.cdf(threshold, layer.shape, scale=layer.scale)
+            shape, scale = layer.parameters()
+            ratio = stats.gamma.cdf(threshold, shape, scale=scale)
         rates[layer.name] = max(0.0, min(1.0, float(ratio)))
     return rates, metadata(
         "converged",

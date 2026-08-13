@@ -5,13 +5,49 @@
 """
 
 import copy
+from argparse import ArgumentTypeError
+
 import torch
 
-from experiments.lib.models import load_model
-from experiments.lib.data import get_data_loaders, cache_batches
+from experiments.lib.args import device_name, nonnegative_int, positive_int, unit_interval_float
+from experiments.lib.data import cache_batches, get_data_loaders
 from experiments.lib.evaluation import evaluate
 from experiments.lib.importance_compare.scoring import compute_scores_by_method
 from experiments.lib.losses import compute_task_loss
+from experiments.lib.models import load_model
+
+
+def _validate_runtime_args(args, cache_eval=True) -> None:
+    """Validate direct API callers before loading models or datasets."""
+    validators = {
+        "batch_size": positive_int,
+        "seq_length": positive_int,
+        "num_workers": nonnegative_int,
+        "num_steps": positive_int,
+        "hvp_batches": positive_int,
+        "chunk_size": positive_int,
+        "alpha": unit_interval_float,
+        "device": device_name,
+    }
+    if cache_eval:
+        validators["eval_batches"] = positive_int
+    defaults = {
+        "num_workers": 0,
+        "num_steps": 100,
+        "hvp_batches": 8,
+        "chunk_size": 10,
+        "alpha": 0.5,
+        "device": "cuda",
+        "eval_batches": 20,
+    }
+    for name, validator in validators.items():
+        value = getattr(args, name, defaults.get(name))
+        if value is None:
+            raise ValueError(f"{name} is required")
+        try:
+            validator(str(value))
+        except (ArgumentTypeError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid {name}: {value!r}") from exc
 
 
 def setup_model_and_data(args, cache_eval=True):
@@ -25,12 +61,13 @@ def setup_model_and_data(args, cache_eval=True):
         train_loader: 原始训练 DataLoader（部分脚本需要）
         val_loader: 原始验证 DataLoader（部分脚本需要）
     """
+    _validate_runtime_args(args, cache_eval=cache_eval)
     print(f"\n[Setup] 加载模型: {args.model}")
     model, model_family = load_model(
         args.model,
         pretrained=True,
         checkpoint_path=args.checkpoint,
-        device='cpu',
+        device="cpu",
         dataset_name=args.dataset,
     )
 
@@ -40,12 +77,12 @@ def setup_model_and_data(args, cache_eval=True):
         args.dataset,
         batch_size=args.batch_size,
         seq_length=args.seq_length,
-        num_workers=getattr(args, 'num_workers', 0),
-        data_dir=getattr(args, 'data_dir', './data'),
+        num_workers=getattr(args, "num_workers", 0),
+        data_dir=getattr(args, "data_dir", "./data"),
     )
 
-    num_steps = getattr(args, 'num_steps', 100)
-    eval_batches = getattr(args, 'eval_batches', 20)
+    num_steps = getattr(args, "num_steps", 100)
+    eval_batches = getattr(args, "eval_batches", 20)
 
     print(f"[Setup] 缓存批次 (train={num_steps}, eval={eval_batches})...")
     cached_train = cache_batches(train_loader, num_steps, task_type)
@@ -91,11 +128,11 @@ def precompute_scores(model, cached_train, task_type, methods, args, **kwargs):
         cached_train,
         task_type,
         methods=methods,
-        alpha=getattr(args, 'alpha', 0.5),
-        hvp_batches=getattr(args, 'hvp_batches', 8),
-        hvp_mode=getattr(args, 'hvp_mode', 'full'),
-        chunk_size=getattr(args, 'chunk_size', 10),
-        model_family=getattr(args, 'model_family', 'gpt2'),
+        alpha=getattr(args, "alpha", 0.5),
+        hvp_batches=getattr(args, "hvp_batches", 8),
+        hvp_mode=getattr(args, "hvp_mode", "full"),
+        chunk_size=getattr(args, "chunk_size", 10),
+        model_family=getattr(args, "model_family", "gpt2"),
         **kwargs,
     )
     del model_for_scoring
@@ -106,11 +143,11 @@ def precompute_scores(model, cached_train, task_type, methods, args, **kwargs):
 
 def get_metric_key(task_type):
     """根据任务类型返回主评估指标名。"""
-    if task_type == 'lm':
-        return 'perplexity'
-    elif task_type == 'reg':
-        return 'pearson'
-    return 'accuracy'
+    if task_type == "lm":
+        return "perplexity"
+    elif task_type == "reg":
+        return "pearson"
+    return "accuracy"
 
 
 def train_one_step(model, optimizer, batch, task_type, device):

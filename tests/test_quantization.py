@@ -31,6 +31,31 @@ class TestQuantizers(unittest.TestCase):
             quantizer.quantize(weight, shape=(3,))
         with self.assertRaisesRegex(ValueError, "mask shape"):
             quantizer.quantize(weight, mask=torch.ones(3))
+        with self.assertRaisesRegex(ValueError, "only 0 or 1"):
+            quantizer.quantize(weight, mask=torch.tensor([[1.0, 0.5], [0.0, 1.0]]))
+
+    def test_kmeans_dequantize_rejects_malformed_metadata(self) -> None:
+        quantizer = KMeansQuantizer(n_clusters=2)
+        indices = torch.tensor([0, 1, -1])
+        valid = {
+            "centroids": [1.0, 2.0],
+            "signs": [1.0, -1.0, 0.0],
+            "shape": (3,),
+            "n_clusters": 2,
+            "dtype": "torch.float32",
+        }
+        cases = (
+            ({**valid, "shape": (1, 3)}, "shape must match"),
+            ({**valid, "centroids": [1.0]}, "reference a centroid"),
+            ({**valid, "signs": [1.0, 0.5, 0.0]}, "only -1, 0, or 1"),
+            ({**valid, "n_clusters": 1}, "match the centroid"),
+        )
+        for metadata, message in cases:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                quantizer.dequantize(indices, metadata)
+
+        with self.assertRaisesRegex(TypeError, "integer torch.Tensor"):
+            quantizer.dequantize(indices.float(), valid)
 
     def test_int4_round_trip_and_custom_range_ratio(self) -> None:
         weight = torch.tensor([-2.0, -1.0, 0.0, 1.0, 2.0], requires_grad=True)

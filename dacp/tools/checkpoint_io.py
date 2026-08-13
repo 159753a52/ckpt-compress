@@ -10,9 +10,59 @@ for fp16 non-zero storage, where P is the sparsity ratio.
 """
 
 import os
+import tempfile
+from pathlib import Path
+from typing import Dict, Mapping, Optional
+
 import numpy as np
+import numpy.typing as npt
 import torch
-from typing import Dict, Mapping
+
+
+def _validate_checkpoint_inputs(
+    state_dict: Mapping[str, torch.Tensor],
+    masks: Mapping[str, torch.Tensor],
+) -> None:
+    """Validate tensor mappings and reject masks for absent state entries."""
+    if not isinstance(state_dict, Mapping) or not isinstance(masks, Mapping):
+        raise TypeError("state_dict and masks must be mappings")
+    invalid_keys = [
+        name for name in (*state_dict.keys(), *masks.keys()) if not isinstance(name, str)
+    ]
+    if invalid_keys:
+        raise TypeError(f"state_dict and mask keys must be strings: {invalid_keys}")
+    invalid_values = [
+        name for name, value in state_dict.items() if not isinstance(value, torch.Tensor)
+    ]
+    if invalid_values:
+        raise TypeError(f"state_dict entries must be tensors: {invalid_values}")
+    invalid_masks = [name for name, value in masks.items() if not isinstance(value, torch.Tensor)]
+    if invalid_masks:
+        raise TypeError(f"mask entries must be tensors: {invalid_masks}")
+    unknown_masks = sorted(set(masks) - set(state_dict))
+    if unknown_masks:
+        raise KeyError(f"masks contain keys absent from state_dict: {unknown_masks}")
+
+
+def _atomic_torch_save(payload: object, path: str) -> int:
+    """Write a checkpoint atomically after creating its destination directory."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Optional[Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+        torch.save(payload, temporary_path)
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    return destination.stat().st_size
 
 
 def _normalize_mask(
@@ -53,6 +103,7 @@ def save_compressed_checkpoint(
     Returns:
         compressed file size in bytes
     """
+    _validate_checkpoint_inputs(state_dict, masks)
     compressed = {}
     for name, param in state_dict.items():
         p = param.detach().cpu()
@@ -64,16 +115,15 @@ def save_compressed_checkpoint(
             # Pack mask bits into uint8 array
             packed_mask = np.packbits(mask.numpy().flatten().astype(np.uint8))
             compressed[name] = {
-                'shape': list(p.shape),
-                'mask': torch.from_numpy(packed_mask),
-                'values': values,
-                'numel': p.numel(),
+                "shape": list(p.shape),
+                "mask": torch.from_numpy(packed_mask),
+                "values": values,
+                "numel": p.numel(),
             }
         else:
             compressed[name] = p.half() if use_fp16 else p
 
-    torch.save(compressed, path)
-    return os.path.getsize(path)
+    return _atomic_torch_save(compressed, path)
 
 
 def _unpack_masked_entry(data: Mapping, dtype: torch.dtype) -> torch.Tensor:
@@ -96,7 +146,7 @@ def _unpack_masked_entry(data: Mapping, dtype: torch.dtype) -> torch.Tensor:
         raise ValueError("Masked checkpoint entry has an invalid packed mask") from exc
     if unpacked_mask.size < numel:
         raise ValueError("Masked checkpoint entry has a truncated packed mask")
-    flat_mask = unpacked_mask[:numel].astype(bool)
+    flat_mask: npt.NDArray[np.bool_] = unpacked_mask[:numel].astype(bool)
     mask = torch.from_numpy(flat_mask)
     active_count = int(mask.sum().item())
 
@@ -105,19 +155,13 @@ def _unpack_masked_entry(data: Mapping, dtype: torch.dtype) -> torch.Tensor:
     elif "indices" in data and "codebook" in data:
         indices = data["indices"]
         codebook = data["codebook"]
-        if not isinstance(indices, torch.Tensor) or not isinstance(
-            codebook, torch.Tensor
-        ):
-            raise ValueError(
-                "Quantized checkpoint entries must store tensor indices and codebook"
-            )
+        if not isinstance(indices, torch.Tensor) or not isinstance(codebook, torch.Tensor):
+            raise ValueError("Quantized checkpoint entries must store tensor indices and codebook")
         indices = indices.detach().cpu().to(torch.long).flatten()
         codebook = codebook.detach().cpu().flatten()
         if indices.numel() != active_count:
             raise ValueError("Quantized checkpoint indices do not match the mask")
-        if indices.numel() and (
-            int(indices.min()) < 0 or int(indices.max()) >= codebook.numel()
-        ):
+        if indices.numel() and (int(indices.min()) < 0 or int(indices.max()) >= codebook.numel()):
             raise ValueError("Quantized checkpoint index is outside the codebook")
         values = codebook[indices]
     else:
@@ -147,13 +191,19 @@ def load_compressed_checkpoint(
     Returns:
         Restored state_dict with zeros filled back in
     """
-    compressed = torch.load(path, map_location='cpu')
+    compressed = torch.load(path, map_location="cpu", weights_only=True)
+    if not isinstance(compressed, Mapping):
+        raise TypeError("compressed checkpoint must contain a mapping")
     state_dict = {}
     for name, data in compressed.items():
-        if isinstance(data, dict) and 'mask' in data:
+        if not isinstance(name, str):
+            raise TypeError("compressed checkpoint keys must be strings")
+        if isinstance(data, dict) and "mask" in data:
             state_dict[name] = _unpack_masked_entry(data, dtype)
-        else:
+        elif isinstance(data, torch.Tensor):
             state_dict[name] = data.to(dtype)
+        else:
+            raise TypeError(f"compressed checkpoint entry {name!r} must be a tensor or mapping")
     return state_dict
 
 
@@ -181,9 +231,9 @@ def save_quantized_compressed_checkpoint(
         or not 1 <= n_clusters <= 256
     ):
         raise ValueError(
-            "n_clusters must be an integer in [1, 256] for uint8 indices, "
-            f"got {n_clusters}"
+            "n_clusters must be an integer in [1, 256] for uint8 indices, " f"got {n_clusters}"
         )
+    _validate_checkpoint_inputs(state_dict, masks)
     compressed = {}
 
     for name, param in state_dict.items():
@@ -196,6 +246,7 @@ def save_quantized_compressed_checkpoint(
             if len(values) > n_clusters:
                 # Quantize non-zero values
                 from sklearn.cluster import MiniBatchKMeans
+
                 kmeans = MiniBatchKMeans(
                     n_clusters=n_clusters,
                     batch_size=min(10000, len(values)),
@@ -206,24 +257,23 @@ def save_quantized_compressed_checkpoint(
                 centroids = kmeans.cluster_centers_.flatten().astype(np.float16)
                 indices = kmeans.predict(values.reshape(-1, 1)).astype(np.uint8)
                 compressed[name] = {
-                    'shape': list(p.shape),
-                    'mask': torch.from_numpy(packed_mask),
-                    'indices': torch.from_numpy(indices),
-                    'codebook': torch.from_numpy(centroids),
-                    'numel': p.numel(),
+                    "shape": list(p.shape),
+                    "mask": torch.from_numpy(packed_mask),
+                    "indices": torch.from_numpy(indices),
+                    "codebook": torch.from_numpy(centroids),
+                    "numel": p.numel(),
                 }
             else:
                 compressed[name] = {
-                    'shape': list(p.shape),
-                    'mask': torch.from_numpy(packed_mask),
-                    'values': torch.from_numpy(values).half(),
-                    'numel': p.numel(),
+                    "shape": list(p.shape),
+                    "mask": torch.from_numpy(packed_mask),
+                    "values": torch.from_numpy(values).half(),
+                    "numel": p.numel(),
                 }
         else:
             compressed[name] = p.half()
 
-    torch.save(compressed, path)
-    return os.path.getsize(path)
+    return _atomic_torch_save(compressed, path)
 
 
 def get_size_breakdown(
@@ -237,6 +287,7 @@ def get_size_breakdown(
         original_bytes, mask_bytes, values_bytes, total_compressed_bytes,
         compression_ratio, sparsity
     """
+    _validate_checkpoint_inputs(state_dict, masks)
     total_original = 0
     total_mask_bytes = 0
     total_value_bits = 0
@@ -253,7 +304,7 @@ def get_size_breakdown(
             nnz = int(mask.sum().item())
             total_mask_bytes += (n + 7) // 8  # np.packbits pads each tensor separately
             total_value_bits += nnz * value_bits
-            total_pruned += (n - nnz)
+            total_pruned += n - nnz
             total_params += n
         else:
             total_value_bits += n * value_bits
@@ -263,12 +314,14 @@ def get_size_breakdown(
     total_compressed = mask_bytes + value_bytes
 
     return {
-        'original_bytes': total_original,
-        'mask_bytes': mask_bytes,
-        'values_bytes': value_bytes,
-        'total_compressed_bytes': total_compressed,
-        'compression_ratio': total_original / total_compressed if total_compressed > 0 else float('inf'),
-        'sparsity': total_pruned / total_params if total_params > 0 else 0,
-        'total_params': total_params,
-        'pruned_params': total_pruned,
+        "original_bytes": total_original,
+        "mask_bytes": mask_bytes,
+        "values_bytes": value_bytes,
+        "total_compressed_bytes": total_compressed,
+        "compression_ratio": (
+            total_original / total_compressed if total_compressed > 0 else float("inf")
+        ),
+        "sparsity": total_pruned / total_params if total_params > 0 else 0,
+        "total_params": total_params,
+        "pruned_params": total_pruned,
     }

@@ -96,6 +96,7 @@ class TestResidualAllocation(unittest.TestCase):
 
         self.assertEqual(counts, [3, 3])
         self.assertEqual(metadata["fallback"], "all Weibull fits invalid")
+        self.assertEqual([fit["count"] for fit in fits], [5, 7])
 
     def test_weibull_fallback_respects_small_layer_cap(self) -> None:
         fits = [
@@ -113,6 +114,25 @@ class TestResidualAllocation(unittest.TestCase):
 
         self.assertEqual(counts, [0, 2])
         self.assertEqual(metadata["fallback"], "all Weibull fits invalid")
+
+    def test_partial_invalid_fits_allow_zero_threshold_boundary(self) -> None:
+        fits = [
+            fit_weibull_mom(torch.zeros(2)),
+            {"valid": True, "shape": 1.0, "scale": 1.0},
+        ]
+
+        counts, metadata = weibull_counts(
+            fits,
+            layer_sizes=[2, 1],
+            target=1,
+            ratio=0.6,
+            max_layer_ratio=1.0,
+        )
+
+        self.assertEqual(counts, [1, 0])
+        self.assertEqual(metadata["threshold"], 0.0)
+        self.assertEqual(metadata["real_counts"], [1.2, 0.0])
+        self.assertIsNone(metadata["fallback"])
 
     def test_weibull_counts_reject_misaligned_fit_list(self) -> None:
         valid_fit = fit_weibull_mom(torch.tensor([0.1, 0.2, 0.4, 0.8]))
@@ -233,6 +253,7 @@ class TestResidualAllocation(unittest.TestCase):
         empty_fit = residual_weibull.fit_weibull_mom(torch.empty(0))
         self.assertFalse(empty_fit["valid"])
         self.assertEqual(empty_fit["reason"], "empty values")
+        self.assertEqual(empty_fit["count"], 0)
 
         with self.assertRaisesRegex(ValueError, "positive"):
             trust_region_counts(
@@ -262,22 +283,14 @@ class TestResidualAllocation(unittest.TestCase):
         target = 510
         direction = budget_tangent_dct_directions(sizes, rank=1)[0]
 
-        plus = directional_layer_counts(
-            direction, sizes, target, 0.5, 0.025, 0.8, 1.0
-        )
-        minus = directional_layer_counts(
-            direction, sizes, target, 0.5, 0.025, 0.8, -1.0
-        )
+        plus = directional_layer_counts(direction, sizes, target, 0.5, 0.025, 0.8, 1.0)
+        minus = directional_layer_counts(direction, sizes, target, 0.5, 0.025, 0.8, -1.0)
 
         self.assertEqual(sum(plus), target)
         self.assertEqual(sum(minus), target)
         self.assertNotEqual(plus, minus)
-        self.assertTrue(
-            all(0 <= count <= int(0.8 * size) for count, size in zip(plus, sizes))
-        )
-        self.assertTrue(
-            all(0 <= count <= int(0.8 * size) for count, size in zip(minus, sizes))
-        )
+        self.assertTrue(all(0 <= count <= int(0.8 * size) for count, size in zip(plus, sizes)))
+        self.assertTrue(all(0 <= count <= int(0.8 * size) for count, size in zip(minus, sizes)))
 
     def test_directional_reconstruction_matches_measurements(self) -> None:
         design = [
@@ -287,8 +300,7 @@ class TestResidualAllocation(unittest.TestCase):
         ]
         true_gradient = [3.0, -1.0, 2.0, 0.5]
         responses = [
-            sum(value * gradient for value, gradient in zip(row, true_gradient))
-            for row in design
+            sum(value * gradient for value, gradient in zip(row, true_gradient)) for row in design
         ]
 
         reconstructed, metadata = reconstruct_directional_gradient(design, responses)
@@ -305,6 +317,7 @@ class TestResidualAllocation(unittest.TestCase):
                 [[1.0, -1.0], [2.0, -2.0]],
                 [3.0, 6.0],
             )
+
 
 if __name__ == "__main__":
     unittest.main()

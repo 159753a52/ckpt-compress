@@ -5,10 +5,11 @@ Inshrinkerator 分位数草图模块。
 基于 Inshrinkerator 论文的算法 1。
 """
 
-import torch
 import math
-from typing import Dict, Optional
 from collections import defaultdict
+from typing import Dict, Optional
+
+import torch
 
 
 def compute_gamma(alpha: float) -> float:
@@ -23,6 +24,8 @@ def compute_gamma(alpha: float) -> float:
     返回:
         Gamma 值
     """
+    if not math.isfinite(alpha) or not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must be finite and in (0, 1), got {alpha}")
     return (1 + alpha) / (1 - alpha)
 
 
@@ -39,12 +42,19 @@ def compute_bucket_index(values: torch.Tensor, gamma: float) -> torch.Tensor:
     返回:
         桶索引张量
     """
-    # 处理零值和负值
-    values = values.clone()
-    values[values <= 0] = 1e-10  # 零值使用小正数
+    if not math.isfinite(gamma) or gamma <= 1.0:
+        raise ValueError(f"gamma must be finite and greater than 1, got {gamma}")
+    if values.is_complex():
+        raise TypeError("values must be real")
+    working = values if values.is_floating_point() else values.float()
+    if not torch.isfinite(working).all().item():
+        raise ValueError("values must be finite")
+
+    working = working.clone()
+    working[working <= 0] = torch.finfo(working.dtype).tiny
 
     log_gamma = math.log(gamma)
-    indices = torch.floor(torch.log(values) / log_gamma).long()
+    indices = torch.floor(torch.log(working) / log_gamma).long()
 
     return indices
 
@@ -84,7 +94,8 @@ class QuantileSketch:
         indices = compute_bucket_index(values, self.gamma)
 
         # 更新桶计数
-        for idx in indices.tolist():
+        for raw_index in indices.flatten().tolist():
+            idx = int(raw_index)
             self.buckets[idx] += 1
             self.count += 1
 
@@ -103,6 +114,8 @@ class QuantileSketch:
         返回:
             估计的分位数值
         """
+        if not math.isfinite(q) or not 0.0 <= q <= 1.0:
+            raise ValueError(f"q must be finite and in [0, 1], got {q}")
         if self.count == 0:
             return 0.0
 
@@ -118,23 +131,25 @@ class QuantileSketch:
                 # 返回桶中心值
                 # 桶 idx 包含范围 [gamma^idx, gamma^(idx+1)) 内的值
                 # 返回几何平均值作为代表
-                bucket_low = self.gamma ** idx
+                bucket_low = self.gamma**idx
                 bucket_high = self.gamma ** (idx + 1)
-                return math.sqrt(bucket_low * bucket_high)
+                return float(math.sqrt(bucket_low * bucket_high))
 
         # 如果到达这里，返回最大桶中心
         if self.max_index is not None:
-            return self.gamma ** (self.max_index + 0.5)
+            return float(self.gamma ** (self.max_index + 0.5))
 
         return 0.0
 
-    def merge(self, other: 'QuantileSketch') -> None:
+    def merge(self, other: "QuantileSketch") -> None:
         """
         将另一个草图合并到此草图中。
 
         参数:
             other: 具有相同 alpha 的另一个 QuantileSketch
         """
+        if not math.isclose(self.alpha, other.alpha, rel_tol=0.0, abs_tol=1e-15):
+            raise ValueError("Cannot merge quantile sketches with different alpha values")
         if other.count == 0:
             return
 

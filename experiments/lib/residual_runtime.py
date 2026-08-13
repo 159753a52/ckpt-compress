@@ -12,14 +12,19 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Sequence
+from typing import Dict, List, Mapping, Sequence, cast
 
 import numpy as np
 import torch
 import torch.nn as nn
 
 from experiments.lib.evaluation import evaluate
-from experiments.lib.losses import compute_task_loss
+from experiments.lib.losses import (
+    causal_lm_loss,
+    compute_task_loss,
+    move_batch_to_device,
+    perplexity_from_loss,
+)
 
 
 @dataclass(frozen=True)
@@ -59,10 +64,13 @@ def synchronize_device(device: str) -> None:
 
 
 def set_seed(seed: int) -> None:
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError(f"seed must be a non-negative integer, got {seed}")
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    torch.random.default_generator.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def _load_checkpoint_payload(path: Path) -> object:
@@ -79,16 +87,51 @@ def _checkpoint_state_from_payload(
         raise TypeError(f"Unsupported checkpoint payload in {path}: {type(payload)}")
     for key in ("model_state_dict", "state_dict", "model"):
         if key in payload and isinstance(payload[key], dict):
-            return payload[key]
-    if payload and all(torch.is_tensor(value) for value in payload.values()):
-        return payload
-    raise KeyError(f"No model state dict found in {path}")
+            state = payload[key]
+            break
+    else:
+        state = (
+            payload
+            if payload and all(torch.is_tensor(value) for value in payload.values())
+            else None
+        )
+    if not isinstance(state, dict) or not state:
+        raise KeyError(f"No model state dict found in {path}")
+    if not all(isinstance(name, str) and torch.is_tensor(value) for name, value in state.items()):
+        raise TypeError(f"Model state dict in {path} must map names to tensors")
+    return state
 
 
 def _checkpoint_optimizer_state_from_payload(payload: object, path: Path) -> Dict:
     if not isinstance(payload, dict) or "optimizer_state_dict" not in payload:
         raise KeyError(f"No optimizer state dict found in {path}")
-    return payload["optimizer_state_dict"]
+    state = payload["optimizer_state_dict"]
+    if (
+        not isinstance(state, dict)
+        or not isinstance(state.get("state"), Mapping)
+        or not isinstance(state.get("param_groups"), list)
+        or not all(isinstance(value, Mapping) for value in state["state"].values())
+        or not all(isinstance(group, Mapping) for group in state["param_groups"])
+    ):
+        raise TypeError(f"Optimizer state dict in {path} has an invalid structure")
+    return state
+
+
+def _checkpoint_step(payload: Mapping, path: Path) -> int:
+    raw = payload.get("step", 0)
+    if isinstance(raw, bool):
+        raise ValueError(f"Checkpoint step in {path} must be a non-negative integer")
+    if isinstance(raw, str):
+        if not raw.isdecimal():
+            raise ValueError(f"Checkpoint step in {path} must be a non-negative integer")
+        value = int(raw)
+    elif isinstance(raw, int):
+        value = raw
+    else:
+        raise ValueError(f"Checkpoint step in {path} must be a non-negative integer")
+    if value < 0:
+        raise ValueError(f"Checkpoint step in {path} must be a non-negative integer")
+    return value
 
 
 def checkpoint_state(path: Path) -> Dict[str, torch.Tensor]:
@@ -107,7 +150,9 @@ def load_training_checkpoint(path: Path) -> LoadedTrainingCheckpoint:
     payload = _load_checkpoint_payload(path)
     model_state = _checkpoint_state_from_payload(payload, path)
     optimizer_state = _checkpoint_optimizer_state_from_payload(payload, path)
-    step = int(payload.get("step", 0)) if isinstance(payload, dict) else 0
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"Unsupported checkpoint payload in {path}: {type(payload)}")
+    step = _checkpoint_step(payload, path)
     return LoadedTrainingCheckpoint(model_state, optimizer_state, step)
 
 
@@ -116,9 +161,7 @@ def optimizer_state_to_cpu(state: Mapping) -> Dict:
     result = {"state": {}, "param_groups": copy.deepcopy(state["param_groups"])}
     for parameter_id, parameter_state in state["state"].items():
         result["state"][parameter_id] = {
-            key: value.detach().cpu().clone()
-            if torch.is_tensor(value)
-            else copy.deepcopy(value)
+            key: value.detach().cpu().clone() if torch.is_tensor(value) else copy.deepcopy(value)
             for key, value in parameter_state.items()
         }
     return result
@@ -139,6 +182,8 @@ def write_json(path: Path, payload: Mapping) -> None:
         with temporary.open("x", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True, allow_nan=False)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
@@ -159,14 +204,8 @@ def load_token_batches(
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             raise ValueError(f"{name} must be a positive integer, got {value}")
-    if (
-        isinstance(batch_offset, bool)
-        or not isinstance(batch_offset, int)
-        or batch_offset < 0
-    ):
-        raise ValueError(
-            f"batch_offset must be a non-negative integer, got {batch_offset}"
-        )
+    if isinstance(batch_offset, bool) or not isinstance(batch_offset, int) or batch_offset < 0:
+        raise ValueError(f"batch_offset must be a non-negative integer, got {batch_offset}")
 
     skip = batch_size * seq_length * batch_offset
     needed = batch_size * seq_length * num_batches
@@ -225,14 +264,9 @@ def lm_loss(
     batch: Mapping[str, torch.Tensor],
     device: str,
 ) -> torch.Tensor:
-    input_ids = batch["input_ids"].to(device, non_blocking=True)
-    labels = batch["labels"].to(device, non_blocking=True)
-    outputs = model(input_ids)
-    logits = outputs.logits if hasattr(outputs, "logits") else outputs
-    return nn.functional.cross_entropy(
-        logits[..., :-1, :].contiguous().view(-1, logits.size(-1)),
-        labels[..., 1:].contiguous().view(-1),
-    )
+    batch_on_device = move_batch_to_device(batch, device)
+    loss, _ = causal_lm_loss(model, batch_on_device)
+    return loss
 
 
 def task_loss(
@@ -253,19 +287,33 @@ def evaluate_lm(
     if not batches:
         raise ValueError("batches must contain at least one evaluation batch")
 
+    was_training = model.training
     model.eval()
     total_loss = 0.0
+    total_tokens = 0
     started = time.perf_counter()
-    with torch.no_grad():
-        for batch in batches:
-            total_loss += lm_loss(model, batch, device).item()
-    average = total_loss / len(batches)
+    try:
+        with torch.no_grad():
+            for batch in batches:
+                batch_on_device = move_batch_to_device(batch, device)
+                loss, supervised_tokens = causal_lm_loss(
+                    model,
+                    batch_on_device,
+                    reduction="sum",
+                )
+                total_loss += loss.item()
+                total_tokens += supervised_tokens
+    finally:
+        model.train(was_training)
+    if total_tokens == 0:
+        raise ValueError("LM evaluation requires at least one supervised token")
+    average = total_loss / total_tokens
     return {
         "loss": average,
-        "perplexity": math.exp(min(average, 20.0)),
+        "perplexity": perplexity_from_loss(average),
         "seconds": time.perf_counter() - started,
         "batches": len(batches),
-        "tokens": sum(batch["input_ids"].numel() for batch in batches),
+        "tokens": total_tokens,
     }
 
 
@@ -274,12 +322,13 @@ def evaluate_task(
     batches: Sequence[Mapping[str, torch.Tensor]],
     task_type: str,
     device: str,
-) -> Dict[str, float]:
+) -> dict[str, float | int]:
     """Evaluate any task supported by the shared experiment library."""
     if not batches:
         raise ValueError("batches must contain at least one evaluation batch")
     started = time.perf_counter()
-    metrics = evaluate(model, list(batches), task_type, device)
+    eval_batches = [cast(Dict[str, torch.Tensor], dict(batch)) for batch in batches]
+    metrics: dict[str, float | int] = dict(evaluate(model, eval_batches, task_type, device))
     metrics["seconds"] = time.perf_counter() - started
     metrics["batches"] = len(batches)
     metrics["examples"] = sum(

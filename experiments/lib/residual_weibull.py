@@ -9,17 +9,26 @@ import torch
 from scipy.optimize import brentq
 from scipy.special import gammaln
 
-from experiments.lib.residual_budget import largest_remainder_counts
 from experiments.lib.distributed_stats import (
     ScoreMoments,
     layer_score_moments,
     reduce_score_moments,
     score_moments,
 )
-
+from experiments.lib.residual_budget import largest_remainder_counts
 
 WeibullFit = Dict[str, object]
 WeibullFitView = Mapping[str, object]
+
+
+def _positive_fit_parameter(fit: WeibullFitView, key: str) -> float:
+    value = fit.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Valid Weibull fits must contain numeric {key}")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric <= 0:
+        raise ValueError(f"Valid Weibull fit {key} must be finite and positive")
+    return numeric
 
 
 def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
@@ -29,41 +38,46 @@ def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
         return {
             "valid": False,
             "reason": "empty values",
+            "count": 0,
             "zero_fraction": 0.0,
         }
     maximum = moments.maximum
     zero_fraction = moments.zero_count / count
+    mean = moments.total / count
+    variance = max(moments.total_squared / count - mean * mean, 0.0)
+    cv_squared = variance / (mean * mean) if mean > 0 else 0.0
+    evidence = {
+        "count": count,
+        "mean": mean,
+        "variance": variance,
+        "cv_squared": cv_squared,
+        "maximum": maximum,
+        "zero_fraction": zero_fraction,
+    }
     if not math.isfinite(maximum) or maximum <= 0:
         return {
             "valid": False,
             "reason": "non-positive maximum",
-            "zero_fraction": zero_fraction,
+            **evidence,
         }
 
-    mean = moments.total / count
-    variance = max(moments.total_squared / count - mean * mean, 0.0)
     if mean <= 1e-15 or variance <= 0:
         return {
             "valid": False,
             "reason": "degenerate moments",
-            "zero_fraction": zero_fraction,
+            **evidence,
         }
-    cv_squared = variance / (mean * mean)
     if cv_squared < 1e-10 or not math.isfinite(cv_squared):
         return {
             "valid": False,
             "reason": "degenerate coefficient of variation",
-            "zero_fraction": zero_fraction,
+            **evidence,
         }
 
     log_target = math.log1p(cv_squared)
 
     def objective(shape: float) -> float:
-        return float(
-            gammaln(1.0 + 2.0 / shape)
-            - 2.0 * gammaln(1.0 + 1.0 / shape)
-            - log_target
-        )
+        return float(gammaln(1.0 + 2.0 / shape) - 2.0 * gammaln(1.0 + 1.0 / shape) - log_target)
 
     try:
         shape = brentq(objective, 0.01, 1000.0, maxiter=200)
@@ -71,7 +85,7 @@ def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
         return {
             "valid": False,
             "reason": "shape root not bracketed",
-            "zero_fraction": zero_fraction,
+            **evidence,
         }
     log_scale = math.log(mean) - float(gammaln(1.0 + 1.0 / shape))
     scale = math.exp(log_scale)
@@ -79,7 +93,7 @@ def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
         return {
             "valid": False,
             "reason": "invalid scale",
-            "zero_fraction": zero_fraction,
+            **evidence,
         }
     return {
         "valid": True,
@@ -87,6 +101,7 @@ def fit_weibull_from_moments(moments: ScoreMoments) -> WeibullFit:
         "mean": mean,
         "variance": variance,
         "cv_squared": cv_squared,
+        "maximum": maximum,
         "shape": shape,
         "scale": scale,
         "zero_fraction": zero_fraction,
@@ -106,7 +121,7 @@ def fit_layer_weibull_mom(
 ) -> List[WeibullFit]:
     """Fit one Weibull model per non-empty structural score layer."""
     moments = layer_score_moments(layers, scores)
-    reduction = {
+    reduction: Dict[str, object] = {
         "distributed": False,
         "world_size": 1,
         "backend": None,
@@ -114,7 +129,7 @@ def fit_layer_weibull_mom(
     }
     if distributed:
         moments, reduction = reduce_score_moments(moments, process_group)
-    fits = []
+    fits: List[WeibullFit] = []
     for layer_index, layer_moments in enumerate(moments):
         fit = fit_weibull_from_moments(layer_moments)
         fit["layer"] = layer_index
@@ -129,8 +144,8 @@ def weibull_cdf(
 ) -> float:
     if threshold <= 0:
         return 0.0
-    shape = float(fit["shape"])
-    scale = float(fit["scale"])
+    shape = _positive_fit_parameter(fit, "shape")
+    scale = _positive_fit_parameter(fit, "scale")
     log_power = shape * (math.log(threshold) - math.log(scale))
     if log_power > 40:
         return 1.0
@@ -148,10 +163,7 @@ def weibull_counts(
 ) -> Tuple[List[int], Dict[str, object]]:
     if len(fits) != len(layer_sizes):
         raise ValueError("Fits and layer sizes must have the same length")
-    if any(
-        isinstance(size, bool) or not isinstance(size, int) or size < 0
-        for size in layer_sizes
-    ):
+    if any(isinstance(size, bool) or not isinstance(size, int) or size < 0 for size in layer_sizes):
         raise ValueError("Layer sizes must be non-negative integers")
     if (
         isinstance(target, bool)
@@ -159,9 +171,7 @@ def weibull_counts(
         or target < 0
         or target > sum(layer_sizes)
     ):
-        raise ValueError(
-            "target must be a non-negative integer within the layer capacity"
-        )
+        raise ValueError("target must be a non-negative integer within the layer capacity")
     normalized_ratios = {}
     for name, value in (("ratio", ratio), ("max_layer_ratio", max_layer_ratio)):
         if isinstance(value, bool):
@@ -180,19 +190,8 @@ def weibull_counts(
             raise ValueError("Each Weibull fit must contain a valid flag")
         if bool(fit["valid"]):
             for key in ("shape", "scale"):
-                try:
-                    numeric = float(fit[key])
-                except (KeyError, TypeError, ValueError) as exc:
-                    raise ValueError(
-                        f"Valid Weibull fits must contain numeric {key}"
-                    ) from exc
-                if not math.isfinite(numeric) or numeric <= 0:
-                    raise ValueError(
-                        f"Valid Weibull fit {key} must be finite and positive"
-                    )
-    capacities = [
-        min(size, int(math.floor(max_layer_ratio * size))) for size in layer_sizes
-    ]
+                _positive_fit_parameter(fit, key)
+    capacities = [min(size, int(math.floor(max_layer_ratio * size))) for size in layer_sizes]
     if sum(capacities) < target:
         raise ValueError("max_layer_ratio makes the requested global ratio infeasible")
 
@@ -206,7 +205,7 @@ def weibull_counts(
             result.append(min(count, float(capacity)))
         return result
 
-    valid_scales = [float(fit["scale"]) for fit in fits if bool(fit["valid"])]
+    valid_scales = [_positive_fit_parameter(fit, "scale") for fit in fits if bool(fit["valid"])]
     if not valid_scales:
         counts = largest_remainder_counts(
             [ratio * size for size in layer_sizes],
@@ -215,15 +214,27 @@ def weibull_counts(
         )
         return counts, {"threshold": None, "fallback": "all Weibull fits invalid"}
 
-    high = max(valid_scales)
-    while sum(real_counts_at(high)) < target:
-        high *= 2.0
-    threshold = brentq(
-        lambda value: sum(real_counts_at(value)) - target,
+    minimum_real_counts = real_counts_at(0.0)
+    if sum(minimum_real_counts) >= target:
+        counts = largest_remainder_counts(minimum_real_counts, target, capacities)
+        return counts, {
+            "threshold": 0.0,
+            "real_counts": minimum_real_counts,
+            "capacities": capacities,
+            "fallback": None,
+        }
+
+    reference_scale = max(valid_scales)
+    high_multiplier = 1.0
+    while sum(real_counts_at(reference_scale * high_multiplier)) < target:
+        high_multiplier *= 2.0
+    threshold_multiplier = brentq(
+        lambda multiplier: sum(real_counts_at(reference_scale * multiplier)) - target,
         0.0,
-        high,
+        high_multiplier,
         maxiter=200,
     )
+    threshold = reference_scale * threshold_multiplier
     real_counts = real_counts_at(threshold)
     counts = largest_remainder_counts(real_counts, target, capacities)
     return counts, {

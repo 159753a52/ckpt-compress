@@ -10,28 +10,23 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Sequence, Tuple
+from typing import Callable, Dict, List, Mapping, MutableMapping, Sequence, Tuple
 
 import torch
-
 
 ROOT = Path(__file__).resolve().parents[2]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.lib.residual_method_assembly import (  # noqa: E402
-    AdaptiveMethodConfig,
-    assemble_method_family,
-)
 from experiments.lib.residual_long_config import (  # noqa: E402
     LongExperimentConfig,
     normalize_long_config,
     validate_long_config,
 )
-from experiments.lib.residual_masks import (  # noqa: E402
-    MaskDict,
-    mask_metrics,
-    restore_with_mask,
+from experiments.lib.residual_masks import MaskDict, mask_metrics, restore_with_mask  # noqa: E402
+from experiments.lib.residual_method_assembly import (  # noqa: E402
+    AdaptiveMethodConfig,
+    assemble_method_family,
 )
 from experiments.lib.residual_methods import (  # noqa: E402
     build_masks,
@@ -43,6 +38,7 @@ from experiments.lib.residual_protocol import (  # noqa: E402
     NO_COMPRESSION_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
 )
+from experiments.lib.residual_reporting import aggregate, summarize_values  # noqa: E402
 from experiments.lib.residual_runtime import (  # noqa: E402
     batch_hash,
     configure_hf_offline,
@@ -56,10 +52,6 @@ from experiments.lib.residual_runtime import (  # noqa: E402
     reset_peak_memory,
     sha256_file,
     write_json,
-)
-from experiments.lib.residual_reporting import (  # noqa: E402
-    aggregate,
-    summarize_values,
 )
 from experiments.lib.residual_scoring import (  # noqa: E402
     compute_block_taylor_scores,
@@ -88,6 +80,27 @@ class LongRunContext:
     reference_optimizer_state: Mapping
 
 
+def _mutable_mapping_field(
+    container: Mapping[str, object],
+    field: str,
+    context: str,
+) -> MutableMapping[str, object]:
+    """Return a mutable string-keyed result field or fail before partial writes."""
+    value = container.get(field)
+    if not isinstance(value, MutableMapping):
+        raise TypeError(f"{context}.{field} must be a mutable mapping")
+    if any(not isinstance(key, str) for key in value):
+        raise TypeError(f"{context}.{field} keys must be strings")
+    return value
+
+
+def _positive_int_field(container: Mapping[str, object], field: str, context: str) -> int:
+    value = container.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{context}.{field} must be a positive integer")
+    return value
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -95,9 +108,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=ROOT / "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
     )
-    parser.add_argument(
-        "--data-dir", type=Path, default=ROOT.parent.parent / "data/wikitext103"
-    )
+    parser.add_argument("--data-dir", type=Path, default=ROOT.parent.parent / "data/wikitext103")
     parser.add_argument("--seeds", default="42,43,44")
     parser.add_argument("--total-steps", type=int, default=100)
     parser.add_argument("--recovery-step", type=int, default=50)
@@ -156,6 +167,7 @@ def run_seed(
     config = context.config
     output_path = context.output_path
     results = context.results
+    seed_results = _mutable_mapping_field(results, "seed_results", "results")
     reference_state = context.reference_state
     eval_batches = context.eval_batches
 
@@ -171,13 +183,14 @@ def run_seed(
         seed,
     )
 
+    method_results: Dict[str, Dict[str, object]] = {}
     seed_result: Dict[str, object] = {
         "seed": seed,
         "selected_pool_indices": batches.selected_pool_indices,
         "data_hashes": batches.data_hashes(),
-        "methods": {},
+        "methods": method_results,
     }
-    results["seed_results"][str(seed)] = seed_result
+    seed_results[str(seed)] = seed_result
     write_json(output_path, results)
 
     model = context.model_factory()
@@ -244,9 +257,12 @@ def run_seed(
         config.methods,
     )
     seed_result["allocation"] = allocation_metadata
-    exact_metrics = mask_metrics(
-        masks[TAYLOR_EXACT_GLOBAL_METHOD], components["taylor"]
+    eligible_parameters = _positive_int_field(
+        allocation_metadata,
+        "eligible_parameters",
+        "allocation",
     )
+    exact_metrics = mask_metrics(masks[TAYLOR_EXACT_GLOBAL_METHOD], components["taylor"])
 
     for method, method_masks in masks.items():
         metrics = compute_method_diagnostics(
@@ -257,28 +273,31 @@ def run_seed(
             layers,
             magnitude_scores,
             components,
-            allocation_metadata["eligible_parameters"],
+            eligible_parameters,
         )
-        restore_with_mask(
-            model, current_state, reference_state, method_masks, config.device
-        )
-        metrics["immediate"] = evaluate_lm(model, eval_batches, config.device)
-        seed_result["methods"][method] = metrics
+        restore_with_mask(model, current_state, reference_state, method_masks, config.device)
+        immediate_metrics = evaluate_lm(model, eval_batches, config.device)
+        method_result: Dict[str, object] = dict(metrics)
+        method_result["immediate"] = immediate_metrics
+        method_results[method] = method_result
         write_json(output_path, results)
         print(
-            f"  immediate {method:28s} "
-            f"PPL={metrics['immediate']['perplexity']:.4f}",
+            f"  immediate {method:28s} " f"PPL={immediate_metrics['perplexity']:.4f}",
             flush=True,
         )
 
     trajectories: List[Tuple[str, MaskDict | None]] = [(NO_COMPRESSION_METHOD, None)]
     trajectories.extend(masks.items())
-    for method, method_masks in trajectories:
-        if method_masks is None:
+    for method, continuation_masks in trajectories:
+        if continuation_masks is None:
             model.load_state_dict(current_state, strict=True)
         else:
             restore_with_mask(
-                model, current_state, reference_state, method_masks, config.device
+                model,
+                current_state,
+                reference_state,
+                continuation_masks,
+                config.device,
             )
         optimizer = build_optimizer(model, current_optimizer_state)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -299,8 +318,11 @@ def run_seed(
             seed_result["no_compression_continuation"] = continuation_metrics
             seed_result["no_compression_final"] = final_metrics
         else:
-            seed_result["methods"][method]["continuation"] = continuation_metrics
-            seed_result["methods"][method]["final"] = final_metrics
+            continuation_result = method_results.get(method)
+            if continuation_result is None:
+                raise RuntimeError(f"Missing immediate result for method {method!r}")
+            continuation_result["continuation"] = continuation_metrics
+            continuation_result["final"] = final_metrics
         del optimizer, scheduler
         model.zero_grad(set_to_none=True)
         empty_device_cache(config.device)
@@ -326,6 +348,7 @@ def main() -> None:
     started_at = datetime.now(timezone.utc)
     run_name = started_at.strftime("%Y%m%d_%H%M%S") + "_gpt2m_recovery_long"
     output_path = config.output_dir / f"{run_name}.json"
+    seed_results: Dict[str, object] = {}
     results: Dict[str, object] = {
         "status": "started",
         "started_at": started_at.isoformat(),
@@ -334,7 +357,7 @@ def main() -> None:
             "sha256": sha256_file(config.checkpoint),
             "bytes": config.checkpoint.stat().st_size,
         },
-        "seed_results": {},
+        "seed_results": seed_results,
     }
     write_json(output_path, results)
     print(f"Writing incremental results to {output_path}", flush=True)
@@ -374,7 +397,7 @@ def main() -> None:
     for seed_index, seed in enumerate(config.seeds, start=1):
         run_seed(context, seed, seed_index, len(config.seeds))
 
-    results["aggregate"] = aggregate(results["seed_results"])
+    results["aggregate"] = aggregate(seed_results)
     results["status"] = "complete"
     results["finished_at"] = datetime.now(timezone.utc).isoformat()
     results["wall_seconds"] = time.perf_counter() - wall_started

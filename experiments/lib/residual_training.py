@@ -9,7 +9,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 import torch
 import torch.nn as nn
 
-from experiments.lib.residual_runtime import batch_hash, set_seed, task_loss
+from experiments.lib.residual_runtime import batch_hash, optimizer_state_to_cpu, set_seed, task_loss
 
 
 @dataclass(frozen=True)
@@ -49,10 +49,7 @@ class RepeatedSeedBatchPlan:
 
 
 def clone_model_state_to_cpu(model: nn.Module) -> Dict[str, torch.Tensor]:
-    return {
-        name: value.detach().cpu().clone()
-        for name, value in model.state_dict().items()
-    }
+    return {name: value.detach().cpu().clone() for name, value in model.state_dict().items()}
 
 
 def _validate_non_negative_count(name: str, value: int) -> int:
@@ -68,9 +65,7 @@ def seeded_training_batches(
 ) -> Tuple[List[Mapping[str, torch.Tensor]], List[int]]:
     count = _validate_non_negative_count("count", count)
     if count > len(pool):
-        raise ValueError(
-            f"count cannot exceed pool size: count={count}, pool_size={len(pool)}"
-        )
+        raise ValueError(f"count cannot exceed pool size: count={count}, pool_size={len(pool)}")
     generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(len(pool), generator=generator)[:count].tolist()
     return [pool[index] for index in indices], indices
@@ -100,10 +95,7 @@ def partition_seed_batches(
             f"recovery_step={recovery_step}, total_steps={total_steps}"
         )
     selected_count = (
-        total_steps
-        + hvp_batches
-        + allocation_probe_batches
-        + allocation_selection_batches
+        total_steps + hvp_batches + allocation_probe_batches + allocation_selection_batches
     )
     selected, selected_indices = seeded_training_batches(pool, selected_count, seed)
     score_start = recovery_step
@@ -141,8 +133,7 @@ def partition_repeated_seed_batches(
 
     base_length, extra = divmod(total_steps, num_recoveries + 1)
     segment_lengths = [
-        base_length + (1 if index < extra else 0)
-        for index in range(num_recoveries + 1)
+        base_length + (1 if index < extra else 0) for index in range(num_recoveries + 1)
     ]
     selected_count = total_steps + num_recoveries * hvp_batches
     selected, selected_indices = seeded_training_batches(pool, selected_count, seed)
@@ -171,7 +162,7 @@ def build_optimizer(
     learning_rate: Optional[float] = None,
 ) -> torch.optim.Optimizer:
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5, weight_decay=0.01)
-    optimizer.load_state_dict(state)
+    optimizer.load_state_dict(optimizer_state_to_cpu(state))
     if learning_rate is not None:
         for group in optimizer.param_groups:
             group["lr"] = learning_rate

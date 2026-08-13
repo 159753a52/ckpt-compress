@@ -14,64 +14,80 @@ ViT-L/32 在 ImageNet-1K 上微调的脚本。
 """
 
 import os
+
 os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
 os.environ["HF_DATASETS_OFFLINE"] = "1"
 
+import argparse
+import math
+import sys
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-import math
-from pathlib import Path
-import sys
 from tqdm import tqdm
-import argparse
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from transformers import ViTForImageClassification
-from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from transformers import ViTForImageClassification
 
-LOCAL_MODEL_PATH = "/lihongliang/fangzl/ckpt-compress/data/models/models--google--vit-large-patch32-384/snapshots/a2b30ad36d02e99f045cd2ecfc71e0ae16991efa"
-IMAGENET_PATH = "/lihongliang/bobzhou/dataset/imagenet"
+from dacp.utils.paths import resolve_data_file, resolve_model_source
+
+LOCAL_MODEL_PATH = os.environ.get(
+    "VIT_MODEL_PATH",
+    resolve_model_source("vit-large-patch32-384", "google/vit-large-patch32-384"),
+)
+IMAGENET_PATH = os.environ.get(
+    "IMAGENET_DATA_DIR",
+    str(resolve_data_file("imagenet")),
+)
 
 
 def get_cosine_schedule_with_warmup(optimizer, warmup_steps, total_steps):
     """Warmup + cosine decay 学习率调度器。"""
+
     def lr_lambda(current_step):
         if current_step < warmup_steps:
             return float(current_step) / float(max(1, warmup_steps))
         progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 def prepare_imagenet_loaders(image_size, batch_size, num_workers=4):
     """准备 ImageNet-1K 的 train/val DataLoader。"""
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(image_size),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ])
-    val_transform = transforms.Compose([
-        transforms.Resize(int(image_size * 1.143)),
-        transforms.CenterCrop(image_size),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
-    ])
+    train_transform = transforms.Compose(
+        [
+            transforms.RandomResizedCrop(image_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
+    val_transform = transforms.Compose(
+        [
+            transforms.Resize(int(image_size * 1.143)),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+        ]
+    )
 
-    train_dir = os.path.join(IMAGENET_PATH, 'train')
-    val_dir = os.path.join(IMAGENET_PATH, 'val')
+    train_dir = os.path.join(IMAGENET_PATH, "train")
+    val_dir = os.path.join(IMAGENET_PATH, "val")
 
     train_dataset = datasets.ImageFolder(train_dir, transform=train_transform)
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transform)
 
     train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=True)
+        train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True
+    )
     val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=True)
+        val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True
+    )
     return train_loader, val_loader
 
 
@@ -104,25 +120,31 @@ def train_step(model, optimizer, scaler, images, labels, device, use_amp=True):
 @torch.no_grad()
 def evaluate_acc(model, val_loader, device, max_batches=50, use_amp=True):
     """在验证集上计算 Top-1 Accuracy。"""
+    if isinstance(max_batches, bool) or not isinstance(max_batches, int) or max_batches < 1:
+        raise ValueError(f"max_batches must be a positive integer, got {max_batches}")
+    was_training = model.training
     model.eval()
     correct = 0
     total = 0
-    for i, (images, labels) in enumerate(val_loader):
-        if i >= max_batches:
-            break
-        images = images.to(device)
-        labels = labels.to(device)
-        if use_amp:
-            with torch.cuda.amp.autocast():
+    try:
+        for i, (images, labels) in enumerate(val_loader):
+            if i >= max_batches:
+                break
+            images = images.to(device)
+            labels = labels.to(device)
+            if use_amp:
+                with torch.cuda.amp.autocast():
+                    outputs = model(pixel_values=images)
+            else:
                 outputs = model(pixel_values=images)
-        else:
-            outputs = model(pixel_values=images)
-        preds = outputs.logits.argmax(dim=-1)
-        correct += (preds == labels).sum().item()
-        total += labels.size(0)
-    acc = correct / total if total > 0 else 0.0
-    model.train()
-    return acc
+            preds = outputs.logits.argmax(dim=-1)
+            correct += int((preds == labels).sum().item())
+            total += labels.size(0)
+        if total == 0:
+            raise ValueError("accuracy evaluation requires at least one example")
+        return correct / total
+    finally:
+        model.train(was_training)
 
 
 def save_checkpoint(model, optimizer, step, loss, output_dir):
@@ -130,31 +152,43 @@ def save_checkpoint(model, optimizer, step, loss, output_dir):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    checkpoint_path = output_dir / f'checkpoint_step_{step}.pt'
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'step': step,
-        'loss': loss,
-    }, checkpoint_path)
+    checkpoint_path = output_dir / f"checkpoint_step_{step}.pt"
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "step": step,
+            "loss": loss,
+        },
+        checkpoint_path,
+    )
     print(f"  检查点已保存: {checkpoint_path}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description='ViT-L/32 ImageNet 微调脚本')
-    parser.add_argument('--total_steps', type=int, default=1000)
-    parser.add_argument('--batch_size', type=int, default=16)
-    parser.add_argument('--image_size', type=int, default=384)
-    parser.add_argument('--lr', type=float, default=2e-5)
-    parser.add_argument('--weight_decay', type=float, default=0.01)
-    parser.add_argument('--save_every', type=int, default=200)
-    parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--output_dir', type=str,
-                        default='checkpoints/vit_large_imagenet')
-    parser.add_argument('--use_amp', action='store_true', default=True)
-    parser.add_argument('--num_workers', type=int, default=4)
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="ViT-L/32 ImageNet 微调脚本")
+    parser.add_argument("--total_steps", type=int, default=1000)
+    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--image_size", type=int, default=384)
+    parser.add_argument("--lr", type=float, default=2e-5)
+    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--save_every", type=int, default=200)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--output_dir", type=str, default="checkpoints/vit_large_imagenet")
+    parser.add_argument(
+        "--use_amp",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    parser.add_argument("--num_workers", type=int, default=4)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    args.use_amp = bool(args.use_amp and str(args.device).startswith("cuda"))
+    return args
+
+
+def main():
+    args = parse_args()
 
     print("=" * 60)
     print("ViT-L/32 ImageNet 微调")
@@ -170,7 +204,8 @@ def main():
     # 加载模型
     print("\n加载 ViT-L/32 预训练模型...")
     model = ViTForImageClassification.from_pretrained(
-        LOCAL_MODEL_PATH, num_labels=1000, ignore_mismatched_sizes=True)
+        LOCAL_MODEL_PATH, num_labels=1000, ignore_mismatched_sizes=True
+    )
     model = model.to(args.device)
     print(f"模型已加载到 {args.device}")
 
@@ -178,8 +213,7 @@ def main():
     print(f"模型参数量: {num_params:,}")
 
     # 创建优化器和调度器
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     warmup_steps = max(1, args.total_steps // 10)
     scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, args.total_steps)
     scaler = torch.cuda.amp.GradScaler() if args.use_amp else None
@@ -188,7 +222,8 @@ def main():
     # 加载数据
     print(f"\n加载 ImageNet-1K 数据集 ({IMAGENET_PATH})...")
     train_loader, val_loader = prepare_imagenet_loaders(
-        args.image_size, args.batch_size, args.num_workers)
+        args.image_size, args.batch_size, args.num_workers
+    )
     print(f"训练样本: {len(train_loader.dataset)}, 验证样本: {len(val_loader.dataset)}")
 
     # 初始 eval
@@ -210,21 +245,20 @@ def main():
             data_iter = iter(train_loader)
             images, labels = next(data_iter)
 
-        loss = train_step(
-            model, optimizer, scaler, images, labels, args.device, args.use_amp)
+        loss = train_step(model, optimizer, scaler, images, labels, args.device, args.use_amp)
         scheduler.step()
         running_loss += loss
 
         if step % log_interval == 0:
             avg_loss = running_loss / log_interval
             lr = scheduler.get_last_lr()[0]
-            print(f"\nStep {step}/{args.total_steps}: "
-                  f"Loss={avg_loss:.4f}, LR={lr:.2e}")
+            print(f"\nStep {step}/{args.total_steps}: " f"Loss={avg_loss:.4f}, LR={lr:.2e}")
             running_loss = 0.0
 
         if step % args.save_every == 0:
-            val_acc = evaluate_acc(model, val_loader, args.device,
-                                   max_batches=50, use_amp=args.use_amp)
+            val_acc = evaluate_acc(
+                model, val_loader, args.device, max_batches=50, use_amp=args.use_amp
+            )
             print(f"  Val Acc: {val_acc:.4f} ({val_acc*100:.2f}%)")
             print(f"  保存检查点 (step {step})...")
             save_checkpoint(model, optimizer, step, loss, args.output_dir)
@@ -243,5 +277,5 @@ def main():
     print("=" * 60)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

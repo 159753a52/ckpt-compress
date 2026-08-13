@@ -5,27 +5,53 @@ NLP 模型训练脚本。
 """
 
 import argparse
+import math
+import sys
+from pathlib import Path
+from typing import Any, Optional, Sequence
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from pathlib import Path
-import sys
+from torch.utils.data import DataLoader
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from dacp.models.gpt2 import (
-    get_gpt2_small,
-    get_gpt2_medium,
-)
-from dacp.utils.data_loader import (
-    get_wikitext2_dataloader,
-    get_wikitext103_dataloader,
-)
-from dacp.utils.trainer import BaseTrainer
+from dacp.models.gpt2 import get_gpt2_medium, get_gpt2_small
+from dacp.utils.data_loader import get_wikitext2_dataloader, get_wikitext103_dataloader
+from dacp.utils.trainer import BaseTrainer, SchedulerStepMode
 
 
-def get_model(model_name: str, pretrained: bool = False):
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"expected a positive integer, got {value}")
+    return parsed
+
+
+def _nonnegative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {value}")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError(f"expected a positive number, got {value}")
+    return parsed
+
+
+def _nonnegative_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative number, got {value}")
+    return parsed
+
+
+def get_model(model_name: str, pretrained: bool = False) -> nn.Module:
     """
     获取模型。
 
@@ -36,12 +62,11 @@ def get_model(model_name: str, pretrained: bool = False):
     返回:
         模型实例
     """
-    if model_name == 'gpt2-small':
+    if model_name == "gpt2-small":
         return get_gpt2_small(pretrained=pretrained)
-    elif model_name == 'gpt2-medium':
+    if model_name == "gpt2-medium":
         return get_gpt2_medium(pretrained=pretrained)
-    else:
-        raise ValueError(f"Unknown model: {model_name}")
+    raise ValueError(f"Unknown model: {model_name}")
 
 
 def get_data_loader(
@@ -49,10 +74,10 @@ def get_data_loader(
     split: str,
     batch_size: int,
     seq_length: int,
-    max_samples: int = None,
+    max_samples: Optional[int] = None,
     num_workers: int = 0,
-    local_path: str = None,
-):
+    local_path: Optional[str] = None,
+) -> DataLoader:
     """
     获取数据加载器。
 
@@ -68,7 +93,7 @@ def get_data_loader(
     返回:
         DataLoader 对象
     """
-    if dataset_name == 'wikitext2':
+    if dataset_name == "wikitext2":
         return get_wikitext2_dataloader(
             split=split,
             batch_size=batch_size,
@@ -77,7 +102,7 @@ def get_data_loader(
             num_workers=num_workers,
             local_path=local_path,
         )
-    elif dataset_name == 'wikitext103':
+    if dataset_name == "wikitext103":
         return get_wikitext103_dataloader(
             split=split,
             batch_size=batch_size,
@@ -86,75 +111,153 @@ def get_data_loader(
             num_workers=num_workers,
             local_path=local_path,
         )
-    else:
-        raise ValueError(f"Unknown dataset: {dataset_name}")
+    raise ValueError(f"Unknown dataset: {dataset_name}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Train NLP models')
+def _build_lr_scheduler(
+    optimizer: torch.optim.Optimizer,
+    schedule: str,
+    *,
+    epochs: int,
+    train_batches: int,
+    gradient_accumulation_steps: int,
+    warmup_steps: int,
+) -> tuple[Optional[Any], SchedulerStepMode]:
+    """Build a scheduler and declare the unit used to advance it."""
+    if epochs < 1:
+        raise ValueError("epochs must be a positive integer")
+    if train_batches < 1:
+        raise ValueError("training data must contain at least one batch")
+    if gradient_accumulation_steps < 1:
+        raise ValueError("gradient_accumulation_steps must be a positive integer")
+    if warmup_steps < 0:
+        raise ValueError("warmup_steps must be non-negative")
+
+    if schedule == "linear":
+        optimizer_steps_per_epoch = math.ceil(train_batches / gradient_accumulation_steps)
+        total_steps = epochs * optimizer_steps_per_epoch
+        if warmup_steps >= total_steps:
+            raise ValueError("--warmup_steps must be smaller than the total optimizer steps")
+
+        def lr_lambda(current_step: int) -> float:
+            if current_step < warmup_steps:
+                return float(current_step) / float(max(1, warmup_steps))
+            return max(
+                0.0,
+                float(total_steps - current_step) / float(max(1, total_steps - warmup_steps)),
+            )
+
+        return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda), "optimizer_step"
+
+    if schedule == "cosine":
+        return optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs), "epoch"
+    if schedule == "none":
+        return None, "epoch"
+    raise ValueError(f"Unknown learning-rate schedule: {schedule}")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Train NLP models")
 
     # 模型参数
-    parser.add_argument('--model', type=str, default='gpt2-small',
-                        choices=['gpt2-small', 'gpt2-medium'],
-                        help='Model architecture')
-    parser.add_argument('--pretrained', action='store_true',
-                        help='Use pretrained weights')
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="gpt2-small",
+        choices=["gpt2-small", "gpt2-medium"],
+        help="Model architecture",
+    )
+    parser.add_argument("--pretrained", action="store_true", help="Use pretrained weights")
 
     # 数据集参数
-    parser.add_argument('--dataset', type=str, default='wikitext2',
-                        choices=['wikitext2', 'wikitext103'],
-                        help='Dataset name')
-    parser.add_argument('--data_dir', type=str, default=None,
-                        help='Local data directory (optional)')
-    parser.add_argument('--seq_length', type=int, default=512,
-                        help='Sequence length')
-    parser.add_argument('--max_samples', type=int, default=None,
-                        help='Maximum number of samples (for testing)')
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="wikitext2",
+        choices=["wikitext2", "wikitext103"],
+        help="Dataset name",
+    )
+    parser.add_argument(
+        "--data_dir", type=str, default=None, help="Local data directory (optional)"
+    )
+    parser.add_argument("--seq_length", type=_positive_int, default=512, help="Sequence length")
+    parser.add_argument(
+        "--max_samples",
+        type=_positive_int,
+        default=None,
+        help="Maximum number of samples (for testing)",
+    )
 
     # 训练参数
-    parser.add_argument('--epochs', type=int, default=10,
-                        help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=8,
-                        help='Batch size')
-    parser.add_argument('--lr', type=float, default=5e-5,
-                        help='Learning rate')
-    parser.add_argument('--weight_decay', type=float, default=0.01,
-                        help='Weight decay')
+    parser.add_argument(
+        "--epochs", type=_positive_int, default=10, help="Number of training epochs"
+    )
+    parser.add_argument("--batch_size", type=_positive_int, default=8, help="Batch size")
+    parser.add_argument("--lr", type=_positive_float, default=5e-5, help="Learning rate")
+    parser.add_argument(
+        "--weight_decay", type=_nonnegative_float, default=0.01, help="Weight decay"
+    )
 
     # 学习率调度
-    parser.add_argument('--lr_schedule', type=str, default='linear',
-                        choices=['linear', 'cosine', 'none'],
-                        help='Learning rate schedule')
-    parser.add_argument('--warmup_steps', type=int, default=500,
-                        help='Warmup steps for linear schedule')
+    parser.add_argument(
+        "--lr_schedule",
+        type=str,
+        default="linear",
+        choices=["linear", "cosine", "none"],
+        help="Learning rate schedule",
+    )
+    parser.add_argument(
+        "--warmup_steps",
+        type=_nonnegative_int,
+        default=500,
+        help="Warmup steps for linear schedule",
+    )
 
     # 检查点参数
-    parser.add_argument('--checkpoint_dir', type=str, default='./checkpoints',
-                        help='Checkpoint directory')
-    parser.add_argument('--save_every', type=int, default=1,
-                        help='Save checkpoint every N epochs')
-    parser.add_argument('--resume', type=str, default=None,
-                        help='Resume from checkpoint')
+    parser.add_argument(
+        "--checkpoint_dir", type=str, default="./checkpoints", help="Checkpoint directory"
+    )
+    parser.add_argument(
+        "--save_every", type=_positive_int, default=1, help="Save checkpoint every N epochs"
+    )
+    parser.add_argument("--resume", type=str, default=None, help="Resume from checkpoint")
 
     # 早停参数
-    parser.add_argument('--early_stopping', type=int, default=None,
-                        help='Early stopping patience (None to disable)')
+    parser.add_argument(
+        "--early_stopping",
+        type=_positive_int,
+        default=None,
+        help="Early stopping patience (None to disable)",
+    )
 
     # 其他参数
-    parser.add_argument('--num_workers', type=int, default=0,
-                        help='Number of data loading workers')
-    parser.add_argument('--device', type=str, default='cuda',
-                        choices=['cuda', 'cpu'],
-                        help='Device to use')
-    parser.add_argument('--use_amp', action='store_true',
-                        help='Use automatic mixed precision')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
-                        help='Gradient accumulation steps')
+    parser.add_argument(
+        "--num_workers", type=_nonnegative_int, default=0, help="Number of data loading workers"
+    )
+    parser.add_argument(
+        "--device", type=str, default="cuda", choices=["cuda", "cpu"], help="Device to use"
+    )
+    parser.add_argument("--use_amp", action="store_true", help="Use automatic mixed precision")
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=_positive_int,
+        default=1,
+        help="Gradient accumulation steps",
+    )
 
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
 
     # 设置设备
-    device = args.device if torch.cuda.is_available() else 'cpu'
+    if args.device == "cuda" and not torch.cuda.is_available():
+        parser.error("CUDA was requested but is not available")
+    if args.use_amp and args.device != "cuda":
+        parser.error("--use_amp requires --device cuda")
+    device = args.device
     print(f"Using device: {device}")
 
     # 创建模型
@@ -165,7 +268,7 @@ def main():
     print(f"Loading dataset: {args.dataset}")
     train_loader = get_data_loader(
         args.dataset,
-        split='train',
+        split="train",
         batch_size=args.batch_size,
         seq_length=args.seq_length,
         max_samples=args.max_samples,
@@ -175,10 +278,10 @@ def main():
 
     val_loader = get_data_loader(
         args.dataset,
-        split='validation',
+        split="validation",
         batch_size=args.batch_size,
         seq_length=args.seq_length,
-        max_samples=args.max_samples // 10 if args.max_samples else None,
+        max_samples=max(1, args.max_samples // 10) if args.max_samples is not None else None,
         num_workers=args.num_workers,
         local_path=args.data_dir,
     )
@@ -191,25 +294,17 @@ def main():
     )
 
     # 创建学习率调度器
-    scheduler = None
-    if args.lr_schedule == 'linear':
-        from torch.optim.lr_scheduler import LambdaLR
-
-        def lr_lambda(current_step: int):
-            if current_step < args.warmup_steps:
-                return float(current_step) / float(max(1, args.warmup_steps))
-            return max(
-                0.0,
-                float(args.epochs * len(train_loader) - current_step) /
-                float(max(1, args.epochs * len(train_loader) - args.warmup_steps))
-            )
-
-        scheduler = LambdaLR(optimizer, lr_lambda)
-    elif args.lr_schedule == 'cosine':
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+    try:
+        scheduler, scheduler_step_mode = _build_lr_scheduler(
             optimizer,
-            T_max=args.epochs,
+            args.lr_schedule,
+            epochs=args.epochs,
+            train_batches=len(train_loader),
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            warmup_steps=args.warmup_steps,
         )
+    except ValueError as error:
+        parser.error(str(error))
 
     # 创建损失函数（GPT-2 模型内部已包含损失计算）
     criterion = nn.CrossEntropyLoss()
@@ -227,6 +322,7 @@ def main():
         scheduler=scheduler,
         use_amp=args.use_amp,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
+        scheduler_step_mode=scheduler_step_mode,
     )
 
     # 如果需要，从检查点恢复
@@ -248,11 +344,13 @@ def main():
         epochs=args.epochs,
         save_every=args.save_every,
         verbose=True,
+        start_epoch=start_epoch,
     )
 
     print("\nTraining completed!")
-    print(f"Best validation loss: {trainer.best_val_loss:.4f}")
+    print(f"Best validation loss: {min(history['val_loss']):.4f}")
+    return 0
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    raise SystemExit(main())

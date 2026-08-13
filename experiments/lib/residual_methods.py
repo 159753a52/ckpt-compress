@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Sequence, Tuple
+from typing import Any, Dict, Sequence, Tuple
 
 import torch
 
-from experiments.lib.residual_weibull import (
-    fit_layer_weibull_mom,
-    weibull_counts,
-)
 from experiments.lib.residual_budget import uniform_counts
 from experiments.lib.residual_masks import (
     MaskDict,
@@ -32,6 +28,7 @@ from experiments.lib.residual_protocol import (
     quantile_method_id,
     spectral_method_id,
 )
+from experiments.lib.residual_weibull import fit_layer_weibull_mom, weibull_counts
 
 
 def build_masks(
@@ -43,7 +40,7 @@ def build_masks(
     taylor_score_orders: Sequence[torch.Tensor] | None = None,
     *,
     distributed_moments: bool = False,
-) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
+) -> Tuple[Dict[str, MaskDict], Dict[str, Any]]:
     """Build the fixed-order baseline mask family for recovery experiments."""
     taylor_scores = components["taylor"]
     weibull_mask, metadata = build_weibull_mask(
@@ -87,11 +84,9 @@ def build_weibull_mask(
     *,
     distributed_moments: bool = False,
     score_orders: Sequence[torch.Tensor] | None = None,
-) -> Tuple[MaskDict, Dict[str, object]]:
+) -> Tuple[MaskDict, Dict[str, Any]]:
     """Build only the DACP Weibull mask for memory-constrained paper runs."""
-    layer_sizes = [
-        sum(taylor_scores[name].numel() for name in layer) for layer in layers
-    ]
+    layer_sizes = [sum(taylor_scores[name].numel() for name in layer) for layer in layers]
     eligible_count = sum(layer_sizes)
     target = int(math.floor(prune_ratio * eligible_count))
     fits = fit_layer_weibull_mom(
@@ -138,10 +133,10 @@ def compute_method_diagnostics(
     magnitude_scores: TensorDict,
     components: Dict[str, TensorDict],
     eligible_parameters: int,
-) -> Dict[str, object]:
+) -> Dict[str, Any]:
     """Compute mask-only diagnostics without evaluating or mutating the model."""
     taylor_metrics = mask_metrics(method_masks, components["taylor"])
-    metrics: Dict[str, object] = dict(taylor_metrics)
+    metrics: Dict[str, Any] = dict(taylor_metrics)
     selection = mask_metrics(
         method_masks,
         score_for_method(method, magnitude_scores, components),
@@ -150,9 +145,8 @@ def compute_method_diagnostics(
     metrics["eligible_sparsity"] = taylor_metrics["pruned"] / eligible_parameters
     metrics["layer_rates"] = layer_rates(layers, method_masks)
     metrics["taylor_regret_vs_exact"] = (
-        (taylor_metrics["proxy_cost"] - exact_taylor_proxy_cost)
-        / max(abs(exact_taylor_proxy_cost), 1e-30)
-    )
+        taylor_metrics["proxy_cost"] - exact_taylor_proxy_cost
+    ) / max(abs(exact_taylor_proxy_cost), 1e-30)
     metrics["overlap_with_taylor_exact"] = mask_overlap(method_masks, exact_masks)
     return metrics
 

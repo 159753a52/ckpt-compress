@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import torch
 
@@ -11,20 +11,15 @@ from experiments.lib.residual_calibration import (
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
 )
-from experiments.lib.residual_masks import (
-    MaskDict,
-    TensorDict,
-    layer_masks,
-    layer_score_orders,
-)
+from experiments.lib.residual_masks import MaskDict, TensorDict, layer_masks, layer_score_orders
 from experiments.lib.residual_method_config import AdaptiveMethodConfig
 from experiments.lib.residual_methods import build_masks
-from experiments.lib.residual_quantile import calibrate_quantile_smooth_allocation
 from experiments.lib.residual_protocol import (
     TAYLOR_PROBE_TRUST_METHOD,
     quantile_method_id,
     spectral_method_id,
 )
+from experiments.lib.residual_quantile import calibrate_quantile_smooth_allocation
 
 
 def assemble_method_family(
@@ -37,7 +32,7 @@ def assemble_method_family(
     probe_batches: Sequence[Mapping[str, torch.Tensor]],
     selection_batches: Sequence[Mapping[str, torch.Tensor]],
     config: AdaptiveMethodConfig,
-) -> Tuple[Dict[str, MaskDict], Dict[str, object]]:
+) -> Tuple[Dict[str, MaskDict], Dict[str, Any]]:
     """Build fixed and adaptive masks while preserving calibration side effects."""
     allocation_started = time.perf_counter()
     taylor_score_orders = None
@@ -113,6 +108,8 @@ def assemble_method_family(
         metadata["spectral"] = spectral_metadata
 
     if config.quantile_smoothness_values:
+        if taylor_score_orders is None:
+            raise RuntimeError("Quantile allocation requires materialized Taylor score orders")
         quantile_counts, quantile_metadata = calibrate_quantile_smooth_allocation(
             layers,
             components["taylor"],
@@ -148,9 +145,7 @@ def assemble_method_family(
             order.numel() * order.element_size() for order in taylor_score_orders
         )
     metadata["seconds"] = time.perf_counter() - allocation_started
-    metadata["whole_model_parameters"] = sum(
-        parameter.numel() for parameter in model.parameters()
-    )
+    metadata["whole_model_parameters"] = sum(parameter.numel() for parameter in model.parameters())
     return masks, metadata
 
 

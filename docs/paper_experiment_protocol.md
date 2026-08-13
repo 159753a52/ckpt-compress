@@ -26,6 +26,14 @@ sparsity, seed, and recovery schedule. Baseline hyperparameters may be tuned on
 the same validation budget as DACP; intentionally weakening a baseline is not
 an acceptable protocol.
 
+The recovery trajectory restores the checkpoint's model weights and AdamW
+moments, then sets the manifest learning rate and starts a fresh cosine schedule
+over the declared recovery horizon. It does not claim to continue the scheduler
+from the checkpoint's original pretraining or fine-tuning run. Every job records
+this policy and the checkpoint step as structured provenance so a resume cannot
+silently mix the two interpretations. The runner also rejects a checkpoint whose
+self-reported step differs from the workload's declared `checkpoint_step`.
+
 ## Minimal run order
 
 1. Validate one paired GPT-2 Medium job at 50% sparsity and `K=1`.
@@ -60,8 +68,51 @@ python experiments/scripts/run_paper_experiments.py \
 ```
 
 Each job writes incremental raw JSON. `suite_manifest.json` records completed
-jobs and their SHA-256 digests. The runner refuses missing checkpoints and
-undeclared workload/ratio/K/seed selections.
+jobs and their SHA-256 digests. The runner refuses missing checkpoints,
+undeclared workload/ratio/K/seed selections, duplicate CLI selections, and
+non-finite metrics.
+
+Existing output is never overwritten implicitly. After an interruption, resume
+the exact same plan explicitly:
+
+```bash
+python experiments/scripts/run_paper_experiments.py \
+  --workload gpt2_medium_wikitext103 \
+  --prune-ratio 0.5 \
+  --recoveries 1 \
+  --seeds 42 \
+  --device cuda \
+  --output-dir results/paper_runs/gate1 \
+  --resume
+```
+
+Resume validates the manifest, source tree fingerprint (including untracked and
+deleted Python/YAML/TOML/shell sources), checkpoint digest, training/evaluation
+batch counts and hashes, method contracts, exact allocation target, job
+configuration, and stored batch plans. A `no_compression` cycle must preserve
+its before/after metrics exactly. Only complete, validated `(seed, method)`
+records are skipped. A changed source tree, plan, checkpoint, batch plan, or
+result record fails instead of mixing incompatible evidence.
+
+When all selected jobs for a workload are already complete, resume re-hashes
+the checkpoint before skipping model and dataset loading. If a workload has any
+pending job, the shared workload context performs that check once while loading
+the pending inputs. The stored checkpoint step is protected by that file
+digest; the runner never infers or fabricates an unavailable scheduler state.
+
+Paths in the manifest are repository-relative. `--checkpoint-root` and
+`--data-root` remap them for another machine. Local Hugging Face model and
+tokenizer snapshots default to `data/models`; set `DACP_MODEL_ROOT` to override
+that location, or `DACP_DATA_ROOT` to relocate the complete data hierarchy.
+`ALPACA_LOCAL_PATH` may point to one JSON file, otherwise the loader checks
+`<data-root>/alpaca/alpaca_data.json` and `<data-root>/alpaca_data.json` before
+using the Hugging Face dataset source.
+
+Training checkpoints include optimizer state and are decoded with PyTorch's
+pickle-capable loader. Treat every checkpoint as executable input: use only
+trusted files produced by this project or a reviewed source. The runner hashes
+the checkpoint and locks that digest for every job of the same workload, but a
+digest is provenance evidence, not a sandbox for an untrusted pickle.
 
 ## Distributed moments
 
@@ -75,6 +126,14 @@ The current manuscript also states one `2L`-scalar `allreduce`. That exact
 constant is not the current implementation contract and must be revised before
 submission, unless a two-moment implementation is introduced together with an
 explicit equal-count/data-sharding contract.
+
+## Complexity and timing
+
+[`complexity_analysis.md`](complexity_analysis.md) derives work counts for the
+current manifest runner and identifies the timing fields recorded in raw JSON.
+It intentionally contains no unverified per-model hour estimates. Runtime
+claims must be aggregated from compatible result records produced on the target
+hardware.
 
 ## Figure provenance
 

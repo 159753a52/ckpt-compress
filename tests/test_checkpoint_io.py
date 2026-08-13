@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import torch
 
@@ -104,6 +105,62 @@ class TestCheckpointSizeBreakdown(unittest.TestCase):
         self.assertEqual(native["values_bytes"], 10)
         self.assertEqual(converted["original_bytes"], 10)
         self.assertEqual(converted["values_bytes"], 4)
+
+    def test_writers_reject_masks_for_unknown_state_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = str(Path(temp_dir) / "checkpoint.pt")
+            for writer in (
+                save_compressed_checkpoint,
+                save_quantized_compressed_checkpoint,
+            ):
+                with (
+                    self.subTest(writer=writer.__name__),
+                    self.assertRaisesRegex(KeyError, "absent"),
+                ):
+                    writer(
+                        {"weight": torch.ones(1)},
+                        {"missing": torch.ones(1)},
+                        path,
+                    )
+            with self.assertRaisesRegex(KeyError, "absent"):
+                get_size_breakdown(
+                    {"weight": torch.ones(1)},
+                    {"missing": torch.ones(1)},
+                )
+
+    def test_writer_creates_parent_and_loader_uses_tensor_only_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "nested" / "checkpoint.pt"
+            size = save_compressed_checkpoint(
+                {"weight": torch.tensor([1.0, 2.0])},
+                {"weight": torch.tensor([1, 0])},
+                str(path),
+            )
+
+            self.assertTrue(path.is_file())
+            self.assertEqual(size, path.stat().st_size)
+            with mock.patch(
+                "dacp.tools.checkpoint_io.torch.load",
+                wraps=torch.load,
+            ) as load:
+                restored = load_compressed_checkpoint(str(path))
+            self.assertTrue(torch.equal(restored["weight"], torch.tensor([1.0, 0.0])))
+            self.assertTrue(load.call_args.kwargs["weights_only"])
+
+    def test_checkpoint_input_mappings_require_string_tensor_entries(self) -> None:
+        invalid = (
+            ({1: torch.ones(1)}, {}, "keys"),
+            ({"weight": "bad"}, {}, "state_dict entries"),
+            ({"weight": torch.ones(1)}, {"weight": "bad"}, "mask entries"),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for state, masks, message in invalid:
+                with self.subTest(message=message), self.assertRaisesRegex(TypeError, message):
+                    save_compressed_checkpoint(
+                        state,
+                        masks,
+                        str(Path(temp_dir) / "checkpoint.pt"),
+                    )
 
 
 if __name__ == "__main__":

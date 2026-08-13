@@ -7,6 +7,7 @@ import torch
 
 import experiments.lib.residual_calibration as residual_calibration
 from experiments.lib.residual_calibration import (
+    batch_loss_values,
     calibrate_spectral_allocation,
     calibrate_trust_region_allocation,
 )
@@ -23,20 +24,30 @@ class TinyProbeModel(torch.nn.Module):
 
 
 class TestResidualCalibration(unittest.TestCase):
+    def test_batch_loss_values_restores_mode_and_rejects_empty_batches(self) -> None:
+        model = TinyProbeModel()
+        model.train()
+        with mock.patch.object(
+            residual_calibration,
+            "lm_loss",
+            return_value=torch.tensor(2.0),
+        ):
+            self.assertEqual(batch_loss_values(model, self.batches, "cpu"), [2.0, 2.0])
+        self.assertTrue(model.training)
+
+        model.eval()
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            batch_loss_values(model, [], "cpu")
+        self.assertFalse(model.training)
+
     def setUp(self) -> None:
         self.model = TinyProbeModel()
         self.current = {
-            name: value.detach().clone()
-            for name, value in self.model.state_dict().items()
+            name: value.detach().clone() for name, value in self.model.state_dict().items()
         }
-        self.reference = {
-            name: torch.zeros_like(value) for name, value in self.current.items()
-        }
+        self.reference = {name: torch.zeros_like(value) for name, value in self.current.items()}
         self.layers = [[f"layer{index}"] for index in range(3)]
-        self.scores = {
-            f"layer{index}": torch.arange(10, dtype=torch.float32)
-            for index in range(3)
-        }
+        self.scores = {f"layer{index}": torch.arange(10, dtype=torch.float32) for index in range(3)}
         self.batches = [{"batch": torch.tensor(index)} for index in range(2)]
 
     @staticmethod
@@ -164,6 +175,63 @@ class TestResidualCalibration(unittest.TestCase):
             self.assertTrue(torch.equal(parameter, self.current[name]))
             self.assertTrue(parameter.requires_grad)
         self.assertFalse(self.model.training)
+
+    def test_trust_region_failure_restores_input_state_and_mode(self) -> None:
+        self.model.train()
+        with mock.patch.object(
+            residual_calibration,
+            "batch_loss_values",
+            side_effect=RuntimeError("probe failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "probe failed"):
+                calibrate_trust_region_allocation(
+                    self.model,
+                    self.current,
+                    self.reference,
+                    self.layers,
+                    self.scores,
+                    uniform_layer_counts=[5, 5, 5],
+                    target=15,
+                    ratio=0.5,
+                    max_layer_ratio=0.8,
+                    probe_batches=self.batches,
+                    selection_batches=self.batches,
+                    probe_radius=0.1,
+                    candidate_trust_radii=[0.1],
+                    device="cpu",
+                )
+
+        for name, parameter in self.model.named_parameters():
+            self.assertTrue(torch.equal(parameter, self.current[name]))
+        self.assertTrue(self.model.training)
+
+    def test_spectral_failure_restores_input_state_and_mode(self) -> None:
+        self.model.train()
+        with mock.patch.object(
+            residual_calibration,
+            "batch_loss_values",
+            side_effect=RuntimeError("probe failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "probe failed"):
+                calibrate_spectral_allocation(
+                    self.model,
+                    self.current,
+                    self.reference,
+                    self.layers,
+                    self.scores,
+                    target=15,
+                    ratio=0.5,
+                    max_layer_ratio=0.8,
+                    probe_batches=self.batches,
+                    probe_radius=0.1,
+                    ranks=[1, 2],
+                    trust_radius=0.1,
+                    device="cpu",
+                )
+
+        for name, parameter in self.model.named_parameters():
+            self.assertTrue(torch.equal(parameter, self.current[name]))
+        self.assertTrue(self.model.training)
 
 
 if __name__ == "__main__":

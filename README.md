@@ -1,14 +1,23 @@
-# DACP — Distribution-Aware Checkpoint Pruning
+# DACP - Distribution-Aware Checkpoint Pruning
 
-EMNLP '26 实验代码。对比 DACP（二阶 HVP + Gamma 自适应分配）与基线方法在检查点压缩任务上的表现。
+DACP 论文实验代码。当前论文方法使用 Taylor/HVP damage score 与 Weibull
+矩估计分配，在同一 residual-recovery 协议下比较无压缩、ExCP-style、
+Inshrinkerator-style 和 DACP。主表实验、方法 fidelity 与结果 provenance 的
+唯一入口见 [`docs/paper_experiment_protocol.md`](docs/paper_experiment_protocol.md)。
 
 ---
 
 ## 安装
 
+wheel 只分发可复用的 `dacp` 与 `baselines` 库代码：
+
 ```bash
 pip install -e .
 ```
+
+`experiments/` 是论文实验编排与证据校验层，不包含在 wheel 中。运行论文
+manifest、恢复实验或生成主结果时，必须在完整源码仓库根目录执行；仅安装 wheel
+不能提供 paper runner。
 
 ---
 
@@ -20,79 +29,93 @@ dacp/                    # 我们的方法
   quantization/            INT4 / DDSketch K-means 量化
   tools/                   HVP 计算工具
   models/                  GPT-2 / BERT / ResNet 封装
-  utils/                   数据加载器、训练器
+  utils/                   数据加载器、路径解析、训练器
 baselines/               # 对比方法
   excp/                    ExCP (ICML '24)
   inshrinkerator/          Inshrinkerator (SoCC '24) + Per-type 搜索/分配
 experiments/
+  configs/                 论文 manifest（主实验唯一配置源）
   lib/                     统一实验框架（模型加载/评估/结果存储）
-  scripts/                 论文各表/图对应的实验脚本（10个）
-  scripts/finetune/        模型微调脚本（7个）
-scripts/                 数据集和模型下载脚本
+  scripts/                 统一论文 runner、诊断与历史兼容脚本
+  scripts/finetune/        模型微调脚本
+scripts/                 辅助验证与历史服务器脚本
 ```
 
 ---
 
 ## 运行实验
 
-论文当前五模型、`K>1`、基线 fidelity 与结果 provenance 的统一入口见
-[`docs/paper_experiment_protocol.md`](docs/paper_experiment_protocol.md)。先用
-`experiments/configs/paper_experiments.yaml` 的 dry-run 核对实验清单；旧脚本保留用于
-开发诊断和历史结果兼容，不应混入新主表。
-
-### 单个实验
+先用 manifest 的 dry-run 核对实验清单：
 
 ```bash
-# 方法对比（论文 Table 1）
+python experiments/scripts/run_paper_experiments.py \
+  --dry-run \
+  --workload gpt2_medium_wikitext103 \
+  --prune-ratio 0.5 \
+  --recoveries 1 \
+  --seeds 42
+```
+
+旧的 Python Table/Figure 脚本仅用于开发诊断和历史结果兼容，不应混入
+当前论文主表。绑定个人 Conda、目录和旧方法名的服务器 launcher 已删除；
+GPU 机器也应直接使用上面的 manifest runner，并通过参数或环境变量映射路径。
+复杂度与耗时记录边界见
+[`docs/complexity_analysis.md`](docs/complexity_analysis.md)；未经目标机器 JSON
+实测的小时数不作为论文证据。
+`experiments/scripts/aggregate_results.py` 只用于读取历史结果 schema；论文
+主结果必须从 digest-verified suite JSON 聚合，不能把该兼容扫描器的输出当作
+完整性证明。
+
+### 诊断脚本
+
+```bash
+# 旧方法组合诊断
 python experiments/scripts/run_method_comparison.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 联合压缩（Table 2）
+# 联合压缩诊断
 python experiments/scripts/run_joint_compression.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 消融实验（Table 3）
+# 消融诊断
 python experiments/scripts/run_ablation_study.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# Pareto 曲线（Figure 4）
+# Pareto 诊断
 python experiments/scripts/run_pareto_curves.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 剪枝率热力图（Figure 5）
+# 剪枝率热力图
 python experiments/scripts/run_pruning_heatmap.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 容错训练（Figure 6）
+# 旧容错训练诊断
 python experiments/scripts/run_fault_tolerant_training.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# Gamma 分布验证（§9.1-9.2）
+# 分布拟合诊断
 python experiments/scripts/run_gamma_validation.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 敏感性分析 + 计时分解（§9.3）
+# 敏感性与计时诊断
 python experiments/scripts/run_sensitivity_analysis.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 
-# 层分布 Violin 图（§9.4）
+# 层分布 Violin 图
 python experiments/scripts/run_layer_distribution_violin.py \
   --model gpt2-medium --dataset wikitext103 --device cuda
 ```
 
-### Makefile 快捷方式
+### Makefile 开发入口
 
 ```bash
-make table1        # 方法对比
-make table2        # 联合压缩
-make table3        # 消融实验
-make fig4          # Pareto 曲线
-make fig5          # 剪枝率热力图
-make fig6          # 容错训练
-make gamma         # Gamma 验证
-make sensitivity   # 敏感性分析
-make violin        # 层分布 Violin
-make all           # 全部实验
+make test          # 全量测试
+make test-cov      # 全 dacp 包覆盖率报告
+make test-paper-cov # 论文核心选择模块 90% 覆盖率门禁
+make typecheck-paper # 论文 runner、证据链和模型/数据边界类型检查
+make lint          # 当前论文路径的格式与编译检查
+make paper-plan    # 仅显示统一论文实验清单
+make wheel         # 构建 wheel
 ```
 
 ### 切换模型
@@ -101,7 +124,7 @@ make all           # 全部实验
 
 ---
 
-## 支持的方法组合
+## 旧诊断框架的方法组合
 
 | 重要性评分 | 分配策略 | 说明 |
 |-----------|---------|------|
@@ -110,7 +133,10 @@ make all           # 全部实验
 | `first-order` | `gamma-adaptive` | 一阶 + 自适应分配 |
 | `residual-magnitude` | `uniform` | 残差幅度（ExCP 风格） |
 | `second-order-hvp` | `uniform` | 二阶 HVP（消融用） |
-| **`second-order-hvp`** | **`gamma-adaptive`** | **完整方法（DACP）** |
+| `second-order-hvp` | `gamma-adaptive` | 旧 Gamma allocation 诊断，不是当前 paper runner 的 DACP contract |
+
+当前论文 runner 的 DACP contract 是 `taylor_weibull_mom`，见 manifest、
+[`experiments/lib/paper_baselines.py`](experiments/lib/paper_baselines.py) 和实验协议。
 
 ---
 
