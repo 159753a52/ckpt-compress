@@ -3,10 +3,18 @@ from unittest import mock
 
 import numpy as np
 
-from scripts.validate_distribution import fit_and_compare
+from scripts.validate_distribution import fit_and_compare, main
 
 
 class TestValidateDistribution(unittest.TestCase):
+    def test_help_exits_before_fixed_checkpoint_scan(self) -> None:
+        with mock.patch("scripts.validate_distribution.analyze_checkpoint") as analyze:
+            with self.assertRaises(SystemExit) as raised:
+                main(["--help"])
+
+        self.assertEqual(raised.exception.code, 0)
+        analyze.assert_not_called()
+
     def test_all_competitors_produce_finite_ks_evidence(self) -> None:
         values = np.linspace(0.1, 10.0, 200, dtype=np.float64)
 

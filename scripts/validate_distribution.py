@@ -8,10 +8,12 @@ Run on server:
     python scripts/validate_distribution.py
 """
 
+import argparse
 import json
 import os
 import sys
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 from scipy import stats
@@ -177,7 +179,13 @@ def analyze_checkpoint(ckpt_path, model_name):
     return all_results, summary
 
 
-def main():
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the fixed-checkpoint diagnostic parser without loading inputs."""
+    return argparse.ArgumentParser(description=__doc__)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    _build_parser().parse_args(argv)
     checkpoints = [
         ("checkpoints/gpt2_medium_wikitext103/checkpoint_step_1000.pt", "GPT-2 Medium"),
         (

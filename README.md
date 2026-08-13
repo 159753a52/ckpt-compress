@@ -45,6 +45,17 @@ scripts/                 辅助验证与历史服务器脚本
 
 ## 运行实验
 
+能力边界：
+
+| 入口/层 | 支持范围 |
+|---------|---------|
+| `experiments/lib/models.py` | 统一模型注册与加载层。目前注册 `gpt2-small`、`gpt2-medium`、`gpt2-large`、`bert-base`、`bert-large`、`resnet18`、`resnet50`、`pythia-410m`、`pythia-1b`、`vit-l-32`、`vit-b-16`。这是模型工厂的注册表，不是所有脚本的共同能力声明。 |
+| `experiments/scripts/run_paper_experiments.py` | 只运行 `experiments/configs/paper_experiments.yaml` 声明的五个默认 workload：`gpt2_medium_wikitext103`、`gpt2_large_wikitext103`、`bert_large_mnli`、`pythia_410m_alpaca`、`pythia_1b_alpaca`。CLI 选择仍受 manifest 中各 workload 的 ratio、K 和 seed 声明约束。 |
+| `experiments/scripts/` 中的 legacy diagnostics | 每个脚本按自身 parser、数据加载器和层名解析器决定支持范围；示例中的 `gpt2-medium`、`wikitext103` 不是跨脚本保证。它们用于单 checkpoint、历史兼容或开发诊断，不能由模型注册表反推出对 `gpt2-large`、`pythia-1b` 或其他组合的支持。 |
+| wheel / paper runner | wheel 只包含 `dacp` 与 `baselines` 库；`experiments/`、manifest runner 和论文结果证据链必须从完整源码仓库运行。安装 wheel 不会提供 paper runner。 |
+
+`gpt2-large` 与 `pythia-1b` 在统一模型注册层中是已注册名称；这不表示每个 legacy diagnostic 或微调入口都支持它们。论文实验仍以 manifest 声明的 workload 为准。
+
 先用 manifest 的 dry-run 核对实验清单：
 
 ```bash
@@ -118,9 +129,9 @@ make paper-plan    # 仅显示统一论文实验清单
 make wheel         # 构建 wheel
 ```
 
-### 切换模型
+### 模型与脚本边界
 
-所有脚本支持 `--model` 参数：`gpt2-small` / `gpt2-medium` / `bert-base` / `bert-large` / `resnet18` / `resnet50` / `pythia-410m` / `vit-l-32` / `vit-b-16`
+需要 `--model` 的 legacy diagnostic 只接受其自身实现和数据路径覆盖的组合；请先运行对应入口的 `--help`，再按该脚本的示例准备 checkpoint 与数据。微调入口通常固定模型族或任务，不能仅因为模型出现在注册表中就替换为任意名称。统一论文实验入口应使用上面的 manifest workload 名称，而不是把模型名直接当作 workload。
 
 ---
 
