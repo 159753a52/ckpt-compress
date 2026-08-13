@@ -228,6 +228,56 @@ class TestPaperExperiments(unittest.TestCase):
                     },
                 )
 
+    def test_main_rejects_methods_that_bypass_an_enabled_claim_gate(self) -> None:
+        manifest = PaperManifest(
+            path=Path("manifest.yaml"),
+            schema_version=1,
+            methods=tuple(resolve_method_contracts(["no_compression", "dacp"])),
+            claim_gates={
+                "matched_scoring_main_table": {
+                    "baseline_owners": ["excp", "inshrinkerator"],
+                    "required_baseline_fidelity": "style",
+                }
+            },
+            workloads=(tiny_workload(),),
+        )
+
+        with (
+            mock.patch.object(paper_script, "load_paper_manifest", return_value=manifest),
+            self.assertRaisesRegex(ValueError, "enabled claim gate"),
+        ):
+            paper_script.main(["--methods", "dacp", "--dry-run"])
+
+    def test_main_accepts_gate_satisfying_methods_and_gate_free_subsets(self) -> None:
+        gated_manifest = PaperManifest(
+            path=Path("manifest.yaml"),
+            schema_version=1,
+            methods=tuple(
+                resolve_method_contracts(
+                    ["no_compression", "excp_style", "inshrinkerator_style", "dacp"]
+                )
+            ),
+            claim_gates={
+                "matched_scoring_main_table": {
+                    "baseline_owners": ["excp", "inshrinkerator"],
+                    "required_baseline_fidelity": "style",
+                }
+            },
+            workloads=(tiny_workload(),),
+        )
+        with mock.patch.object(paper_script, "load_paper_manifest", return_value=gated_manifest):
+            paper_script.main(["--methods", "excp_style,inshrinkerator_style", "--dry-run"])
+
+        ungated_manifest = PaperManifest(
+            path=Path("manifest.yaml"),
+            schema_version=1,
+            methods=tuple(resolve_method_contracts(["dacp"])),
+            claim_gates={},
+            workloads=(tiny_workload(),),
+        )
+        with mock.patch.object(paper_script, "load_paper_manifest", return_value=ungated_manifest):
+            paper_script.main(["--methods", "dacp", "--dry-run"])
+
     def test_repeated_partition_has_k_plus_one_train_segments(self) -> None:
         pool = [
             {"input_ids": torch.tensor([[index]]), "labels": torch.tensor([[index]])}

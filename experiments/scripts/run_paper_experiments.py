@@ -22,6 +22,7 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 
 from experiments.lib.data import cache_batches, get_data_loaders  # noqa: E402
 from experiments.lib.models import load_model  # noqa: E402
+from experiments.lib.paper_baselines import validate_claim_gate  # noqa: E402
 from experiments.lib.paper_manifest import load_paper_manifest  # noqa: E402
 from experiments.lib.paper_results import (  # noqa: E402
     SCHEMA_VERSION,
@@ -452,6 +453,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         if unknown:
             raise ValueError(f"Methods are not declared in the manifest: {sorted(unknown)}")
         contracts = [by_name[name] for name in requested]
+
+    for gate_name, gate in manifest.claim_gates.items():
+        if gate.get("enabled", True):
+            try:
+                validate_claim_gate(contracts, gate)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Selected methods do not satisfy enabled claim gate {gate_name!r}: {exc}"
+                ) from exc
 
     plan = {
         "jobs": [job.to_result_dict() for job in jobs],

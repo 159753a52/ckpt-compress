@@ -145,7 +145,7 @@ read actual DACP `layer_rates` from a completed, digest-verified paper suite.
 python experiments/scripts/generate_paper_figures.py \
   --fit-results results/paper_results/gamma_validation/<fit_results.json> \
   --suite results/paper_runs/<suite>/suite_manifest.json \
-  --output-dir ../paper/figs
+  --output-dir ../../paper/figs
 ```
 
 Every generated PDF/PNG has a sibling `.provenance.json` containing source

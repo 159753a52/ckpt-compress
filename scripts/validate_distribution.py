@@ -184,7 +184,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return argparse.ArgumentParser(description=__doc__)
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     _build_parser().parse_args(argv)
     checkpoints = [
         ("checkpoints/gpt2_medium_wikitext103/checkpoint_step_1000.pt", "GPT-2 Medium"),
@@ -199,13 +199,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     ]
 
     all_summaries = {}
+    failed = False
     for ckpt_path, name in checkpoints:
         full_path = ROOT / ckpt_path
-        if full_path.exists():
-            results, summary = analyze_checkpoint(str(full_path), name)
-            all_summaries[name] = summary
-        else:
+        if not full_path.is_file():
             print(f"Checkpoint not found: {full_path}")
+            failed = True
+            continue
+        try:
+            _results, summary = analyze_checkpoint(str(full_path), name)
+        except Exception as error:
+            print(f"Analysis failed for {name}: {error}", file=sys.stderr)
+            failed = True
+            continue
+        if summary["total"] <= 0:
+            print(f"Analysis produced no fitting evidence for {name}", file=sys.stderr)
+            failed = True
+            continue
+        all_summaries[name] = summary
 
     print(f"\n{'='*60}")
     print("OVERALL SUMMARY")
@@ -214,7 +225,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(
             f"{name}: Weibull={s['weibull_wins']}/{s['total']}, Gamma={s['gamma_wins']}/{s['total']}, LogN={s['lognorm_wins']}/{s['total']}"
         )
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
