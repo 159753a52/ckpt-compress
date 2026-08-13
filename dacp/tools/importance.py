@@ -22,7 +22,7 @@ s_i = -g_i·θ_i + 0.5·θ_i·(H·θ)_i
 - 若 -g_i·θ_i < 0：删除该参数会减少损失（参数可能有害）
 """
 
-from typing import Callable, Dict, List, Mapping, Optional
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
@@ -199,6 +199,7 @@ def compute_hvp(
     loss_fn: Callable,
     data_batch: Dict[str, torch.Tensor],
     vector: Dict[str, torch.Tensor],
+    gradient_accumulator: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     计算 Hessian-Vector Product: H * v
@@ -234,12 +235,19 @@ def compute_hvp(
             list(params.values()),
             create_graph=True,
             retain_graph=True,
+            allow_unused=gradient_accumulator is not None,
         )
+
+        if gradient_accumulator is not None:
+            for name, gradient in zip(params, grads):
+                if gradient is not None:
+                    gradient_accumulator[name].add_(gradient.detach())
 
         # 计算 grad · vector 的标量积
         grad_vector_product = torch.tensor(0.0, device=loss.device)
         for g, name in zip(grads, params.keys()):
-            grad_vector_product = grad_vector_product + (g * vector[name]).sum()
+            if g is not None:
+                grad_vector_product = grad_vector_product + (g * vector[name]).sum()
 
         # 第二次反向传播，计算 HVP
         if grad_vector_product.requires_grad:
@@ -267,6 +275,7 @@ def compute_hvp_batched(
     data_batches: list,
     vector: Dict[str, torch.Tensor],
     num_batches: int = 1,
+    gradient_accumulator: Optional[Dict[str, torch.Tensor]] = None,
 ) -> Dict[str, torch.Tensor]:
     """
     使用多个批次计算平均 HVP，提高估计稳定性。
@@ -286,7 +295,13 @@ def compute_hvp_batched(
 
     for i in range(actual_batches):
         batch = data_batches[i]
-        hvp = compute_hvp(model, loss_fn, batch, vector)
+        hvp = compute_hvp(
+            model,
+            loss_fn,
+            batch,
+            vector,
+            gradient_accumulator=gradient_accumulator,
+        )
 
         if hvp_sum is None:
             hvp_sum = {name: h.clone() for name, h in hvp.items()}
@@ -303,6 +318,46 @@ def compute_hvp_batched(
     return hvp_avg
 
 
+_HVPGradientState = Dict[str, Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]]
+
+
+def _snapshot_hvp_model_state(
+    model: torch.nn.Module,
+) -> Tuple[Dict[str, bool], Dict[str, bool], _HVPGradientState]:
+    """Capture mutable model state before a scoring pass."""
+    modes = {name: module.training for name, module in model.named_modules()}
+    requires_grad = {}
+    gradients = {}
+    for name, parameter in model.named_parameters():
+        requires_grad[name] = parameter.requires_grad
+        gradients[name] = (
+            parameter.grad,
+            None if parameter.grad is None else parameter.grad.detach().clone(),
+        )
+    return modes, requires_grad, gradients
+
+
+def _restore_hvp_model_state(
+    model: torch.nn.Module,
+    modes: Dict[str, bool],
+    requires_grad: Dict[str, bool],
+    gradients: _HVPGradientState,
+) -> None:
+    """Restore model mode, requires-grad flags, and existing gradients."""
+    for name, parameter in model.named_parameters():
+        parameter.requires_grad_(requires_grad[name])
+        original_gradient, original_values = gradients[name]
+        if original_gradient is None:
+            parameter.grad = None
+        else:
+            assert original_values is not None
+            with torch.no_grad():
+                original_gradient.copy_(original_values)
+            parameter.grad = original_gradient
+    for name, module in model.named_modules():
+        module.training = modes[name]
+
+
 def _compute_importance_scores_hvp(
     model: torch.nn.Module,
     loss_fn: Callable,
@@ -310,34 +365,33 @@ def _compute_importance_scores_hvp(
     num_batches: int,
     absolute: bool,
 ) -> Dict[str, torch.Tensor]:
-    """Compute the shared first- and second-order HVP score pipeline."""
-    _validate_hvp_batch_request(data_batches, num_batches)
-
-    params = {name: p for name, p in model.named_parameters() if p.requires_grad}
-    weights = {name: p.data.clone() for name, p in params.items()}
-
-    model.zero_grad()
-    loss = loss_fn(model, data_batches[0])
-    loss.backward()
-    missing_gradients = sorted(name for name, parameter in params.items() if parameter.grad is None)
-    if missing_gradients:
-        raise RuntimeError(
-            f"Gradient coverage is missing trainable parameters: {missing_gradients}"
+    """Compute Taylor scores from matching averaged gradients and HVPs."""
+    actual_batches = _validate_hvp_batch_request(data_batches, num_batches)
+    params = {
+        name: parameter for name, parameter in model.named_parameters() if parameter.requires_grad
+    }
+    weights = {name: parameter.detach().clone() for name, parameter in params.items()}
+    modes, requires_grad, gradients = _snapshot_hvp_model_state(model)
+    try:
+        gradient_sum = {name: torch.zeros_like(parameter) for name, parameter in params.items()}
+        hvp_result = compute_hvp_batched(
+            model,
+            loss_fn,
+            data_batches,
+            weights,
+            num_batches=actual_batches,
+            gradient_accumulator=gradient_sum,
         )
-    gradients = {name: p.grad.clone() for name, p in params.items() if p.grad is not None}
-
-    print("[HVP] 计算 Hessian-Vector Product...")
-    hvp_result = compute_hvp_batched(model, loss_fn, data_batches, weights, num_batches)
-
-    scores = {}
-    for name, theta in weights.items():
-        if name not in hvp_result:
-            raise RuntimeError(f"HVP coverage is missing trainable parameter {name!r}")
-        grad = gradients[name]
-        hvp = hvp_result[name]
-        score = -grad * theta + 0.5 * theta * hvp
-        scores[name] = torch.abs(score) if absolute else score
-    return scores
+        average_gradients = {name: value / actual_batches for name, value in gradient_sum.items()}
+        scores = {}
+        for name, theta in weights.items():
+            if name not in hvp_result:
+                raise RuntimeError(f"HVP coverage is missing trainable parameter {name!r}")
+            score = -average_gradients[name] * theta + 0.5 * theta * hvp_result[name]
+            scores[name] = torch.abs(score) if absolute else score
+        return scores
+    finally:
+        _restore_hvp_model_state(model, modes, requires_grad, gradients)
 
 
 def compute_importance_scores_hvp(
