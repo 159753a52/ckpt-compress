@@ -365,14 +365,17 @@ def _run_job(
         empty_device_cache(args.device)
 
 
-def _validate_completed_checkpoint_files(
+def _validate_completed_workload_contexts(
     jobs,
     suite: SuiteResultStore,
     *,
     checkpoint_root: Path | None,
+    data_root: Path | None,
     declared_checkpoint_root: Path,
+    declared_data_root: Path,
+    device: str,
 ) -> None:
-    """Verify checkpoints only for workloads that bypass context loading entirely."""
+    """Revalidate immutable inputs for workloads whose jobs are already complete."""
     jobs_by_workload: dict[str, list] = {}
     for job in jobs:
         jobs_by_workload.setdefault(job.workload.name, []).append(job)
@@ -381,42 +384,20 @@ def _validate_completed_checkpoint_files(
         if not all(suite.has_completed_job(job.job_id) for job in workload_jobs):
             continue
         workload = workload_jobs[0].workload
-        identity = suite.expected_data_identity(workload.name)
-        if not isinstance(identity, Mapping):
-            raise ValueError(f"{workload.name}: completed job has no data identity")
-        expected_digest = identity.get("checkpoint_sha256")
-        expected_step = identity.get("checkpoint_step")
-        if not isinstance(expected_digest, str) or not expected_digest:
-            raise ValueError(f"{workload.name}: completed job has invalid checkpoint digest")
-        if (
-            isinstance(expected_step, bool)
-            or not isinstance(expected_step, int)
-            or expected_step < 0
-        ):
-            raise ValueError(f"{workload.name}: completed job has invalid checkpoint step")
-        if expected_step != workload.checkpoint_step:
-            raise ValueError(
-                f"{workload.name}: completed job checkpoint step {expected_step} "
-                f"does not match manifest step {workload.checkpoint_step}"
+        context = None
+        try:
+            context = _load_workload_context(
+                workload,
+                checkpoint_root=checkpoint_root,
+                data_root=data_root,
+                declared_checkpoint_root=declared_checkpoint_root,
+                declared_data_root=declared_data_root,
+                expected_data_identity=suite.expected_data_identity(workload.name),
             )
-
-        checkpoint_path = _remap(
-            workload.checkpoint,
-            declared_checkpoint_root,
-            checkpoint_root,
-        )
-        if not checkpoint_path.is_file():
-            raise FileNotFoundError(f"Missing checkpoint: {checkpoint_path}")
-        stat_before = checkpoint_path.stat()
-        actual_digest = sha256_file(checkpoint_path)
-        stat_after = checkpoint_path.stat()
-        if (stat_before.st_size, stat_before.st_mtime_ns) != (
-            stat_after.st_size,
-            stat_after.st_mtime_ns,
-        ):
-            raise RuntimeError(f"Checkpoint changed while it was being hashed: {checkpoint_path}")
-        if actual_digest != expected_digest:
-            raise ValueError(f"{workload.name}: checkpoint digest changed since the completed job")
+        finally:
+            del context
+            gc.collect()
+            empty_device_cache(device)
 
 
 def _preflight_outputs(output_dir: Path, jobs, *, resume: bool) -> None:
@@ -490,11 +471,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     declared_checkpoint_root = ROOT / "checkpoints"
     declared_data_root = ROOT / "data"
     if args.resume:
-        _validate_completed_checkpoint_files(
+        _validate_completed_workload_contexts(
             jobs,
             suite,
             checkpoint_root=args.checkpoint_root,
+            data_root=args.data_root,
             declared_checkpoint_root=declared_checkpoint_root,
+            declared_data_root=declared_data_root,
+            device=args.device,
         )
     if suite.complete:
         return

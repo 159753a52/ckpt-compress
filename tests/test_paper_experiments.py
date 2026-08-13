@@ -993,7 +993,9 @@ class TestPaperExperiments(unittest.TestCase):
 
             checkpoint_path.write_bytes(b"changed trusted checkpoint fixture")
             with patches[0], patches[1], patches[2], patches[3], patches[4]:
-                with self.assertRaisesRegex(ValueError, "checkpoint digest changed"):
+                with self.assertRaisesRegex(
+                    ValueError, "cached data identity changed across suite jobs"
+                ):
                     paper_script.main([*argv, "--resume"])
 
     def test_job_ids_are_path_safe_and_distinguish_close_ratios(self) -> None:
@@ -1130,64 +1132,120 @@ class TestPaperExperiments(unittest.TestCase):
                 deleted["dirty_source_paths"],
             )
 
-    def test_completed_checkpoint_preflight_skips_workloads_with_pending_jobs(self) -> None:
+    def test_completed_workload_preflight_revalidates_only_finished_workloads(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             checkpoint_path = root / "checkpoint.pt"
             checkpoint_path.write_bytes(b"checkpoint")
-            workload = PaperWorkload(
+            workload_a = PaperWorkload(
                 **{
                     **tiny_workload().__dict__,
+                    "name": "workload_a",
                     "checkpoint": checkpoint_path,
                     "data_dir": root,
                     "prune_ratios": (0.5, 0.7),
                 }
             )
-            jobs = [PaperJob(workload, ratio, 1, (42,)) for ratio in workload.prune_ratios]
+            workload_b = PaperWorkload(
+                **{
+                    **tiny_workload().__dict__,
+                    "name": "workload_b",
+                    "checkpoint": checkpoint_path,
+                    "data_dir": root,
+                }
+            )
+            jobs = [
+                *(PaperJob(workload_a, ratio, 1, (42,)) for ratio in workload_a.prune_ratios),
+                PaperJob(workload_b, 0.5, 1, (42,)),
+            ]
 
             class Suite:
-                def __init__(self, completed, checkpoint_step=workload.checkpoint_step):
+                def __init__(self, completed, identities):
                     self.completed = completed
-                    self.checkpoint_step = checkpoint_step
+                    self.identities = identities
 
                 def has_completed_job(self, job_id):
                     return job_id in self.completed
 
                 def expected_data_identity(self, workload_name):
-                    return {
-                        "checkpoint_sha256": "digest",
-                        "checkpoint_step": self.checkpoint_step,
-                    }
+                    return self.identities[workload_name]
 
-            with mock.patch.object(paper_script, "sha256_file") as digest:
-                paper_script._validate_completed_checkpoint_files(
-                    jobs,
-                    Suite({jobs[0].job_id}),
-                    checkpoint_root=None,
-                    declared_checkpoint_root=ROOT / "checkpoints",
-                )
-                digest.assert_not_called()
+            identity = {
+                "checkpoint_sha256": _digest("checkpoint"),
+                "checkpoint_step": workload_a.checkpoint_step,
+                "training_pool": {"count": 7, "sha256": _digest("training")},
+                "evaluation_batches": {"count": 1, "sha256": _digest("evaluation")},
+            }
+            suite = Suite({job.job_id for job in jobs[:2]}, {"workload_a": identity})
+            loaded = []
 
-            with mock.patch.object(paper_script, "sha256_file", return_value="digest") as digest:
-                paper_script._validate_completed_checkpoint_files(
-                    jobs,
-                    Suite({job.job_id for job in jobs}),
-                    checkpoint_root=None,
-                    declared_checkpoint_root=ROOT / "checkpoints",
-                )
-                digest.assert_called_once_with(checkpoint_path)
+            def load_context(workload, **kwargs):
+                loaded.append((workload.name, kwargs["expected_data_identity"]))
+                return SimpleNamespace()
 
             with (
-                mock.patch.object(paper_script, "sha256_file") as digest,
-                self.assertRaisesRegex(ValueError, "does not match manifest step"),
+                mock.patch.object(paper_script, "_load_workload_context", side_effect=load_context),
+                mock.patch.object(paper_script, "empty_device_cache") as empty_cache,
             ):
-                paper_script._validate_completed_checkpoint_files(
+                paper_script._validate_completed_workload_contexts(
                     jobs,
-                    Suite({job.job_id for job in jobs}, checkpoint_step=999),
+                    suite,
                     checkpoint_root=None,
+                    data_root=None,
                     declared_checkpoint_root=ROOT / "checkpoints",
+                    declared_data_root=ROOT / "data",
+                    device="cpu",
                 )
-            digest.assert_not_called()
+
+            self.assertEqual(loaded, [("workload_a", identity)])
+            empty_cache.assert_called_once_with("cpu")
+
+            with mock.patch.object(
+                paper_script,
+                "_load_workload_context",
+                side_effect=ValueError(
+                    "workload_a: cached data identity changed across suite jobs"
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "data identity changed"):
+                    paper_script._validate_completed_workload_contexts(
+                        jobs,
+                        suite,
+                        checkpoint_root=None,
+                        data_root=None,
+                        declared_checkpoint_root=ROOT / "checkpoints",
+                        declared_data_root=ROOT / "data",
+                        device="cpu",
+                    )
+
+    def test_complete_suite_resume_revalidates_completed_workloads(self) -> None:
+        workload = tiny_workload()
+        manifest = PaperManifest(
+            path=Path("manifest.yaml"),
+            schema_version=1,
+            methods=tuple(resolve_method_contracts(["dacp"])),
+            claim_gates={},
+            workloads=(workload,),
+        )
+        suite = SimpleNamespace(complete=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            (output_dir / "suite_manifest.json").write_text("{}", encoding="utf-8")
+            with (
+                mock.patch.object(paper_script, "load_paper_manifest", return_value=manifest),
+                mock.patch.object(
+                    paper_script, "_source_provenance", return_value=_source_provenance()
+                ),
+                mock.patch.object(paper_script, "SuiteResultStore") as store,
+                mock.patch.object(
+                    paper_script, "_validate_completed_workload_contexts"
+                ) as preflight,
+            ):
+                store.open.return_value = suite
+                paper_script.main(["--resume", "--device", "cpu", "--output-dir", str(output_dir)])
+
+            preflight.assert_called_once()
 
 
 if __name__ == "__main__":
