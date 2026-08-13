@@ -11,10 +11,6 @@
         --prune_ratios 0.2,0.3,0.4 --device cuda
 """
 
-import os
-
-os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
-
 import argparse
 import copy
 import sys
@@ -149,6 +145,10 @@ def _collect_gradients_simple(model, cached_train, task_type, num_batches, devic
     from experiments.lib.losses import make_task_loss
 
     loss_fn = make_task_loss(task_type)
+    if isinstance(num_batches, bool) or not isinstance(num_batches, int) or num_batches < 1:
+        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
+    if not cached_train:
+        raise ValueError("cached_train must contain at least one batch")
     model.train()
     model.zero_grad()
     count = 0
@@ -160,9 +160,50 @@ def _collect_gradients_simple(model, cached_train, task_type, num_batches, devic
     grads = {}
     for name, p in model.named_parameters():
         if p.grad is not None:
-            grads[name] = p.grad.detach().cpu() / max(count, 1)
+            grads[name] = p.grad.detach().cpu() / count
     model.zero_grad()
     return grads
+
+
+def _validate_reconstructed_parameters(
+    expected: dict[str, torch.Tensor],
+    reconstructed: dict[str, torch.Tensor],
+    method: str,
+) -> None:
+    """Reject partial or malformed adapter reconstruction before evaluation."""
+    missing = sorted(set(expected).difference(reconstructed))
+    extra = sorted(set(reconstructed).difference(expected))
+    if missing or extra:
+        raise RuntimeError(
+            f"{method} reconstruction keys must match model parameters: "
+            f"missing={missing}, extra={extra}"
+        )
+    for name, reference in expected.items():
+        value = reconstructed[name]
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(f"{method} reconstruction for {name!r} must be a tensor")
+        if value.shape != reference.shape:
+            raise ValueError(
+                f"{method} reconstruction shape for {name!r} must match: "
+                f"{tuple(value.shape)} != {tuple(reference.shape)}"
+            )
+        if value.dtype != reference.dtype:
+            raise ValueError(
+                f"{method} reconstruction dtype for {name!r} must match: "
+                f"{value.dtype} != {reference.dtype}"
+            )
+        if not value.is_floating_point() or not torch.isfinite(value).all().item():
+            raise ValueError(f"{method} reconstruction for {name!r} must be finite floating point")
+
+
+def _copy_reconstructed_parameters(
+    model: torch.nn.Module,
+    reconstructed: dict[str, torch.Tensor],
+) -> None:
+    """Copy one already validated reconstruction into a model."""
+    with torch.no_grad():
+        for name, parameter in model.named_parameters():
+            parameter.copy_(reconstructed[name].to(parameter.device))
 
 
 def run_excp_first_checkpoint_diagnostic(model_init, cached_eval, task_type, device):
@@ -192,7 +233,13 @@ def run_excp_first_checkpoint_diagnostic(model_init, cached_eval, task_type, dev
     config = ExCPConfig(alpha=5e-5, beta=2.0, p=0.0, n_bits=4)
     compressor = ExCPCompressor(config)
     compressed = compressor.compress(W_t, O_t, prev_W_hat=None)
-    W_hat, _ = compressor.decompress(compressed, prev_W_hat=None)
+    W_hat, O_hat = compressor.decompress(compressed, prev_W_hat=None)
+    _validate_reconstructed_parameters(W_t, W_hat, "ExCP")
+    _validate_reconstructed_parameters(
+        {name: state["exp_avg"] for name, state in O_t.items()},
+        {name: state["exp_avg"] for name, state in O_hat.items()},
+        "ExCP optimizer",
+    )
 
     # 计算实际 sparsity 和 compression ratio
     pruned_count = 0
@@ -200,15 +247,18 @@ def run_excp_first_checkpoint_diagnostic(model_init, cached_eval, task_type, dev
         pruned_count += int((W_hat[name] == 0).sum().item())
     actual_sparsity = pruned_count / total_params
     compressed_size = len(compressed)
-    original_size = total_params * 4  # float32 = 4 bytes
-    cr = original_size / compressed_size if compressed_size > 0 else 1.0
+    if compressed_size == 0:
+        raise RuntimeError("ExCP produced an empty payload")
+    original_size = sum(
+        weight.numel() * weight.element_size()
+        + O_t[name]["exp_avg"].numel() * O_t[name]["exp_avg"].element_size()
+        for name, weight in W_t.items()
+    )
+    cr = original_size / compressed_size
 
     # 加载重建权重到模型并评估
     model_eval = copy.deepcopy(model_init).to(device)
-    with torch.no_grad():
-        for name, param in model_eval.named_parameters():
-            if name in W_hat:
-                param.data.copy_(W_hat[name].to(device))
+    _copy_reconstructed_parameters(model_eval, W_hat)
     metrics = evaluate(model_eval, cached_eval, task_type, device)
 
     result = {
@@ -217,6 +267,9 @@ def run_excp_first_checkpoint_diagnostic(model_init, cached_eval, task_type, dev
         "quantize": "KMeans-16 (4-bit)",
         "compression_ratio": round(cr, 2),
         "fidelity": "style",
+        "payload_scope": "weights_and_exp_avg",
+        "optimizer_state_source": "synthetic_zero_exp_avg_constant_exp_avg_sq",
+        "optimizer_state_restored": False,
     }
     result.update(metrics)
 
@@ -250,6 +303,7 @@ def run_inshrinkerator_first_checkpoint_diagnostic(
     compressor = InshrinkeratorCompressor(config)
     compressed = compressor.compress(W_t, grads, prev_quantized=None)
     W_hat = compressor.decompress(compressed, prev_quantized=None)
+    _validate_reconstructed_parameters(W_t, W_hat, "Inshrinkerator")
 
     # 计算实际 sparsity 和 compression ratio
     pruned_count = 0
@@ -257,15 +311,14 @@ def run_inshrinkerator_first_checkpoint_diagnostic(
         pruned_count += int((W_hat[name] == 0).sum().item())
     actual_sparsity = pruned_count / total_params
     compressed_size = len(compressed)
-    original_size = total_params * 4
-    cr = original_size / compressed_size if compressed_size > 0 else 1.0
+    if compressed_size == 0:
+        raise RuntimeError("Inshrinkerator produced an empty payload")
+    original_size = sum(weight.numel() * weight.element_size() for weight in W_t.values())
+    cr = original_size / compressed_size
 
     # 加载重建权重到模型并评估
     model_eval = copy.deepcopy(model_init).to(device)
-    with torch.no_grad():
-        for name, param in model_eval.named_parameters():
-            if name in W_hat:
-                param.data.copy_(W_hat[name].to(device))
+    _copy_reconstructed_parameters(model_eval, W_hat)
     metrics = evaluate(model_eval, cached_eval, task_type, device)
 
     result = {
@@ -275,6 +328,7 @@ def run_inshrinkerator_first_checkpoint_diagnostic(
         "quantize": "ApproxKMeans-16",
         "compression_ratio": round(cr, 2),
         "fidelity": "style",
+        "payload_scope": "weights",
     }
     result.update(metrics)
 

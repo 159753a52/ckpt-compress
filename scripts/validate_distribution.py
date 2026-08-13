@@ -96,7 +96,7 @@ def analyze_checkpoint(ckpt_path, model_name):
     print(f"Checkpoint: {ckpt_path}")
     print(f"{'='*60}")
 
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     state_dict = ckpt.get("model_state_dict", ckpt)
 
     # Filter prunable params (skip bias, LayerNorm, etc.)

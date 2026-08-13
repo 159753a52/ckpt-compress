@@ -98,17 +98,25 @@ class ExCPCompressor:
             },
         }
 
+        if set(O_t) != set(W_t):
+            missing = sorted(set(W_t).difference(O_t))
+            extra = sorted(set(O_t).difference(W_t))
+            raise ValueError(
+                f"Optimizer state keys must match weight keys: missing={missing}, extra={extra}"
+            )
+
         for key in W_t:
             W = W_t[key]
             self._validate_weight(key, W)
 
             # 获取此参数的优化器状态
-            if key in O_t:
-                v_t = O_t[key].get("exp_avg", torch.zeros_like(W))
-                m_t = O_t[key].get("exp_avg_sq", torch.ones_like(W))
-            else:
-                v_t = torch.zeros_like(W)
-                m_t = torch.ones_like(W)
+            raw_state = O_t[key]
+            if set(raw_state) != {"exp_avg", "exp_avg_sq"}:
+                raise ValueError(
+                    f"Optimizer state for {key!r} must contain exactly exp_avg and exp_avg_sq"
+                )
+            v_t = raw_state["exp_avg"]
+            m_t = raw_state["exp_avg_sq"]
             self._validate_state_tensor(key, "exp_avg", v_t, W)
             self._validate_state_tensor(key, "exp_avg_sq", m_t, W)
             if (m_t < 0).any().item():
@@ -160,6 +168,7 @@ class ExCPCompressor:
                 "indices": o_packed.cpu().numpy(),
                 "centers": o_centers.float().cpu().numpy(),
                 "shape": list(v_t.shape),
+                "dtype": str(v_t.dtype),
             }
 
         # 序列化
@@ -249,7 +258,12 @@ class ExCPCompressor:
             W_hat[key] = W_hat[key].to(_DTYPES[dtype_str])
 
             # This adapter encodes exp_avg only. Do not fabricate an exp_avg_sq state.
-            O_hat[key] = {"exp_avg": v_hat}
+            optimizer_dtype = o_data.get("dtype")
+            if not isinstance(optimizer_dtype, str) or optimizer_dtype not in _DTYPES:
+                raise ValueError(
+                    f"Unsupported optimizer tensor dtype in ExCP payload: {optimizer_dtype!r}"
+                )
+            O_hat[key] = {"exp_avg": v_hat.to(_DTYPES[optimizer_dtype])}
 
         return W_hat, O_hat
 

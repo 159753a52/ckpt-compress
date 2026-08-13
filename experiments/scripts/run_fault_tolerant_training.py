@@ -17,13 +17,8 @@ Usage:
         --device cuda
 """
 
-import gc
-import os
-
-os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
 import argparse
+import gc
 import random
 import sys
 from pathlib import Path
@@ -46,6 +41,7 @@ from experiments.lib.evaluation import evaluate
 from experiments.lib.losses import compute_task_loss
 from experiments.lib.models import load_model
 from experiments.lib.quantization_runtime import ExperimentQuantizer, quantize_model_parameters
+from experiments.lib.residual_runtime import checkpoint_optimizer_state
 from experiments.lib.results import save_results
 
 METHODS = [
@@ -301,7 +297,12 @@ def compute_scores_for_method(
     if imp_name in ("ours-3d-residual", "ours-fo-residual", "ours-so-residual"):
         use_fo = imp_name in ("ours-3d-residual", "ours-fo-residual")
         use_so = imp_name in ("ours-3d-residual", "ours-so-residual")
-        from dacp.tools.importance import build_transformer_blocks, compute_hvp_blockwise_batched
+        from dacp.tools.importance import (
+            build_transformer_blocks,
+            complete_blockwise_vector,
+            compute_hvp_blockwise_batched,
+            include_parameter_blocks,
+        )
 
         def loss_fn(m, batch):
             return compute_task_loss(m, batch, task_type, device)
@@ -357,14 +358,18 @@ def compute_scores_for_method(
                 clean_grads[n] /= len(score_batches)
 
         if use_so:
-            blocks = build_transformer_blocks(model, model_family)
+            blocks = include_parameter_blocks(
+                build_transformer_blocks(model, model_family),
+                prunable_w,
+            )
+            probe = complete_blockwise_vector(model, blocks, delta_dev)
             hvp_result = compute_hvp_blockwise_batched(
                 model,
                 loss_fn,
                 score_batches,
                 blocks,
                 num_batches=min(5, len(score_batches)),
-                vector=delta_dev,
+                vector=probe,
             )
         else:
             hvp_result = {}
@@ -378,8 +383,12 @@ def compute_scores_for_method(
         for name in prunable_w:
             delta = delta_dev[name]
             g = clean_grads.get(name)
+            if use_fo and g is None:
+                raise RuntimeError(f"Gradient coverage is missing prunable parameter {name!r}")
             fo = -(g * delta) if g is not None else torch.zeros_like(delta)
             h = hvp_result.get(name)
+            if use_so and h is None:
+                raise RuntimeError(f"HVP coverage is missing prunable parameter {name!r}")
             if h is not None:
                 so = 0.5 * (delta * h.to(delta.device))
                 hvp_hits += 1
@@ -403,10 +412,15 @@ def compute_scores_for_method(
 
     # --- ours-2d: magnitude-based scoring + first-order correction + Weibull allocation ---
     if imp_name == "ours-2d":
+        missing_gradients = sorted(set(prunable_w).difference(prunable_g))
+        if missing_gradients:
+            raise RuntimeError(
+                f"Gradient coverage is missing prunable parameters: {missing_gradients}"
+            )
         scores = {}
         for name in prunable_w:
             w = prunable_w[name]
-            g = prunable_g.get(name, torch.zeros_like(w))
+            g = prunable_g[name]
             mag = w.abs()
             # First-order sensitivity as multiplicative correction
             fo = (g * w).abs()
@@ -430,7 +444,12 @@ def compute_scores_for_method(
 
     # --- ours-3d: magnitude + first-order + second-order HVP correction + Weibull allocation ---
     if imp_name == "ours-3d":
-        from dacp.tools.importance import build_transformer_blocks, compute_hvp_blockwise_batched
+        from dacp.tools.importance import (
+            build_transformer_blocks,
+            complete_blockwise_vector,
+            compute_hvp_blockwise_batched,
+            include_parameter_blocks,
+        )
 
         # Phase 1: Build HVP data batches
         def loss_fn(m, batch):
@@ -455,9 +474,27 @@ def compute_scores_for_method(
             model_family = "pythia"
         else:
             model_family = "gpt2"
-        blocks = build_transformer_blocks(model, model_family)
+        missing_gradients = sorted(set(prunable_w).difference(prunable_g))
+        if missing_gradients:
+            raise RuntimeError(
+                f"Gradient coverage is missing prunable parameters: {missing_gradients}"
+            )
+        blocks = include_parameter_blocks(
+            build_transformer_blocks(model, model_family),
+            prunable_w,
+        )
+        probe = complete_blockwise_vector(
+            model,
+            blocks,
+            {name: dict(model.named_parameters())[name].detach() for name in prunable_w},
+        )
         hvp_result = compute_hvp_blockwise_batched(
-            model, loss_fn, hvp_batches, blocks, num_batches=len(hvp_batches)
+            model,
+            loss_fn,
+            hvp_batches,
+            blocks,
+            num_batches=len(hvp_batches),
+            vector=probe,
         )
 
         # Phase 3: Combine magnitude + first-order + second-order
@@ -466,21 +503,19 @@ def compute_scores_for_method(
         scores = {}
         for name in prunable_w:
             w = prunable_w[name]
-            g = prunable_g.get(name, torch.zeros_like(w))
+            g = prunable_g[name]
             mag = w.abs()
             # First-order correction: |g * w|
             fo = (g * w).abs()
             fo_mean = fo.mean()
             fo_corr = alpha1 * (fo / (fo_mean + 1e-12)) if fo_mean > 0 else 0.0
             # Second-order correction: |theta * HVP|
-            hvp = hvp_result.get(name)
-            if hvp is not None:
-                hvp = hvp.to(w.device)
-                so = (w * hvp).abs()
-                so_mean = so.mean()
-                so_corr = alpha2 * (so / (so_mean + 1e-12)) if so_mean > 0 else 0.0
-            else:
-                so_corr = 0.0
+            if name not in hvp_result:
+                raise RuntimeError(f"HVP coverage is missing prunable parameter {name!r}")
+            hvp = hvp_result[name].to(w.device)
+            so = (w * hvp).abs()
+            so_mean = so.mean()
+            so_corr = alpha2 * (so / (so_mean + 1e-12)) if so_mean > 0 else 0.0
             scores[name] = mag * (1.0 + fo_corr + so_corr)
 
         alloc = alloc_name or "weibull-adaptive"
@@ -537,6 +572,12 @@ def compute_scores_for_method(
         return scores, layer_ratios
 
     # --- Generic path: magnitude / first-order / residual-magnitude ---
+    if imp_name == "first-order":
+        missing_gradients = sorted(set(prunable_w).difference(prunable_g))
+        if missing_gradients:
+            raise RuntimeError(
+                f"Gradient coverage is missing prunable parameters: {missing_gradients}"
+            )
     alloc = alloc_name or "uniform"
     pruner = Pruner(importance=imp_name, allocation=alloc)
     scores = pruner.compute_scores(prunable_w, prunable_g, reference_weights=reference_weights)
@@ -567,21 +608,15 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
 
     # Load optimizer state from checkpoint if available
     if args.checkpoint is not None:
-        _ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-        if isinstance(_ckpt, dict) and "optimizer_state_dict" in _ckpt:
-            try:
-                optimizer.load_state_dict(_ckpt["optimizer_state_dict"])
-                for _state in optimizer.state.values():
-                    for _k, _v in _state.items():
-                        if isinstance(_v, torch.Tensor):
-                            _state[_k] = _v.to(args.device)
-                # Reset lr to configured value (checkpoint may have decayed lr to ~0)
-                for _pg in optimizer.param_groups:
-                    _pg["lr"] = args.lr
-                print(f"  Loaded optimizer state from checkpoint (lr reset to {args.lr})")
-            except Exception as e:
-                print(f"  Warning: optimizer state load failed ({e}), using fresh optimizer")
-        del _ckpt
+        optimizer.load_state_dict(checkpoint_optimizer_state(Path(args.checkpoint)))
+        for _state in optimizer.state.values():
+            for _k, _v in _state.items():
+                if isinstance(_v, torch.Tensor):
+                    _state[_k] = _v.to(args.device)
+        # Reset lr to configured value (checkpoint may have decayed lr to ~0)
+        for _pg in optimizer.param_groups:
+            _pg["lr"] = args.lr
+        print(f"  Loaded optimizer state from checkpoint (lr reset to {args.lr})")
 
     # Learning rate scheduler
     scheduler = None

@@ -98,7 +98,7 @@ def main():
                 print(f"检查点不存在: {ckpt_path}, 跳过")
                 continue
             print(f"加载检查点: {ckpt_path}")
-            ckpt = torch.load(ckpt_path, map_location=args.device, weights_only=False)
+            ckpt = torch.load(ckpt_path, map_location=args.device, weights_only=True)
             model.load_state_dict(ckpt["model_state_dict"])
             if "loss" in ckpt:
                 print(f"  保存时 train loss: {ckpt['loss']:.4f}")

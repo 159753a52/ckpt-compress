@@ -158,7 +158,7 @@ class TestResidualRuntimeIO(unittest.TestCase):
         load_mock.assert_called_once_with(
             path,
             map_location="cpu",
-            weights_only=False,
+            weights_only=True,
         )
         self.assertIs(checkpoint.model_state, model_state)
         self.assertIs(checkpoint.optimizer_state, optimizer_state)

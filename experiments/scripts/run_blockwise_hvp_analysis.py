@@ -96,16 +96,16 @@ def parse_args():
 
 
 def _make_loss_fn(task_type):
-    """构造 blockwise 分析使用的损失函数，保留 cls 的历史 LM 适配。"""
-    if task_type == "cls":
-        task_type = "lm"
-    if task_type not in ("lm", "cv"):
-        raise ValueError(f"Unknown task_type for blockwise analysis: {task_type}")
+    """Construct the task-appropriate loss used by the comparison."""
     return make_task_loss(task_type)
 
 
 def _compute_shared_gradient(model, loss_fn, gpu_batches, num_batches):
     """计算跨 batch 平均梯度，与 HVP 模式无关。"""
+    if isinstance(num_batches, bool) or not isinstance(num_batches, int) or num_batches < 1:
+        raise ValueError(f"num_batches must be a positive integer, got {num_batches}")
+    if not gpu_batches:
+        raise ValueError("gpu_batches must contain at least one batch")
     accumulated: dict[str, torch.Tensor] = {}
     actual = min(num_batches, len(gpu_batches))
 
@@ -130,6 +130,8 @@ def _compute_full_hvp(model, loss_fn, gpu_batches, prunable_names, num_batches):
 
     vector = {}
     for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
         if name in prunable_names:
             vector[name] = p.data.clone()
         else:
@@ -138,12 +140,28 @@ def _compute_full_hvp(model, loss_fn, gpu_batches, prunable_names, num_batches):
     return compute_hvp_batched(model, loss_fn, gpu_batches, vector, num_batches)
 
 
-def _compute_block_hvp(model, loss_fn, gpu_batches, model_family, num_batches):
+def _compute_block_hvp(model, loss_fn, gpu_batches, model_family, prunable_names, num_batches):
     """Block-wise HVP: u_b = H_b θ_b（block-diagonal Hessian）。"""
-    from dacp.tools.importance import build_transformer_blocks, compute_hvp_blockwise_batched
+    from dacp.tools.importance import (
+        build_transformer_blocks,
+        complete_blockwise_vector,
+        compute_hvp_blockwise_batched,
+        include_parameter_blocks,
+    )
 
-    blocks = build_transformer_blocks(model, model_family)
-    return compute_hvp_blockwise_batched(model, loss_fn, gpu_batches, blocks, num_batches)
+    blocks = include_parameter_blocks(
+        build_transformer_blocks(model, model_family),
+        prunable_names,
+    )
+    named_params = dict(model.named_parameters())
+    vector = complete_blockwise_vector(
+        model,
+        blocks,
+        {name: named_params[name].data.clone() for name in prunable_names},
+    )
+    return compute_hvp_blockwise_batched(
+        model, loss_fn, gpu_batches, blocks, num_batches, vector=vector
+    )
 
 
 def _scores_from_grad_hvp(
@@ -162,14 +180,26 @@ def _scores_from_grad_hvp(
     scores = {}
     second_order_only = {}
     _EPS = 1e-12
+    for label, values in (("Gradient", gradients), ("HVP", hvp_result)):
+        missing = sorted(set(prunable_w).difference(values))
+        if missing:
+            raise RuntimeError(f"{label} coverage is missing prunable parameters: {missing}")
     for name in prunable_w:
         theta = prunable_w[name]
-        grad = gradients.get(name, torch.zeros_like(theta))
-        hvp = hvp_result.get(name, torch.zeros_like(theta))
+        grad = gradients[name]
+        hvp = hvp_result[name]
         if hvp.is_cuda:
             hvp = hvp.cpu()
         if grad.is_cuda:
             grad = grad.cpu()
+        for label, value in (("Gradient", grad), ("HVP", hvp)):
+            if value.shape != theta.shape:
+                raise ValueError(
+                    f"{label} shape for {name!r} must match the parameter: "
+                    f"{tuple(value.shape)} != {tuple(theta.shape)}"
+                )
+            if not value.is_floating_point() or not torch.isfinite(value).all().item():
+                raise ValueError(f"{label} for {name!r} must be finite floating point")
 
         first_order = -grad * theta
         second_term = alpha * theta * hvp
@@ -252,7 +282,9 @@ def run_single_comparison(
     print("\n[2/2] 计算 Block-wise HVP...")
     model_b = copy.deepcopy(model).to(device)
     t0 = time.time()
-    hvp_block = _compute_block_hvp(model_b, loss_fn, gpu_batches, model_family, hvp_batches)
+    hvp_block = _compute_block_hvp(
+        model_b, loss_fn, gpu_batches, model_family, set(prunable_w), hvp_batches
+    )
     time_block = time.time() - t0
     scores_block, so_block = _scores_from_grad_hvp(
         shared_grad, hvp_block, prunable_w, alpha, normalize, abs_combine

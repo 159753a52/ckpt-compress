@@ -270,20 +270,34 @@ def _compute_hvp_scores(
         if hvp_mode == "block":
             from dacp.tools.importance import (
                 build_transformer_blocks,
+                complete_blockwise_vector,
                 compute_hvp_blockwise_batched,
+                include_parameter_blocks,
             )
 
+            blocks = include_parameter_blocks(
+                build_transformer_blocks(model, model_family),
+                prunable_w,
+            )
+            block_vector = complete_blockwise_vector(
+                model,
+                blocks,
+                {name: weight.to(device) for name, weight in prunable_w.items()},
+            )
             hvp_result = compute_hvp_blockwise_batched(
                 model,
                 loss_fn,
                 gpu_batches,
-                build_transformer_blocks(model, model_family),
+                blocks,
                 num_batches=hvp_batches,
+                vector=block_vector,
             )
         else:
             vector = {name: weight.to(device) for name, weight in prunable_w.items()}
             full_vector = {
-                name: torch.zeros_like(parameter) for name, parameter in model.named_parameters()
+                name: torch.zeros_like(parameter)
+                for name, parameter in model.named_parameters()
+                if parameter.requires_grad
             }
             full_vector.update(vector)
             hvp_result = compute_hvp_batched(

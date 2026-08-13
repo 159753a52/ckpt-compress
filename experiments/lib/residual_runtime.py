@@ -74,9 +74,8 @@ def set_seed(seed: int) -> None:
 
 
 def _load_checkpoint_payload(path: Path) -> object:
-    # Experiments only accept trusted local checkpoints because optimizer payloads
-    # may contain Python objects unsupported by weights_only=True.
-    return torch.load(path, map_location="cpu", weights_only=False)
+    """Load project checkpoints without permitting arbitrary pickle globals."""
+    return torch.load(path, map_location="cpu", weights_only=True)
 
 
 def _checkpoint_state_from_payload(

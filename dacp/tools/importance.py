@@ -22,10 +22,98 @@ s_i = -g_i·θ_i + 0.5·θ_i·(H·θ)_i
 - 若 -g_i·θ_i < 0：删除该参数会减少损失（参数可能有害）
 """
 
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Mapping, Optional
 
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
+
+
+def _validate_real_finite_tensor(
+    value: torch.Tensor,
+    reference: torch.Tensor,
+    label: str,
+    name: str,
+) -> None:
+    """Validate an HVP input/output tensor against its model parameter."""
+    if not isinstance(value, torch.Tensor):
+        raise TypeError(f"{label} for {name!r} must be a torch.Tensor")
+    if value.shape != reference.shape:
+        raise ValueError(
+            f"{label} shape for {name!r} must match the parameter: "
+            f"{tuple(value.shape)} != {tuple(reference.shape)}"
+        )
+    if value.device != reference.device:
+        raise ValueError(
+            f"{label} device for {name!r} must match the parameter: "
+            f"{value.device} != {reference.device}"
+        )
+    if not value.is_floating_point() or value.is_complex():
+        raise TypeError(f"{label} for {name!r} must be real floating point")
+    if not torch.isfinite(value).all().item():
+        raise ValueError(f"{label} for {name!r} must contain only finite values")
+
+
+def _validate_hvp_vector(
+    params: Dict[str, torch.Tensor],
+    vector: Dict[str, torch.Tensor],
+) -> None:
+    """Require one valid probe vector entry for every differentiated parameter."""
+    if not isinstance(vector, dict):
+        raise TypeError("vector must be a dictionary of named tensors")
+    missing = sorted(set(params).difference(vector))
+    extra = sorted(set(vector).difference(params))
+    if missing or extra:
+        raise ValueError(
+            f"vector keys must match trainable parameters: missing={missing}, extra={extra}"
+        )
+    for name, parameter in params.items():
+        _validate_real_finite_tensor(vector[name], parameter, "HVP vector", name)
+
+
+def complete_blockwise_vector(
+    model: torch.nn.Module,
+    blocks: List[List[str]],
+    active_vector: Mapping[str, torch.Tensor],
+) -> Dict[str, torch.Tensor]:
+    """Expand a partial perturbation onto all block coordinates with explicit zeros.
+
+    ``active_vector`` names the coordinates intentionally perturbed by the
+    caller.  Every other coordinate in the selected blocks is returned as a
+    zero tensor, preserving Hessian cross terms without changing the probe.
+    """
+    if not isinstance(active_vector, Mapping):
+        raise TypeError("active_vector must be a mapping of named tensors")
+    named_params = dict(model.named_parameters())
+    block_names = [name for block in blocks for name in block]
+    unknown_blocks = sorted(set(block_names).difference(named_params))
+    if unknown_blocks:
+        raise ValueError(f"HVP blocks reference unknown parameters: {unknown_blocks}")
+    outside_blocks = sorted(set(active_vector).difference(block_names))
+    if outside_blocks:
+        raise ValueError(
+            f"Active HVP vector contains parameters outside the blocks: {outside_blocks}"
+        )
+    completed: Dict[str, torch.Tensor] = {}
+    for name in block_names:
+        parameter = named_params[name]
+        value = active_vector.get(name)
+        if value is None:
+            completed[name] = torch.zeros_like(parameter)
+            continue
+        _validate_real_finite_tensor(value, parameter, "HVP vector", name)
+        completed[name] = value
+    return completed
+
+
+def include_parameter_blocks(
+    blocks: List[List[str]],
+    required_names: Mapping[str, torch.Tensor] | set[str],
+) -> List[List[str]]:
+    """Append one block for required parameters outside Transformer layers."""
+    required = set(required_names)
+    covered = {name for block in blocks for name in block}
+    outside = sorted(required.difference(covered))
+    return [*blocks, outside] if outside else blocks
 
 
 def compute_importance_scores_magnitude(
@@ -130,6 +218,9 @@ def compute_hvp(
     """
     # 确保模型参数需要梯度
     params = {name: p for name, p in model.named_parameters() if p.requires_grad}
+    if not params:
+        raise RuntimeError("HVP requires at least one trainable parameter")
+    _validate_hvp_vector(params, vector)
 
     # 使用 MATH backend 回退，因为 Flash/Efficient Attention 不支持二阶导
     with sdpa_kernel(SDPBackend.MATH):
@@ -148,18 +239,24 @@ def compute_hvp(
         # 计算 grad · vector 的标量积
         grad_vector_product = torch.tensor(0.0, device=loss.device)
         for g, name in zip(grads, params.keys()):
-            if name in vector:
-                grad_vector_product = grad_vector_product + (g * vector[name]).sum()
+            grad_vector_product = grad_vector_product + (g * vector[name]).sum()
 
         # 第二次反向传播，计算 HVP
-        hvp_result = torch.autograd.grad(
-            grad_vector_product,
-            list(params.values()),
-            retain_graph=False,
-        )
+        if grad_vector_product.requires_grad:
+            hvp_result = torch.autograd.grad(
+                grad_vector_product,
+                list(params.values()),
+                retain_graph=False,
+                allow_unused=True,
+            )
+        else:
+            hvp_result = tuple(None for _ in params)
 
     # 转换为字典格式
-    hvp_dict = {name: hvp.detach() for name, hvp in zip(params.keys(), hvp_result)}
+    hvp_dict = {
+        name: (torch.zeros_like(params[name]) if hvp is None else hvp.detach())
+        for name, hvp in zip(params.keys(), hvp_result)
+    }
 
     return hvp_dict
 
@@ -222,18 +319,22 @@ def _compute_importance_scores_hvp(
     model.zero_grad()
     loss = loss_fn(model, data_batches[0])
     loss.backward()
-    gradients = {
-        name: p.grad.clone() if p.grad is not None else torch.zeros_like(p)
-        for name, p in params.items()
-    }
+    missing_gradients = sorted(name for name, parameter in params.items() if parameter.grad is None)
+    if missing_gradients:
+        raise RuntimeError(
+            f"Gradient coverage is missing trainable parameters: {missing_gradients}"
+        )
+    gradients = {name: p.grad.clone() for name, p in params.items() if p.grad is not None}
 
     print("[HVP] 计算 Hessian-Vector Product...")
     hvp_result = compute_hvp_batched(model, loss_fn, data_batches, weights, num_batches)
 
     scores = {}
     for name, theta in weights.items():
-        grad = gradients.get(name, torch.zeros_like(theta))
-        hvp = hvp_result.get(name, torch.zeros_like(theta))
+        if name not in hvp_result:
+            raise RuntimeError(f"HVP coverage is missing trainable parameter {name!r}")
+        grad = gradients[name]
+        hvp = hvp_result[name]
         score = -grad * theta + 0.5 * theta * hvp
         scores[name] = torch.abs(score) if absolute else score
     return scores
@@ -330,8 +431,8 @@ def build_transformer_blocks(
     将模型参数按 Transformer layer 分组为 block。
 
     每个 block 对应一个 Transformer layer，包含该层所有可训练的权重矩阵
-    （Attention Q/K/V/O + MLP up/down 等）。1D 参数（bias、LayerNorm）
-    不参与 block-wise HVP，但仍会被包含在对应 block 中以确保完整覆盖。
+    （Attention Q/K/V/O + MLP up/down 等）。调用方可以通过 probe vector
+    把不参与扰动的坐标显式设为零；这些坐标仍留在 block 中以保留交叉项。
 
     参数:
         model: PyTorch 模型
@@ -407,6 +508,26 @@ def compute_hvp_blockwise(
     named_params = dict(model.named_parameters())
     all_hvp: Dict[str, torch.Tensor] = {}
 
+    block_names = [name for block in blocks for name in block]
+    duplicate_names = sorted({name for name in block_names if block_names.count(name) > 1})
+    if duplicate_names:
+        raise ValueError(f"HVP blocks contain duplicate parameter names: {duplicate_names}")
+    unknown_names = sorted(set(block_names).difference(named_params))
+    if unknown_names:
+        raise ValueError(f"HVP blocks reference unknown parameters: {unknown_names}")
+    if not block_names:
+        raise ValueError("HVP blocks must contain at least one parameter")
+    if vector is not None:
+        expected_vector_names = {name for name in block_names}
+        missing = sorted(expected_vector_names.difference(vector))
+        extra = sorted(set(vector).difference(expected_vector_names))
+        if missing or extra:
+            raise ValueError(
+                f"blockwise vector keys must match block parameters: missing={missing}, extra={extra}"
+            )
+        for name in block_names:
+            _validate_real_finite_tensor(vector[name], named_params[name], "HVP vector", name)
+
     # 记录所有参数的原始 requires_grad 状态
     original_requires_grad = {name: p.requires_grad for name, p in named_params.items()}
 
@@ -449,26 +570,29 @@ def compute_hvp_blockwise(
                 grad_vector_product = torch.tensor(0.0, device=loss.device)
                 for g, name in zip(grads, block_param_names):
                     if g is not None:
-                        if vector is not None and name in vector:
+                        if vector is not None:
                             probe = vector[name].to(g.device)
                         else:
                             probe = named_params[name].data
                         grad_vector_product = grad_vector_product + (g * probe).sum()
 
                 # 6. 二次反向传播 → H_b θ_b
-                hvp_grads = torch.autograd.grad(
-                    grad_vector_product,
-                    block_params,
-                    retain_graph=False,
-                    allow_unused=True,
-                )
-
-            # 7. 保存结果，释放计算图
-            for name, h in zip(block_param_names, hvp_grads):
-                if h is not None:
-                    all_hvp[name] = h.detach()
+                if grad_vector_product.requires_grad:
+                    hvp_grads = torch.autograd.grad(
+                        grad_vector_product,
+                        block_params,
+                        retain_graph=False,
+                        allow_unused=True,
+                    )
                 else:
-                    all_hvp[name] = torch.zeros_like(named_params[name].data)
+                    hvp_grads = tuple(None for _ in block_params)
+
+            # 7. 保存结果，释放计算图。None means the exact second derivative
+            #    for this connected first-order coordinate is mathematically zero.
+            for name, h in zip(block_param_names, hvp_grads):
+                all_hvp[name] = (
+                    torch.zeros_like(named_params[name].data) if h is None else h.detach()
+                )
 
             loss = grads = grad_vector_product = hvp_grads = None
             if torch.cuda.is_available():
@@ -516,9 +640,14 @@ def compute_hvp_blockwise_batched(
         if hvp_sum is None:
             hvp_sum = {name: h.clone() for name, h in hvp.items()}
         else:
+            if set(hvp) != set(hvp_sum):
+                missing = sorted(set(hvp_sum).difference(hvp))
+                extra = sorted(set(hvp).difference(hvp_sum))
+                raise RuntimeError(
+                    f"Blockwise HVP keys changed across batches: missing={missing}, extra={extra}"
+                )
             for name in hvp_sum:
-                if name in hvp:
-                    hvp_sum[name] += hvp[name]
+                hvp_sum[name] += hvp[name]
 
     if hvp_sum is None:
         return {}
@@ -575,13 +704,19 @@ def compute_importance_scores_hvp_blockwise(
     if grad_accumulation_batches is not None:
         _validate_hvp_batch_request(data_batches, grad_accumulation_batches)
 
-    # 1. 构建 block 划分
+    # 1. Build blocks for every coordinate that the pruning perturbation can
+    #    change. Embeddings and other excluded tensors must not create one huge
+    #    catch-all block that defeats the memory-efficient approximation.
     blocks = build_transformer_blocks(model, model_family)
-    print(f"[Block-wise HVP] Built {len(blocks)} blocks from {model_family} model")
-
-    # 2. 收集模型参数权重
     params = {name: p for name, p in model.named_parameters() if p.requires_grad}
-    weights = {name: p.data.clone() for name, p in params.items()}
+    from dacp.pruning.pruner import filter_prunable_params
+
+    weights = {name: parameter.data.clone() for name, parameter in params.items()}
+    prunable_weights = filter_prunable_params(weights)
+    if not prunable_weights:
+        raise RuntimeError("Blockwise HVP scoring requires at least one prunable parameter")
+    blocks = include_parameter_blocks(blocks, prunable_weights)
+    print(f"[Block-wise HVP] Built {len(blocks)} blocks from {model_family} model")
 
     # 3. 计算梯度（多 batch 累积，大幅提升一阶项稳定性）
     n_grad = (
@@ -596,20 +731,32 @@ def compute_importance_scores_hvp_blockwise(
         (loss / n_grad).backward()
         del loss
 
-    gradients = {
-        name: p.grad.clone() if p.grad is not None else torch.zeros_like(p)
-        for name, p in params.items()
-    }
+    required_names = set(prunable_weights)
+    missing_gradients = sorted(
+        name for name in required_names if name not in params or params[name].grad is None
+    )
+    if missing_gradients:
+        raise RuntimeError(f"Gradient coverage is missing block parameters: {missing_gradients}")
+    gradients = {name: params[name].grad.clone() for name in required_names}
 
     # 4. Block-wise HVP 计算
-    hvp_result = compute_hvp_blockwise_batched(model, loss_fn, data_batches, blocks, num_batches)
+    probe = complete_blockwise_vector(model, blocks, prunable_weights)
+    hvp_result = compute_hvp_blockwise_batched(
+        model,
+        loss_fn,
+        data_batches,
+        blocks,
+        num_batches,
+        vector=probe,
+    )
 
     # 5. 计算重要性得分: s_i = |-g_i · θ_i + alpha · θ_i · (H_b · θ_b)_i|
     scores = {}
     _EPS = 1e-12
-    for name in hvp_result:
-        theta = weights[name]
-        grad = gradients.get(name, torch.zeros_like(theta))
+    for name, theta in prunable_weights.items():
+        if name not in hvp_result:
+            raise RuntimeError(f"HVP coverage is missing prunable parameter {name!r}")
+        grad = gradients[name]
         hvp = hvp_result[name]
 
         first_order = -grad * theta

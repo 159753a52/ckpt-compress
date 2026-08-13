@@ -97,9 +97,13 @@ def sweep_K(args, model_init, train_loader, val_loader, task_type, cached_eval):
                     from dacp.pruning.pruner import filter_prunable_params
 
                     prunable_w = filter_prunable_params(weights)
-                    prunable_g = {
-                        k: gradients.get(k, torch.zeros_like(v)) for k, v in prunable_w.items()
-                    }
+                    missing_gradients = sorted(set(prunable_w).difference(gradients))
+                    if missing_gradients:
+                        raise RuntimeError(
+                            "Gradient coverage is missing prunable parameters: "
+                            f"{missing_gradients}"
+                        )
+                    prunable_g = {name: gradients[name] for name in prunable_w}
 
                     pruner = Pruner(importance=imp_method, allocation=alloc_method)
                     scores = pruner.compute_scores(prunable_w, prunable_g)

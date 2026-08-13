@@ -328,7 +328,7 @@ class BaseTrainer:
         返回:
             int: 加载的 epoch
         """
-        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=True)
         if not isinstance(checkpoint, Mapping):
             raise TypeError("checkpoint must be a mapping")
         epoch = checkpoint.get("epoch")

@@ -17,13 +17,8 @@ Usage:
         --device cuda
 """
 
-import gc
-import os
-
-os.environ["HF_HUB_DISABLE_DISK_SPACE_CHECK"] = "1"
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
 import argparse
+import gc
 import sys
 from pathlib import Path
 
@@ -44,6 +39,7 @@ from experiments.lib.evaluation import evaluate
 from experiments.lib.losses import compute_task_loss
 from experiments.lib.models import load_model
 from experiments.lib.quantization_runtime import ExperimentQuantizer, quantize_model_parameters
+from experiments.lib.residual_runtime import checkpoint_optimizer_state
 from experiments.lib.results import save_results
 
 METHODS = [
@@ -225,10 +221,15 @@ def compute_scores_for_method(
 
     # --- ours-2d: magnitude-based scoring + first-order correction + Weibull allocation ---
     if imp_name == "ours-2d":
+        missing_gradients = sorted(set(prunable_w).difference(prunable_g))
+        if missing_gradients:
+            raise RuntimeError(
+                f"Gradient coverage is missing prunable parameters: {missing_gradients}"
+            )
         scores = {}
         for name in prunable_w:
             w = prunable_w[name]
-            g = prunable_g.get(name, torch.zeros_like(w))
+            g = prunable_g[name]
             mag = w.abs()
             # First-order sensitivity as multiplicative correction
             fo = (g * w).abs()
@@ -309,18 +310,14 @@ def run_method(method_name, args, train_loader, val_batches, task_type):
 
     # Load optimizer state from checkpoint if available
     if args.checkpoint is not None:
-        _ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-        if isinstance(_ckpt, dict) and "optimizer_state_dict" in _ckpt:
-            try:
-                optimizer.load_state_dict(_ckpt["optimizer_state_dict"])
-                for _state in optimizer.state.values():
-                    for _k, _v in _state.items():
-                        if isinstance(_v, torch.Tensor):
-                            _state[_k] = _v.to(args.device)
-                print(f"  Loaded optimizer state from checkpoint")
-            except Exception as e:
-                print(f"  Warning: optimizer state load failed ({e}), using fresh optimizer")
-        del _ckpt
+        optimizer.load_state_dict(checkpoint_optimizer_state(Path(args.checkpoint)))
+        for _state in optimizer.state.values():
+            for _k, _v in _state.items():
+                if isinstance(_v, torch.Tensor):
+                    _state[_k] = _v.to(args.device)
+        for _pg in optimizer.param_groups:
+            _pg["lr"] = args.lr
+        print(f"  Loaded optimizer state from checkpoint (lr reset to {args.lr})")
 
     # Learning rate scheduler
     scheduler = None

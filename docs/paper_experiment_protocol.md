@@ -109,10 +109,10 @@ that location, or `DACP_DATA_ROOT` to relocate the complete data hierarchy.
 using the Hugging Face dataset source.
 
 Training checkpoints include optimizer state and are decoded with PyTorch's
-pickle-capable loader. Treat every checkpoint as executable input: use only
-trusted files produced by this project or a reviewed source. The runner hashes
-the checkpoint and locks that digest for every job of the same workload, but a
-digest is provenance evidence, not a sandbox for an untrusted pickle.
+restricted tensor-only loader. Checkpoints containing custom pickle globals are
+rejected. The runner also hashes the checkpoint and locks that digest for every
+job of the same workload; the digest records provenance but is not used as a
+substitute for the restricted loader.
 
 ## Distributed moments
 
