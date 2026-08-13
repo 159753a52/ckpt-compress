@@ -237,8 +237,10 @@ def cache_batches(
                 "input_ids": batch["input_ids"].clone(),
                 "labels": batch["labels"].clone(),
             }
-            if "attention_mask" in batch:
-                entry["attention_mask"] = batch["attention_mask"].clone()
+            for key in ("attention_mask", "token_type_ids"):
+                value = batch.get(key)
+                if value is not None:
+                    entry[key] = value.clone()
             cached.append(entry)
         elif task_type == "cv":
             if isinstance(batch, (list, tuple)):
@@ -342,7 +344,11 @@ def _get_glue_loaders(model_name, dataset_name, batch_size, seq_length, num_work
 
     dataset = dataset.map(tokenize, batched=True)
     dataset = dataset.rename_column("label", "labels")
-    dataset.set_format("torch", columns=["input_ids", "attention_mask", "labels"])
+    format_columns = ["input_ids", "attention_mask", "labels"]
+    train_columns = getattr(dataset["train"], "column_names", ())
+    if "token_type_ids" in train_columns:
+        format_columns.append("token_type_ids")
+    dataset.set_format("torch", columns=format_columns)
 
     train_loader = DataLoader(
         dataset["train"], batch_size=batch_size, shuffle=True, num_workers=num_workers

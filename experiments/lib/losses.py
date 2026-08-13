@@ -34,6 +34,17 @@ def perplexity_from_loss(loss: float) -> float:
     return perplexity
 
 
+def transformer_batch_kwargs(
+    batch: Mapping[str, torch.Tensor],
+) -> dict[str, torch.Tensor]:
+    """Return optional Transformer inputs present in a task batch."""
+    return {
+        key: batch[key]
+        for key in ("attention_mask", "token_type_ids")
+        if key in batch and batch[key] is not None
+    }
+
+
 def causal_lm_loss(
     model: nn.Module,
     batch: Mapping[str, torch.Tensor],
@@ -69,10 +80,9 @@ def causal_lm_loss(
             torch.all((attention_mask == 0) | (attention_mask == 1)).item()
         ):
             raise ValueError("causal-LM attention_mask must contain only 0 and 1")
-    if attention_mask is None:
-        outputs = model(input_ids)
-    else:
-        outputs = model(input_ids, attention_mask=attention_mask)
+    outputs = model(
+        input_ids, **{"attention_mask": attention_mask} if attention_mask is not None else {}
+    )
     logits = extract_logits(outputs)
     if not logits.is_floating_point():
         raise TypeError("causal-LM logits must be floating-point")
@@ -118,8 +128,7 @@ def make_task_loss(task_type: str) -> Callable:
         return loss
 
     def cls_loss(model, batch):
-        attention_mask = batch.get("attention_mask")
-        outputs = model(batch["input_ids"], attention_mask=attention_mask)
+        outputs = model(batch["input_ids"], **transformer_batch_kwargs(batch))
         return criterion(extract_logits(outputs), batch["labels"])
 
     def cv_loss(model, batch):
@@ -130,10 +139,7 @@ def make_task_loss(task_type: str) -> Callable:
         labels = batch["labels"]
         if not labels.is_floating_point():
             raise TypeError("regression labels must be floating-point")
-        outputs = model(
-            batch["input_ids"],
-            attention_mask=batch.get("attention_mask"),
-        )
+        outputs = model(batch["input_ids"], **transformer_batch_kwargs(batch))
         predictions = extract_logits(outputs)
         if predictions.ndim == labels.ndim + 1 and predictions.shape[-1] == 1:
             predictions = predictions.squeeze(-1)
@@ -204,4 +210,5 @@ __all__ = [
     "make_task_loss",
     "move_batch_to_device",
     "perplexity_from_loss",
+    "transformer_batch_kwargs",
 ]

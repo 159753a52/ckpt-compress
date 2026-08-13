@@ -99,6 +99,32 @@ class TestCacheBatchesContract(unittest.TestCase):
         torch.testing.assert_close(cached["labels"], torch.tensor([[7, 8, -100]]))
         torch.testing.assert_close(batch["labels"], torch.tensor([[7, 8, 9]]))
 
+    def test_lm_cache_drops_token_type_ids(self) -> None:
+        batch = {
+            "input_ids": torch.tensor([[1, 2, 0]]),
+            "attention_mask": torch.tensor([[1, 1, 0]]),
+            "token_type_ids": torch.tensor([[0, 1, 1]]),
+            "labels": torch.tensor([[1, 2, -100]]),
+        }
+
+        [cached] = cache_batches([batch], 1, "lm")
+
+        self.assertNotIn("token_type_ids", cached)
+
+    def test_classification_cache_preserves_token_type_ids(self) -> None:
+        batch = {
+            "input_ids": torch.tensor([[1, 2, 3]]),
+            "attention_mask": torch.tensor([[1, 1, 1]]),
+            "token_type_ids": torch.tensor([[0, 1, 1]]),
+            "labels": torch.tensor([1]),
+        }
+
+        [cached] = cache_batches([batch], 1, "cls")
+
+        self.assertIn("token_type_ids", cached)
+        torch.testing.assert_close(cached["token_type_ids"], batch["token_type_ids"])
+        self.assertNotEqual(cached["token_type_ids"].data_ptr(), batch["token_type_ids"].data_ptr())
+
     def test_alpaca_split_is_deterministic_and_never_empty(self) -> None:
         self.assertEqual(data._alpaca_split_sizes(2), (1, 1))
         self.assertEqual(data._alpaca_split_sizes(20), (18, 2))
@@ -240,6 +266,53 @@ class TestCacheBatchesContract(unittest.TestCase):
         load.assert_called_once_with(
             "/portable/bert-large-uncased",
             cache_dir="/portable/data",
+        )
+
+    def test_glue_loader_uses_mapped_train_columns_for_token_type_ids(self) -> None:
+        dataset = mock.Mock()
+        mapped = mock.MagicMock()
+        mapped.rename_column.return_value = mapped
+        mapped.__getitem__.side_effect = {
+            "train": mock.Mock(
+                column_names=[
+                    "premise",
+                    "hypothesis",
+                    "labels",
+                    "input_ids",
+                    "attention_mask",
+                    "token_type_ids",
+                ]
+            ),
+            "validation_matched": mock.Mock(
+                column_names=["input_ids", "attention_mask", "labels", "token_type_ids"]
+            ),
+        }.__getitem__
+        dataset.map.return_value = mapped
+        tokenizer = mock.Mock()
+
+        with (
+            mock.patch("datasets.load_dataset", return_value=dataset),
+            mock.patch("transformers.AutoTokenizer.from_pretrained", return_value=tokenizer),
+            mock.patch("dacp.utils.paths.resolve_model_source", return_value="/portable/bert"),
+            mock.patch(
+                "experiments.lib.data.DataLoader",
+                side_effect=lambda split, **kwargs: split,
+            ),
+        ):
+            data._get_glue_loaders(
+                "bert-large",
+                "mnli",
+                batch_size=1,
+                seq_length=4,
+                num_workers=0,
+                data_dir="/portable/data",
+            )
+
+        dataset.map.assert_called_once()
+        tokenizer.assert_not_called()
+        mapped.set_format.assert_called_once_with(
+            "torch",
+            columns=["input_ids", "attention_mask", "labels", "token_type_ids"],
         )
 
 

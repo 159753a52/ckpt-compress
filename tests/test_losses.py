@@ -8,6 +8,7 @@ from experiments.lib.losses import (
     extract_logits,
     make_task_loss,
     perplexity_from_loss,
+    transformer_batch_kwargs,
 )
 
 
@@ -19,6 +20,12 @@ class _TensorOutput:
 class _Classifier(torch.nn.Module):
     def forward(self, inputs, attention_mask=None):
         del attention_mask
+        return _TensorOutput(inputs)
+
+
+class _SpyClassifier(torch.nn.Module):
+    def forward(self, inputs, **kwargs):
+        self.kwargs = kwargs
         return _TensorOutput(inputs)
 
 
@@ -54,6 +61,44 @@ class TestTaskLossFactory(unittest.TestCase):
 
         torch.testing.assert_close(cls_loss, expected)
         torch.testing.assert_close(cv_loss, expected)
+
+    def test_transformer_batch_kwargs_is_optional(self) -> None:
+        token_type_ids = torch.tensor([[0, 1]])
+        self.assertEqual(transformer_batch_kwargs({}), {})
+        self.assertIs(
+            transformer_batch_kwargs({"token_type_ids": token_type_ids})["token_type_ids"],
+            token_type_ids,
+        )
+
+    def test_classification_loss_forwards_token_type_ids(self) -> None:
+        model = _SpyClassifier()
+        token_type_ids = torch.tensor([[0, 1], [1, 0]])
+
+        make_task_loss("cls")(
+            model,
+            {
+                "input_ids": torch.tensor([[2.0, -1.0], [-1.0, 2.0]]),
+                "token_type_ids": token_type_ids,
+                "labels": torch.tensor([0, 1]),
+            },
+        )
+
+        self.assertIs(model.kwargs["token_type_ids"], token_type_ids)
+
+    def test_lm_does_not_forward_token_type_ids(self) -> None:
+        model = mock.Mock(return_value=torch.zeros(1, 3, 2))
+
+        make_task_loss("lm")(
+            model,
+            {
+                "input_ids": torch.tensor([[0, 1, 0]]),
+                "attention_mask": torch.ones(1, 3, dtype=torch.long),
+                "token_type_ids": torch.zeros(1, 3, dtype=torch.long),
+                "labels": torch.tensor([[0, 1, 0]]),
+            },
+        )
+
+        self.assertNotIn("token_type_ids", model.call_args.kwargs)
 
     def test_lm_shifts_logits_and_labels(self) -> None:
         logits = torch.tensor([[[2.0, -1.0], [-1.0, 2.0], [2.0, -1.0]]])

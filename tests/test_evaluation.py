@@ -129,6 +129,49 @@ class TestEvaluation(unittest.TestCase):
         self.assertAlmostEqual(metrics["loss"], expected)
         self.assertEqual(metrics["accuracy"], 0.75)
 
+    def test_classification_evaluation_forwards_token_type_ids(self) -> None:
+        class SpyClassifier(torch.nn.Module):
+            def forward(self, inputs, **kwargs):
+                self.kwargs = kwargs
+                return inputs
+
+        model = SpyClassifier()
+        token_type_ids = torch.tensor([[0, 1], [1, 0]])
+        evaluate(
+            model,
+            [
+                {
+                    "input_ids": torch.tensor([[4.0, 0.0], [0.0, 4.0]]),
+                    "token_type_ids": token_type_ids,
+                    "labels": torch.tensor([0, 1]),
+                }
+            ],
+            "cls",
+            device="cpu",
+        )
+        self.assertIs(model.kwargs["token_type_ids"], token_type_ids)
+
+    def test_lm_evaluation_does_not_forward_token_type_ids(self) -> None:
+        class SpyLM(torch.nn.Module):
+            def forward(self, inputs, **kwargs):
+                self.kwargs = kwargs
+                return torch.zeros(inputs.shape[0], inputs.shape[1], 2)
+
+        model = SpyLM()
+        evaluate(
+            model,
+            [
+                {
+                    "input_ids": torch.tensor([[0, 1]]),
+                    "token_type_ids": torch.zeros(1, 2, dtype=torch.long),
+                    "labels": torch.tensor([[0, 1]]),
+                }
+            ],
+            "lm",
+            device="cpu",
+        )
+        self.assertNotIn("token_type_ids", model.kwargs)
+
     def test_regression_loss_is_weighted_by_elements(self) -> None:
         class IdentityRegressor(torch.nn.Module):
             def forward(self, inputs, attention_mask=None):

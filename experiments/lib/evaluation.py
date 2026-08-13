@@ -15,6 +15,7 @@ from experiments.lib.losses import (
     extract_logits,
     move_batch_to_device,
     perplexity_from_loss,
+    transformer_batch_kwargs,
 )
 
 
@@ -132,10 +133,7 @@ def _evaluate_classification(model, cached_eval, device, task_type) -> Dict[str,
             if task_type == "cv":
                 outputs = model(batch["images"])
             else:
-                outputs = model(
-                    batch["input_ids"],
-                    attention_mask=batch.get("attention_mask"),
-                )
+                outputs = model(batch["input_ids"], **transformer_batch_kwargs(batch))
 
             logits = extract_logits(outputs)
             loss = nn.functional.cross_entropy(logits, labels, reduction="sum")
@@ -165,10 +163,7 @@ def _evaluate_regression(model, cached_eval, device) -> Dict[str, float]:
         for batch in cached_eval:
             batch = move_batch_to_device(batch, device)
             labels = batch["labels"].float()
-            outputs = model(
-                batch["input_ids"],
-                attention_mask=batch.get("attention_mask"),
-            )
+            outputs = model(batch["input_ids"], **transformer_batch_kwargs(batch))
             logits = extract_logits(outputs)
             preds = logits.squeeze(-1)
             loss = nn.functional.mse_loss(preds, labels, reduction="sum")

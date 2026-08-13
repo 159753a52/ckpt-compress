@@ -5,17 +5,17 @@ BERT-Large 在 GLUE 任务（SST-2 / MNLI / STS-B）上微调的统一脚本。
     # SST-2（情感分类）
     python experiments/scripts/finetune/finetune_bert_large.py \
         --dataset sst2 --num_steps 1000 --batch_size 16 \
-        --checkpoint_dir checkpoints/bert_large_sst2_1000steps --device cuda
+        --checkpoint_dir checkpoints/bert_large_sst2 --device cuda
 
     # MNLI（自然语言推理）
     python experiments/scripts/finetune/finetune_bert_large.py \
         --dataset mnli --num_steps 1000 --batch_size 16 \
-        --checkpoint_dir checkpoints/bert_large_mnli_1000steps --device cuda
+        --checkpoint_dir checkpoints/bert_large_mnli --device cuda
 
     # STS-B（语义相似度回归）
     python experiments/scripts/finetune/finetune_bert_large.py \
         --dataset stsb --num_steps 1000 --batch_size 16 \
-        --checkpoint_dir checkpoints/bert_large_stsb_1000steps --device cuda
+        --checkpoint_dir checkpoints/bert_large_stsb --device cuda
 
 特点:
 - 基于步数训练（不是 epoch）
@@ -46,6 +46,7 @@ from transformers import BertForSequenceClassification
 from dacp.utils.data_loader import get_mnli_loaders, get_sst2_loaders, get_stsb_loaders
 from dacp.utils.paths import resolve_model_source
 from experiments.lib.args import nonnegative_int, positive_int
+from experiments.lib.losses import move_batch_to_device, transformer_batch_kwargs
 
 # 数据集配置
 DATASET_CONFIG = {
@@ -69,11 +70,11 @@ def evaluate_classification(model, eval_loader, device):
     try:
         with torch.no_grad():
             for batch in eval_loader:
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
+                batch = move_batch_to_device(batch, device)
+                input_ids = batch["input_ids"]
+                labels = batch["labels"]
 
-                outputs = model(input_ids, attention_mask=attention_mask)
+                outputs = model(input_ids, **transformer_batch_kwargs(batch))
                 predictions = torch.argmax(outputs.logits, dim=-1)
                 correct += int((predictions == labels).sum().item())
                 total += labels.size(0)
@@ -93,11 +94,11 @@ def evaluate_regression(model, eval_loader, device):
     try:
         with torch.no_grad():
             for batch in eval_loader:
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
+                batch = move_batch_to_device(batch, device)
+                input_ids = batch["input_ids"]
+                labels = batch["labels"]
 
-                outputs = model(input_ids, attention_mask=attention_mask)
+                outputs = model(input_ids, **transformer_batch_kwargs(batch))
                 preds = outputs.logits.squeeze(-1)
                 all_preds.append(preds.cpu())
                 all_labels.append(labels.cpu())
@@ -182,15 +183,15 @@ def train_n_steps(
                     data_iter = iter(train_loader)
                     batch = next(data_iter)
 
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
-                labels = batch["labels"].to(device)
+                batch = move_batch_to_device(batch, device)
+                input_ids = batch["input_ids"]
+                labels = batch["labels"]
 
                 if use_amp:
                     with torch.cuda.amp.autocast():
                         outputs = model(
                             input_ids=input_ids,
-                            attention_mask=attention_mask,
+                            **transformer_batch_kwargs(batch),
                             labels=labels,
                         )
                         loss = outputs.loss / gradient_accumulation_steps
@@ -198,7 +199,7 @@ def train_n_steps(
                 else:
                     outputs = model(
                         input_ids=input_ids,
-                        attention_mask=attention_mask,
+                        **transformer_batch_kwargs(batch),
                         labels=labels,
                     )
                     loss = outputs.loss / gradient_accumulation_steps
@@ -318,7 +319,7 @@ def _save_checkpoint(
     torch.save(checkpoint, path)
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="BERT-Large 在 GLUE 任务上微调")
     parser.add_argument(
         "--dataset",
@@ -348,7 +349,10 @@ def main():
 
     # 检查点参数
     parser.add_argument(
-        "--checkpoint_dir", type=str, default=None, help="检查点保存目录（默认自动生成）"
+        "--checkpoint_dir",
+        type=str,
+        default=None,
+        help="检查点保存目录（默认为 checkpoints/bert_large_{dataset}，步数体现在文件名）",
     )
     parser.add_argument("--save_interval", type=positive_int, default=200)
     parser.add_argument("--log_interval", type=positive_int, default=50)
@@ -358,11 +362,39 @@ def main():
     parser.add_argument("--use_amp", action="store_true")
     parser.add_argument("--num_workers", type=nonnegative_int, default=4)
 
-    args = parser.parse_args()
+    return parser
+
+
+def default_checkpoint_dir(dataset: str, num_steps: int) -> str:
+    """Return the manifest-compatible directory for a step-based run.
+
+    ``num_steps`` is encoded by checkpoint filenames such as
+    ``checkpoint_step_<num_steps>_final.pt``; the directory stays stable so
+    paper-manifest paths do not depend on the requested training duration.
+    """
+    if isinstance(num_steps, bool) or not isinstance(num_steps, int) or num_steps < 1:
+        raise ValueError(f"num_steps must be a positive integer, got {num_steps}")
+    return f"./checkpoints/bert_large_{dataset}"
+
+
+def resolve_checkpoint_dir(dataset: str, num_steps: int, checkpoint_dir: str | None) -> str:
+    """Resolve an explicit checkpoint directory or the manifest default."""
+    if checkpoint_dir is not None:
+        return checkpoint_dir
+    return default_checkpoint_dir(dataset, num_steps)
+
+
+def parse_args(argv=None):
+    """Parse CLI arguments and resolve the default checkpoint directory."""
+    args = build_parser().parse_args(argv)
+    args.checkpoint_dir = resolve_checkpoint_dir(args.dataset, args.num_steps, args.checkpoint_dir)
+    return args
+
+
+def main():
+    args = parse_args()
 
     cfg = DATASET_CONFIG[args.dataset]
-    if args.checkpoint_dir is None:
-        args.checkpoint_dir = f"./checkpoints/bert_large_{args.dataset}_1000steps"
 
     device = args.device if torch.cuda.is_available() else "cpu"
     if args.device == "cuda" and not torch.cuda.is_available():
