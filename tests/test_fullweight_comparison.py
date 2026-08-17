@@ -171,6 +171,70 @@ class TestFullWeightComparison(unittest.TestCase):
         self.assertIs(taylor_call.call_args.args[3], parameters)
         self.assertTrue(torch.equal(families["magnitude"]["weight"], parameters["weight"].abs()))
 
+    def test_result_scoring_routes_magnitude_and_sensitivity_without_residual_labels(self) -> None:
+        parameters = _parameters()
+        layers = _layers()
+        magnitude_assembly = build_inshrinkerator_style_fullweight_mask(
+            parameters,
+            layers,
+            parameters,
+            _search_payload(best_metric="magnitude"),
+            0.5,
+        )
+        sensitivity_assembly = build_inshrinkerator_style_fullweight_mask(
+            parameters,
+            layers,
+            parameters,
+            _search_payload(best_metric="sensitivity"),
+            0.5,
+        )
+        first_order_scoring = {
+            "score_kind": "first_order",
+            "scoring_batches": 2,
+            "total_seconds": 1.5,
+        }
+        taylor_scoring = {"score_kind": "taylor_hvp", "hvp_batches": 2, "total_seconds": 2.5}
+
+        magnitude_scoring = comparison_script._method_scoring_evidence(
+            magnitude_assembly,
+            first_order_scoring=first_order_scoring,
+            taylor_scoring=taylor_scoring,
+        )
+        sensitivity_scoring = comparison_script._method_scoring_evidence(
+            sensitivity_assembly,
+            first_order_scoring=first_order_scoring,
+            taylor_scoring=taylor_scoring,
+        )
+        self.assertEqual(magnitude_assembly.score_kind, "full_weight_magnitude")
+        self.assertEqual(magnitude_scoring["score_kind"], "full_weight_magnitude")
+        self.assertEqual(magnitude_scoring["scoring_batches"], 0)
+        self.assertEqual(magnitude_scoring["source"], "current_full_weight_theta")
+        self.assertEqual(sensitivity_assembly.score_kind, "first_order")
+        self.assertEqual(sensitivity_scoring["score_kind"], "first_order")
+        self.assertEqual(sensitivity_scoring["scoring_batches"], 2)
+        self.assertEqual(sensitivity_scoring["source"], "current_full_weight_theta")
+        magnitude_provenance = comparison_script._build_score_provenance(
+            search_best_metric="magnitude",
+            selected_assembly=magnitude_assembly,
+            first_order_scoring=first_order_scoring,
+            taylor_scoring=taylor_scoring,
+        )
+        sensitivity_provenance = comparison_script._build_score_provenance(
+            search_best_metric="sensitivity",
+            selected_assembly=sensitivity_assembly,
+            first_order_scoring=first_order_scoring,
+            taylor_scoring=taylor_scoring,
+        )
+        self.assertEqual(
+            magnitude_provenance["selected_search_metric"],
+            magnitude_assembly.score_kind,
+        )
+        self.assertEqual(
+            sensitivity_provenance["selected_search_metric"],
+            sensitivity_assembly.score_kind,
+        )
+        self.assertNotIn("residual_magnitude", json.dumps(magnitude_provenance))
+
     def test_malformed_or_stale_search_provenance_fails_closed(self) -> None:
         checkpoint = ROOT / "checkpoint.pt"
         expected = {

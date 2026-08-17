@@ -24,6 +24,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 import uuid
 from dataclasses import asdict
@@ -57,11 +58,19 @@ def _get_model_family(model_name: str) -> str:
     return "gpt2"
 
 
+def _stable_slug(value: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_")
+    if not slug:
+        raise ValueError(f"Cannot build a stable slug from {value!r}")
+    return slug
+
+
 def _result_name(model: str, dataset: str, seed: int, epsilon: float, count: int) -> str:
+    prefix = f"{_stable_slug(model)}_{_stable_slug(dataset)}_seed{seed}"
     if count == 1:
-        return f"{model}_{dataset}_seed{seed}.json"
+        return f"{prefix}.json"
     epsilon_slug = f"{epsilon:.8g}".replace("-", "m").replace(".", "p")
-    return f"{model}_{dataset}_seed{seed}_eps{epsilon_slug}.json"
+    return f"{prefix}_eps{epsilon_slug}.json"
 
 
 def _build_search_payload(

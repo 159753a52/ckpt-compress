@@ -56,7 +56,7 @@ FULLWEIGHT_METHOD_CONTRACTS = {
     INSHRINKERATOR_STYLE_FULLWEIGHT_METHOD_ID: FullWeightMethodContract(
         method_id=INSHRINKERATOR_STYLE_FULLWEIGHT_METHOD_ID,
         fidelity="style",
-        score_kind="searched_magnitude_or_first_order",
+        score_kind="full_weight_magnitude_or_first_order",
         allocation_kind="per_type",
         description=(
             "Inshrinkerator-style searched full-weight magnitude/first-order pruning "
@@ -345,7 +345,7 @@ def build_inshrinkerator_style_fullweight_mask(
     return _make_assembly(
         method_id=INSHRINKERATOR_STYLE_FULLWEIGHT_METHOD_ID,
         fidelity="style",
-        score_kind="magnitude" if best_metric == "magnitude" else "first_order",
+        score_kind=("full_weight_magnitude" if best_metric == "magnitude" else "first_order"),
         allocation_kind="per_type",
         target=target,
         layers=layers,

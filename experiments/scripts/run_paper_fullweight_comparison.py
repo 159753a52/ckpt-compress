@@ -416,11 +416,11 @@ def _evaluate_state(
     model.to(device)
     metrics = evaluate_task(model, eval_batches, task_type, device)
     synchronize_device(device)
-    wall_seconds = time.perf_counter() - started
+    evaluation_wall_seconds = time.perf_counter() - started
     peak_bytes = peak_memory_bytes(device)
     del model
     empty_device_cache(device)
-    return metrics, wall_seconds, peak_bytes
+    return metrics, evaluation_wall_seconds, peak_bytes
 
 
 def _compute_fullweight_score_families(
@@ -474,6 +474,77 @@ def _method_contracts() -> list[dict[str, str]]:
         FULLWEIGHT_METHOD_CONTRACTS[method_id].to_result_dict()
         for method_id in FULLWEIGHT_METHOD_IDS
     ]
+
+
+def _method_scoring_evidence(
+    assembly,
+    *,
+    first_order_scoring: Mapping[str, object],
+    taylor_scoring: Mapping[str, object],
+) -> dict[str, object]:
+    if assembly.method_id == "dacp_fullweight":
+        evidence = {**taylor_scoring, "source": "current_full_weight_theta"}
+    elif assembly.score_kind == "full_weight_magnitude":
+        evidence = {
+            "score_kind": "full_weight_magnitude",
+            "scoring_batches": 0,
+            "source": "current_full_weight_theta",
+        }
+    elif assembly.score_kind == "first_order":
+        evidence = {**first_order_scoring, "source": "current_full_weight_theta"}
+    else:
+        raise ValueError(f"Unsupported full-weight score kind: {assembly.score_kind}")
+    if evidence.get("score_kind") != assembly.score_kind:
+        raise RuntimeError(
+            f"Score evidence {evidence.get('score_kind')!r} does not match "
+            f"assembly {assembly.score_kind!r}"
+        )
+    return evidence
+
+
+def _scoring_wall_seconds(scoring: Mapping[str, object]) -> float:
+    if scoring.get("score_kind") == "full_weight_magnitude":
+        return 0.0
+    value = scoring.get("total_seconds")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("Scoring evidence must contain finite total_seconds")
+    value = float(value)
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError("Scoring evidence must contain finite total_seconds")
+    return value
+
+
+def _build_score_provenance(
+    *,
+    search_best_metric: str,
+    selected_assembly,
+    first_order_scoring: Mapping[str, object],
+    taylor_scoring: Mapping[str, object],
+) -> dict[str, object]:
+    expected_selected = (
+        "full_weight_magnitude" if search_best_metric == "magnitude" else "first_order"
+    )
+    if selected_assembly.score_kind != expected_selected:
+        raise RuntimeError(
+            "Selected search metric does not match the Inshrinkerator-style assembly"
+        )
+    return {
+        "magnitude": {
+            "score_kind": "full_weight_magnitude",
+            "scoring_batches": 0,
+            "source": "current_full_weight_theta",
+        },
+        "first_order": {
+            **first_order_scoring,
+            "source": "current_full_weight_theta",
+        },
+        "taylor_hvp": {
+            **taylor_scoring,
+            "source": "current_full_weight_theta",
+        },
+        "search_best_metric": search_best_metric,
+        "selected_search_metric": selected_assembly.score_kind,
+    }
 
 
 def _run_comparison(
@@ -635,8 +706,8 @@ def _run_comparison(
         if result_path.exists():
             raise FileExistsError(f"Refusing to overwrite incomplete ratio result: {result_path}")
         ratio_started = time.perf_counter()
-        methods = []
         selected_metric = search_payload["best_metric"]
+        allocation_started = time.perf_counter()
         assemblies = assemble_fullweight_comparison(
             parameters,
             layers,
@@ -645,9 +716,18 @@ def _run_comparison(
             ratio,
             model_family=model_family,
         )
+        allocation_wall_seconds = time.perf_counter() - allocation_started
+        methods = []
+        inshrinkerator_assembly = assemblies[1]
+        score_provenance = _build_score_provenance(
+            search_best_metric=selected_metric,
+            selected_assembly=inshrinkerator_assembly,
+            first_order_scoring=first_order_scoring,
+            taylor_scoring=taylor_scoring,
+        )
         for assembly in assemblies:
             zeroed_state = apply_zero_masks_to_state(base_state, assembly.masks)
-            metrics, wall_seconds, peak_bytes = _evaluate_state(
+            metrics, evaluation_wall_seconds, evaluation_peak_memory = _evaluate_state(
                 base_model,
                 zeroed_state,
                 evaluation_batches,
@@ -655,6 +735,11 @@ def _run_comparison(
                 device,
             )
             result = assembly.to_result_dict()
+            scoring = _method_scoring_evidence(
+                assembly,
+                first_order_scoring=first_order_scoring,
+                taylor_scoring=taylor_scoring,
+            )
             result.update(
                 {
                     "metrics": metrics,
@@ -663,16 +748,14 @@ def _run_comparison(
                         metrics,
                         task_type,
                     ),
-                    "wall_seconds": wall_seconds,
-                    "peak_gpu_memory_bytes": peak_bytes,
+                    "scoring_wall_seconds": _scoring_wall_seconds(scoring),
+                    "allocation_wall_seconds": allocation_wall_seconds,
+                    "evaluation_wall_seconds": evaluation_wall_seconds,
+                    "evaluation_peak_gpu_memory_bytes": evaluation_peak_memory,
                     "direct_zeroing": True,
                     "protect_fraction": manifest.protect_fraction,
                     "protection_applied": False,
-                    "scoring": (
-                        taylor_scoring
-                        if assembly.method_id == "dacp_fullweight"
-                        else first_order_scoring
-                    ),
+                    "scoring": scoring,
                 }
             )
             methods.append(result)
@@ -682,20 +765,12 @@ def _run_comparison(
             "finished_at": _utc_now(),
             "baseline": {
                 "metrics": baseline_metrics,
-                "wall_seconds": baseline_wall,
-                "peak_gpu_memory_bytes": baseline_peak,
+                "evaluation_wall_seconds": baseline_wall,
+                "evaluation_peak_gpu_memory_bytes": baseline_peak,
             },
-            "score_provenance": {
-                "magnitude": {
-                    "score_kind": "residual_magnitude",
-                    "source": "current_full_weight_theta",
-                },
-                "first_order": first_order_scoring,
-                "taylor_hvp": taylor_scoring,
-                "selected_search_metric": selected_metric,
-            },
+            "score_provenance": score_provenance,
             "results": methods,
-            "wall_seconds": time.perf_counter() - ratio_started,
+            "allocation_and_evaluation_wall_seconds": time.perf_counter() - ratio_started,
         }
         write_json(result_path, ratio_payload)
         suite.record_completed(key, result_path)

@@ -66,3 +66,14 @@ python experiments/scripts/run_paper_fullweight_comparison.py \
 The comparison writes `suite_manifest.json` and one atomic JSON per pruning
 ratio. Resume requires the same plan and provenance digests and skips only
 complete ratio records whose stored file digest still matches the suite.
+
+## Timing boundary
+
+Each method record reports `scoring_wall_seconds`,
+`allocation_wall_seconds`, `evaluation_wall_seconds`, and
+`evaluation_peak_gpu_memory_bytes` separately. The ratio-level
+`allocation_and_evaluation_wall_seconds` is not an end-to-end compressor
+runtime: it does not merge shared scoring time and it does not represent the
+actual Inshrinkerator byte-packing/encoding pipeline. These results therefore
+support mechanism and quality comparisons, not a complete runtime or
+compression-ratio claim for the full compressor.

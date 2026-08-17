@@ -11,8 +11,10 @@ from baselines.inshrinkerator.per_type_search import SearchResult, save_search_r
 from experiments.lib.residual_runtime import batch_hash, sha256_file
 from experiments.scripts.run_inshrinkerator_like_search import (
     _build_search_payload,
+    _result_name,
     _write_new_json,
 )
+from experiments.scripts.run_paper_fullweight_comparison import load_fullweight_manifest
 
 
 class TestPerTypeAllocation(unittest.TestCase):
@@ -135,6 +137,20 @@ class TestPerTypeAllocation(unittest.TestCase):
             _write_new_json(path, {"status": "complete"})
             with self.assertRaises(FileExistsError):
                 _write_new_json(path, {"status": "complete"})
+
+    def test_formal_search_output_path_matches_fullweight_manifest(self) -> None:
+        manifest = load_fullweight_manifest(
+            Path(__file__).resolve().parents[1]
+            / "experiments/configs/paper_fullweight_inshrinkerator.yaml"
+        )
+        derived = manifest.inshrinkerator_search_json.parent / _result_name(
+            "gpt2-medium",
+            "wikitext103",
+            42,
+            0.05,
+            1,
+        )
+        self.assertEqual(derived.resolve(), manifest.inshrinkerator_search_json.resolve())
 
 
 if __name__ == "__main__":
