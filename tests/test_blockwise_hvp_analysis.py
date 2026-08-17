@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+import json
 from unittest import mock
 
 import pytest
@@ -47,7 +47,7 @@ def test_parse_and_validate_plan_includes_default_seed_and_normalized_values(tmp
     ("option", "value", "message"),
     [
         ("--seq_lengths", "0", "seq_lengths"),
-        ("--alpha_sweep", "1.1", "alpha values"),
+        ("--alpha_sweep", "-0.1", "alpha values"),
         ("--prune_ratios", "-0.1", "prune_ratios"),
     ],
 )
@@ -55,6 +55,14 @@ def test_validation_rejects_invalid_experiment_values(tmp_path, option, value, m
     args = _args(tmp_path, option, value)
     with pytest.raises(ValueError, match=message):
         analysis.validate_args(args, check_output=False)
+
+
+def test_alpha_sweep_preserves_values_above_one(tmp_path) -> None:
+    args = _args(tmp_path, "--alpha_sweep", "1.1,2.5")
+
+    plan = analysis.validate_args(args, check_output=False)
+
+    assert plan["alphas"] == [1.1, 2.5]
 
 
 def test_negative_seed_is_rejected_by_argument_parser(tmp_path) -> None:
@@ -218,6 +226,43 @@ def test_comparison_seed_order_cleanup_and_schema(monkeypatch) -> None:
     assert "mask_ious" in result
 
 
+def test_incremental_results_survive_later_combination_failure(monkeypatch, tmp_path) -> None:
+    args = _args(tmp_path, "--seq_lengths", "8,16")
+    monkeypatch.setattr(analysis, "parse_args", lambda: args)
+    load_model = mock.Mock(return_value=(_TinyModel(), "gpt2"))
+    monkeypatch.setattr(analysis, "load_model", load_model)
+    monkeypatch.setattr(
+        analysis,
+        "_source_git_state",
+        lambda: {"git_commit": "a" * 40, "git_dirty": False},
+    )
+    calls = []
+
+    def fake_comparison(**kwargs):
+        calls.append(kwargs["seq_length"])
+        if len(calls) == 2:
+            raise RuntimeError("second combination failed")
+        return {
+            "seq_length": kwargs["seq_length"],
+            "batch_hash": "first-batch-hash",
+        }
+
+    monkeypatch.setattr(analysis, "run_single_comparison", fake_comparison)
+
+    with pytest.raises(RuntimeError, match="second combination failed"):
+        analysis.main()
+
+    output_file = analysis._result_path(args)
+    payload = json.loads(output_file.read_text(encoding="utf-8"))
+    assert calls == [8, 16]
+    load_model.assert_called_once()
+    assert payload["schema_version"] == analysis.SCHEMA_VERSION
+    assert payload["source"] == {"git_commit": "a" * 40, "git_dirty": False}
+    assert payload["batch_hashes"] == ["first-batch-hash"]
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["seq_length"] == 8
+
+
 def test_existing_output_is_rejected_before_model_loading(tmp_path, monkeypatch) -> None:
     args = _args(tmp_path)
     output_file = analysis._result_path(args)
@@ -225,9 +270,10 @@ def test_existing_output_is_rejected_before_model_loading(tmp_path, monkeypatch)
     output_file.write_text("existing", encoding="utf-8")
     load_model = mock.Mock(side_effect=AssertionError("model must not load"))
     monkeypatch.setattr(analysis, "load_model", load_model)
+    monkeypatch.setattr(analysis, "parse_args", lambda: args)
 
     with pytest.raises(FileExistsError, match="Refusing to overwrite"):
-        analysis.validate_args(args)
+        analysis.main()
 
     load_model.assert_not_called()
 

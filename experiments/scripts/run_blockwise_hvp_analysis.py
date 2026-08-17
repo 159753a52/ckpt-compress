@@ -110,6 +110,20 @@ def _validate_unit_interval(values: Sequence[Any], label: str) -> list[float]:
     return normalized
 
 
+def _validate_nonnegative_finite(values: Sequence[Any], label: str) -> list[float]:
+    normalized = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{label} must contain finite non-negative values, got {values!r}")
+        value = float(value)
+        if not math.isfinite(value) or value < 0.0:
+            raise ValueError(f"{label} must contain finite non-negative values, got {values!r}")
+        normalized.append(value)
+    if not normalized:
+        raise ValueError(f"{label} must not be empty")
+    return normalized
+
+
 def parse_seq_lengths(args) -> list[int]:
     raw = getattr(args, "seq_lengths", None)
     if raw is None:
@@ -122,7 +136,7 @@ def parse_seq_lengths(args) -> list[int]:
 def parse_alphas(args) -> list[float]:
     raw = getattr(args, "alpha_sweep", None)
     values = [getattr(args, "alpha")] if raw is None else _parse_csv(raw, "alpha_sweep", float)
-    return _validate_unit_interval(values, "alpha values")
+    return _validate_nonnegative_finite(values, "alpha values")
 
 
 def parse_prune_ratios(args) -> list[float]:
@@ -196,6 +210,19 @@ def validate_args(args, *, check_output: bool = True) -> dict[str, object]:
         "seed": seed,
         "output_file": str(output_file),
         "output_exists": exists,
+    }
+
+
+def _build_payload(
+    metadata: Mapping[str, object],
+    results: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Build one complete atomic snapshot for incremental result persistence."""
+    result_list = list(results)
+    return {
+        **metadata,
+        "batch_hashes": [result["batch_hash"] for result in result_list],
+        "results": result_list,
     }
 
 
@@ -662,6 +689,27 @@ def main():
     result_file.parent.mkdir(parents=True, exist_ok=True)
     resolved_device_name = _resolve_device_name(args.device)
     resolved_dtype = _model_dtype(model)
+    metadata = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": created_at,
+        "seed": args.seed,
+        "model": args.model,
+        "dataset": args.dataset,
+        "checkpoint": args.checkpoint,
+        "device": args.device,
+        "device_name": resolved_device_name,
+        "torch_version": torch.__version__,
+        "dtype": resolved_dtype,
+        "hvp_batches": args.hvp_batches,
+        "source": source_git,
+        "measurement_order": list(MEASUREMENT_ORDER),
+    }
+
+    if result_file.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing result file {result_file}; "
+            "choose a different --output-dir or an explicit --output-file"
+        )
 
     all_results = []
     for seq_len in seq_lengths:
@@ -690,31 +738,8 @@ def main():
             result["normalize"] = args.normalize
             result["abs_combine"] = args.abs_combine
             all_results.append(result)
-
-    if result_file.exists():
-        raise FileExistsError(
-            f"Refusing to overwrite existing result file {result_file}; "
-            "choose a different --output-dir or an explicit --output-file"
-        )
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "created_at": created_at,
-        "seed": args.seed,
-        "model": args.model,
-        "dataset": args.dataset,
-        "checkpoint": args.checkpoint,
-        "device": args.device,
-        "device_name": resolved_device_name,
-        "torch_version": torch.__version__,
-        "dtype": resolved_dtype,
-        "hvp_batches": args.hvp_batches,
-        "batch_hashes": [result["batch_hash"] for result in all_results],
-        "source": source_git,
-        "measurement_order": list(MEASUREMENT_ORDER),
-        "results": all_results,
-    }
-    write_json(result_file, payload)
-    print(f"  [已保存] {len(all_results)} 组结果 → {result_file}")
+            write_json(result_file, _build_payload(metadata, all_results))
+            print(f"  [已保存] {len(all_results)} 组结果 → {result_file}")
 
     print(f"\n[Done] 全部 {len(all_results)} 组结果已保存至 {result_file}")
 
