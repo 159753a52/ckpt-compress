@@ -101,6 +101,11 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("mask-count must be an integer of at least 3")
 
 
+def _ensure_output_absent(output: Path) -> None:
+    if output.exists():
+        raise FileExistsError(f"Refusing to overwrite existing damage validation output: {output}")
+
+
 def _select_workload(args: argparse.Namespace):
     manifest = load_paper_manifest(args.manifest)
     jobs = plan_jobs(
@@ -134,6 +139,7 @@ def _dry_run_plan(args: argparse.Namespace, manifest, job) -> dict[str, object]:
         "random_mask_allocation": "Taylor per-layer prune counts, generated from the run seed",
         "device": args.device,
         "output": str(args.output),
+        "output_exists": args.output.exists(),
         "loads_model": False,
         "loads_gpu": False,
     }
@@ -260,6 +266,7 @@ def _build_candidates(
 
 def run(args: argparse.Namespace) -> Path:
     _validate_args(args)
+    _ensure_output_absent(args.output)
     manifest, job = _select_workload(args)
     workload = job.workload
     if args.device.startswith("cuda"):
@@ -434,6 +441,8 @@ def run(args: argparse.Namespace) -> Path:
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     _validate_args(args)
+    if not args.dry_run:
+        _ensure_output_absent(args.output)
     manifest, job = _select_workload(args)
     if args.dry_run:
         print(json.dumps(_dry_run_plan(args, manifest, job), indent=2, sort_keys=True))

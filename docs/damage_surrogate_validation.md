@@ -26,7 +26,7 @@ The current state is constructed with the existing manifest checkpoint, repeated
 
 ## Output
 
-The JSON is written with the shared atomic `write_json` helper. It records:
+The JSON is written with the shared atomic `write_json` helper. A non-dry-run invocation refuses to overwrite an existing output path before loading the checkpoint, data, model, or querying CUDA. A rerun must use a new `--output` path. In dry-run mode, `output_exists` is reported in the plan and no file is changed. The JSON records:
 
 - manifest, checkpoint, and source digests;
 - evaluation batch count and hash;

@@ -1,8 +1,10 @@
 import copy
 import io
 import json
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -227,6 +229,51 @@ class TestDamageSurrogateScript(unittest.TestCase):
         self.assertFalse(plan["loads_gpu"])
         load_model.assert_not_called()
         get_data_loaders.assert_not_called()
+
+    def test_existing_output_blocks_non_dry_run_before_runtime_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "existing.json"
+            original = "preserve this evidence\n"
+            output_path.write_text(original, encoding="utf-8")
+            with (
+                mock.patch.object(damage_script, "load_training_checkpoint") as load_checkpoint,
+                mock.patch.object(damage_script, "get_data_loaders") as get_data_loaders,
+                mock.patch.object(damage_script, "load_model") as load_model,
+                mock.patch.object(damage_script.torch.cuda, "is_available") as cuda_available,
+            ):
+                with self.assertRaises(FileExistsError):
+                    damage_script.main(["--output", str(output_path), "--device", "cuda"])
+
+            self.assertEqual(output_path.read_text(encoding="utf-8"), original)
+            load_checkpoint.assert_not_called()
+            get_data_loaders.assert_not_called()
+            load_model.assert_not_called()
+            cuda_available.assert_not_called()
+
+    def test_dry_run_reports_existing_output_without_loading_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "existing.json"
+            original = "preserve this evidence\n"
+            output_path.write_text(original, encoding="utf-8")
+            with (
+                mock.patch.object(damage_script, "load_training_checkpoint") as load_checkpoint,
+                mock.patch.object(damage_script, "get_data_loaders") as get_data_loaders,
+                mock.patch.object(damage_script, "load_model") as load_model,
+                mock.patch.object(damage_script.torch.cuda, "is_available") as cuda_available,
+            ):
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    damage_script.main(
+                        ["--dry-run", "--output", str(output_path), "--device", "cuda"]
+                    )
+
+            plan = json.loads(output.getvalue())
+            self.assertTrue(plan["output_exists"])
+            self.assertEqual(output_path.read_text(encoding="utf-8"), original)
+            load_checkpoint.assert_not_called()
+            get_data_loaders.assert_not_called()
+            load_model.assert_not_called()
+            cuda_available.assert_not_called()
 
 
 if __name__ == "__main__":
