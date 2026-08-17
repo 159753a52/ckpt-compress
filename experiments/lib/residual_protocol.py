@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-
 RESIDUAL_MAGNITUDE_UNIFORM_METHOD = "residual_magnitude_uniform"
 RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD = "residual_magnitude_weibull_mom"
 FIRST_ORDER_UNIFORM_METHOD = "first_order_uniform"
@@ -44,9 +42,7 @@ def spectral_method_id(rank: int) -> str:
 
 
 def quantile_method_id(cost_normalization: str, smoothness: float) -> str:
-    normalization_slug = (
-        "relative" if cost_normalization == "layer_uniform_cost" else "global"
-    )
+    normalization_slug = "relative" if cost_normalization == "layer_uniform_cost" else "global"
     return f"{QUANTILE_METHOD_PREFIX}{normalization_slug}_smooth_l{float_slug(smoothness)}"
 
 
