@@ -1,13 +1,13 @@
-"""验证 Block-wise HVP 近似精度的实验脚本。
+"""验证经验性 block-diagonal HVP 近似的实验脚本。
 
 核心实验：
 1. 对同一 checkpoint，分别计算 global HVP 和 block-wise HVP 的 damage score
 2. 度量两者的相关性（Spearman/Pearson）、relative L2 error、pruning mask IoU
 3. 可变 seq_length 来改变 γ = T/(12d)，画出 γ → error 趋势
 
-理论预期（Lemma 1 秩约束 rank(H_{ℓℓ'}) ≤ dT）：
-  - γ 越小，block-wise 近似越好
-  - 模型越大（d 越大），γ 越小
+本实验只做经验性 block-diagonal 近似验证，不把秩关系当作已经成立的定理：
+  - 记录不同 seq_length 下的实际误差、相关性和运行开销
+  - 运行时间与显存峰值以当前设备上的实测结果为准
 
 用法:
     # 单一 seq_length
@@ -24,13 +24,18 @@
         --model gpt2-small --dataset wikitext2 --seq_length 512
 """
 
+import argparse
 import copy
 import gc
+import json
+import math
 import os
+import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Callable, Mapping, Sequence
 
 import torch
 
@@ -38,8 +43,8 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from dacp.pruning.pruner import filter_prunable_params
-from experiments.lib.args import add_scoring_args, create_base_parser
-from experiments.lib.data import cache_batches, get_data_loaders
+from experiments.lib.args import add_scoring_args, create_base_parser, nonnegative_int
+from experiments.lib.data import cache_batches, get_data_loaders, get_task_type
 from experiments.lib.importance_compare.score_comparison import (
     compute_gamma,
     compute_mask_iou,
@@ -48,19 +53,166 @@ from experiments.lib.importance_compare.score_comparison import (
     summarize_comparison,
 )
 from experiments.lib.losses import make_task_loss
-from experiments.lib.models import load_model
-from experiments.lib.residual_runtime import write_json
+from experiments.lib.models import get_model_type, load_model
+from experiments.lib.residual_runtime import (
+    batch_hash,
+    peak_memory_bytes,
+    reset_peak_memory,
+    set_seed,
+    synchronize_device,
+    write_json,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_VERSION = 1
+MEASUREMENT_ORDER = ("global", "block")
 
 
-def parse_args():
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_csv(raw: str, label: str, converter: Callable[[str], Any]) -> list[Any]:
+    if not isinstance(raw, str):
+        raise ValueError(f"{label} must be a comma-separated string")
+    parts = [part.strip() for part in raw.split(",")]
+    if not parts or any(not part for part in parts):
+        raise ValueError(f"{label} must be a non-empty comma-separated list")
+    try:
+        values = [converter(part) for part in parts]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} contains an invalid value: {raw!r}") from exc
+    return values
+
+
+def _validate_positive_ints(values: Sequence[Any], label: str) -> list[int]:
+    normalized = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{label} must contain positive integers, got {values!r}")
+        normalized.append(value)
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{label} must not contain duplicates: {normalized!r}")
+    return normalized
+
+
+def _validate_unit_interval(values: Sequence[Any], label: str) -> list[float]:
+    normalized = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{label} must contain finite values in [0, 1], got {values!r}")
+        value = float(value)
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            raise ValueError(f"{label} must contain finite values in [0, 1], got {values!r}")
+        normalized.append(value)
+    if not normalized:
+        raise ValueError(f"{label} must not be empty")
+    return normalized
+
+
+def parse_seq_lengths(args) -> list[int]:
+    raw = getattr(args, "seq_lengths", None)
+    if raw is None:
+        values = [getattr(args, "seq_length")]
+    else:
+        values = _parse_csv(raw, "seq_lengths", int)
+    return _validate_positive_ints(values, "seq_lengths")
+
+
+def parse_alphas(args) -> list[float]:
+    raw = getattr(args, "alpha_sweep", None)
+    values = [getattr(args, "alpha")] if raw is None else _parse_csv(raw, "alpha_sweep", float)
+    return _validate_unit_interval(values, "alpha values")
+
+
+def parse_prune_ratios(args) -> list[float]:
+    raw = getattr(args, "prune_ratios", None)
+    if raw is None:
+        raise ValueError("prune_ratios is required")
+    if isinstance(raw, str):
+        values = _parse_csv(raw, "prune_ratios", float)
+    else:
+        values = list(raw)
+    return _validate_unit_interval(values, "prune_ratios")
+
+
+def _result_path(args) -> Path:
+    output_file = getattr(args, "output_file", None)
+    if output_file:
+        path = Path(output_file)
+    else:
+        path = Path(args.output_dir) / f"{args.model}_seed{args.seed}_blockwise_analysis.json"
+    if path.suffix.lower() != ".json":
+        raise ValueError(f"Result output must be a .json file: {path}")
+    required_tokens = (str(args.model), f"seed{args.seed}")
+    if any(token not in path.name for token in required_tokens):
+        raise ValueError(
+            "Result filename must contain both the model and seed; "
+            "use a different --output-dir or an explicit --output-file with those tokens"
+        )
+    return path
+
+
+def validate_args(args, *, check_output: bool = True) -> dict[str, object]:
+    """Validate the dry-run-safe experiment configuration and return its output plan."""
+    if not isinstance(args.model, str) or not args.model:
+        raise ValueError("model must be a non-empty string")
+    if not isinstance(args.dataset, str) or not args.dataset:
+        raise ValueError("dataset must be a non-empty string")
+    get_model_type(args.model)
+    get_task_type(args.dataset)
+
+    seq_lengths = parse_seq_lengths(args)
+    alphas = parse_alphas(args)
+    prune_ratios = parse_prune_ratios(args)
+
+    seed = getattr(args, "seed", None)
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError(f"seed must be a non-negative integer, got {seed}")
+    for name in ("batch_size", "hvp_batches"):
+        value = getattr(args, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer, got {value}")
+    warmup_steps = getattr(args, "warmup_steps", 0)
+    if isinstance(warmup_steps, bool) or not isinstance(warmup_steps, int) or warmup_steps < 0:
+        raise ValueError(f"warmup_steps must be a non-negative integer, got {warmup_steps}")
+    warmup_lr = float(getattr(args, "warmup_lr", 1e-2))
+    if not math.isfinite(warmup_lr) or warmup_lr <= 0:
+        raise ValueError(f"warmup_lr must be a positive finite number, got {warmup_lr}")
+
+    output_file = _result_path(args)
+    exists = output_file.exists()
+    if check_output and exists:
+        raise FileExistsError(
+            f"Refusing to overwrite existing result file {output_file}; "
+            "choose a different --output-dir or an explicit --output-file"
+        )
+    return {
+        "model": args.model,
+        "dataset": args.dataset,
+        "seq_lengths": seq_lengths,
+        "alphas": alphas,
+        "prune_ratios": prune_ratios,
+        "seed": seed,
+        "output_file": str(output_file),
+        "output_exists": exists,
+    }
+
+
+def parse_args(argv=None):
     parser = create_base_parser("Block-wise HVP approximation analysis")
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        default=argparse.SUPPRESS,
+        help="--output_dir 的连字符别名",
+    )
     add_scoring_args(parser)
-    # 本脚本特有参数
     parser.add_argument(
         "--seq_lengths",
         type=str,
         default=None,
-        help="逗号分隔 seq_lengths，用于扫描 γ（覆盖 --seq_length）",
+        help="逗号分隔 seq_lengths，用于扫描经验误差（覆盖 --seq_length）",
     )
     parser.add_argument("--prune_ratios", type=str, default="0.2,0.4", help="mask IoU 的剪枝率")
     parser.add_argument(
@@ -77,7 +229,7 @@ def parse_args():
     )
     parser.add_argument(
         "--warmup_steps",
-        type=int,
+        type=nonnegative_int,
         default=0,
         help="先做 N 步训练让梯度变大（模拟训练中途 checkpoint）",
     )
@@ -90,9 +242,81 @@ def parse_args():
         default=None,
         help="逗号分隔的 alpha 值，用于 α sweep（覆盖 --alpha）",
     )
-    # 覆盖默认值
+    parser.add_argument("--seed", type=nonnegative_int, default=42, help="实验随机种子")
+    parser.add_argument(
+        "--output_file",
+        "--output-file",
+        dest="output_file",
+        default=None,
+        help="显式结果文件路径；文件名仍必须包含 model 和 seed",
+    )
+    parser.add_argument(
+        "--dry-run",
+        "--dry_run",
+        dest="dry_run",
+        action="store_true",
+        help="只校验配置和输出计划，不加载模型、数据或 CUDA",
+    )
     parser.set_defaults(output_dir="experiments/results/blockwise_hvp_analysis", hvp_batches=2)
-    return parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def _source_git_state() -> dict[str, object]:
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+        text=True,
+    ).stdout
+    return {
+        "git_commit": commit,
+        "git_dirty": bool(status.strip()),
+    }
+
+
+def _resolve_device_name(device: str) -> str:
+    if not device.startswith("cuda"):
+        return device
+    return str(torch.cuda.get_device_name(torch.device(device)))
+
+
+def _model_dtype(model) -> str | list[str]:
+    dtypes = sorted({str(parameter.dtype) for parameter in model.parameters()})
+    if not dtypes:
+        return "unknown"
+    return dtypes[0] if len(dtypes) == 1 else dtypes
+
+
+def _cleanup_device(device: str) -> None:
+    if device.startswith("cuda"):
+        torch.cuda.empty_cache()
+    gc.collect()
+
+
+def _measure_hvp(
+    device: str,
+    hvp_fn: Callable[[], Mapping[str, torch.Tensor]],
+) -> tuple[Mapping[str, torch.Tensor], dict[str, float | int]]:
+    """Measure one HVP path after synchronizing and resetting device statistics."""
+    synchronize_device(device)
+    reset_peak_memory(device)
+    started = time.perf_counter()
+    hvp_result = hvp_fn()
+    synchronize_device(device)
+    measured_peak = peak_memory_bytes(device)
+    measurement = {
+        "wall_seconds": time.perf_counter() - started,
+        "peak_gpu_memory_bytes": measured_peak if device.startswith("cuda") else 0,
+    }
+    return hvp_result, measurement
 
 
 def _make_loss_fn(task_type):
@@ -230,13 +454,20 @@ def run_single_comparison(
     device,
     normalize=False,
     abs_combine=False,
+    seed=42,
+    checkpoint=None,
+    created_at=None,
+    device_name=None,
+    dtype=None,
+    source_git=None,
 ):
-    """对一个 (model, seq_length) 组合运行 global vs block-wise 对比。
+    """对一个 (model, seq_length) 组合运行经验性 global vs block-wise 对比。
 
     关键设计：梯度仅计算一次（共享），两种模式仅 HVP 部分不同，
     从而精确隔离 block-diagonal 近似造成的差异。
     """
 
+    set_seed(seed)
     gamma_info = compute_gamma(model_name, seq_length)
     print(f"\n{'='*60}")
     print(f"Model: {model_name}, seq_length={seq_length}, γ={gamma_info['gamma_pct']:.2f}%")
@@ -246,9 +477,13 @@ def run_single_comparison(
     print(f"[Data] 加载数据 seq_length={seq_length}...")
     train_loader, _, task_type = get_data_loaders(model_name, dataset_name, batch_size, seq_length)
     cached_train = cache_batches(train_loader, hvp_batches + 2, task_type)
+    if not cached_train:
+        raise RuntimeError("The data loader returned no batches for HVP analysis")
+    cached_hvp = cached_train[:hvp_batches]
+    cached_batch_hash = batch_hash(cached_hvp)
 
     loss_fn = _make_loss_fn(task_type)
-    gpu_batches = [{k: v.to(device) for k, v in b.items()} for b in cached_train[:hvp_batches]]
+    gpu_batches = [{k: v.to(device) for k, v in b.items()} for b in cached_hvp]
 
     # 收集 prunable 参数名集合（直接引用 model 参数，不做冗余拷贝）
     # model 始终在 CPU 上，deepcopy 才上 GPU，原始参数数据稳定
@@ -261,38 +496,39 @@ def run_single_comparison(
     # 转 CPU
     shared_grad = {k: v.cpu() for k, v in shared_grad.items()}
     del model_work
-    torch.cuda.empty_cache()
-    gc.collect()
+    _cleanup_device(device)
 
     # ---- Global HVP ----
     print("\n[1/2] 计算 Global HVP...")
+    set_seed(seed)
     model_g = copy.deepcopy(model).to(device)
-    t0 = time.time()
-    hvp_global = _compute_full_hvp(model_g, loss_fn, gpu_batches, set(prunable_w), hvp_batches)
-    time_global = time.time() - t0
+    hvp_global, global_measurement = _measure_hvp(
+        device,
+        lambda: _compute_full_hvp(model_g, loss_fn, gpu_batches, set(prunable_w), hvp_batches),
+    )
     scores_global, so_global = _scores_from_grad_hvp(
         shared_grad, hvp_global, prunable_w, alpha, normalize, abs_combine
     )
-    print(f"  Global HVP time: {time_global:.1f}s")
+    print(f"  Global HVP time: {global_measurement['wall_seconds']:.1f}s")
     del model_g, hvp_global
-    torch.cuda.empty_cache()
-    gc.collect()
+    _cleanup_device(device)
 
     # ---- Block-wise HVP ----
     print("\n[2/2] 计算 Block-wise HVP...")
+    set_seed(seed)
     model_b = copy.deepcopy(model).to(device)
-    t0 = time.time()
-    hvp_block = _compute_block_hvp(
-        model_b, loss_fn, gpu_batches, model_family, set(prunable_w), hvp_batches
+    hvp_block, block_measurement = _measure_hvp(
+        device,
+        lambda: _compute_block_hvp(
+            model_b, loss_fn, gpu_batches, model_family, set(prunable_w), hvp_batches
+        ),
     )
-    time_block = time.time() - t0
     scores_block, so_block = _scores_from_grad_hvp(
         shared_grad, hvp_block, prunable_w, alpha, normalize, abs_combine
     )
-    print(f"  Block-wise HVP time: {time_block:.1f}s")
+    print(f"  Block-wise HVP time: {block_measurement['wall_seconds']:.1f}s")
     del model_b, hvp_block
-    torch.cuda.empty_cache()
-    gc.collect()
+    _cleanup_device(device)
 
     total_params = sum(score.numel() for score in scores_global.values())
     print(f"\n[Compare] {len(scores_global)} layers, {total_params:,} params")
@@ -321,12 +557,34 @@ def run_single_comparison(
     print(f"Spearman ρ:         {correlations_so['__global__']['spearman']:.6f}")
     print(f"Pearson r:          {correlations_so['__global__']['pearson']:.6f}")
 
+    resolved_device_name = device_name if device_name is not None else _resolve_device_name(device)
+    resolved_dtype = dtype if dtype is not None else _model_dtype(model)
+    resolved_source_git = source_git if source_git is not None else _source_git_state()
     result = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": created_at or _utc_timestamp(),
+        "seed": seed,
         "model": model_name,
+        "dataset": dataset_name,
+        "checkpoint": checkpoint,
+        "device": device,
+        "device_name": resolved_device_name,
+        "torch_version": torch.__version__,
+        "dtype": resolved_dtype,
+        "hvp_batches": hvp_batches,
+        "batch_hash": cached_batch_hash,
+        "source": resolved_source_git,
+        "measurement_order": list(MEASUREMENT_ORDER),
         "seq_length": seq_length,
         "gamma": gamma_info,
-        "time_global_s": time_global,
-        "time_block_s": time_block,
+        "paths": {
+            "global": global_measurement,
+            "block": block_measurement,
+        },
+        "time_global_s": global_measurement["wall_seconds"],
+        "time_block_s": block_measurement["wall_seconds"],
+        "peak_gpu_memory_bytes_global": global_measurement["peak_gpu_memory_bytes"],
+        "peak_gpu_memory_bytes_block": block_measurement["peak_gpu_memory_bytes"],
         # 完整 score 度量
         "global_l2_error": l2_errors["__global__"],
         "global_spearman": correlations["__global__"]["spearman"],
@@ -348,20 +606,19 @@ def run_single_comparison(
 
 def main():
     args = parse_args()
+    plan = validate_args(args)
+    if args.dry_run:
+        print("[Dry-run] 配置有效，未加载模型、数据或 CUDA")
+        print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
+        return
 
-    # 解析 seq_lengths
-    if args.seq_lengths:
-        seq_lengths = [int(s) for s in args.seq_lengths.split(",")]
-    else:
-        seq_lengths = [args.seq_length]
-
-    prune_ratios = [float(r) for r in args.prune_ratios.split(",")]
-
-    # 解析 alpha_sweep
-    if args.alpha_sweep:
-        alphas = [float(a) for a in args.alpha_sweep.split(",")]
-    else:
-        alphas = [args.alpha]
+    seq_lengths = plan["seq_lengths"]
+    alphas = plan["alphas"]
+    prune_ratios = plan["prune_ratios"]
+    result_file = Path(plan["output_file"])
+    set_seed(args.seed)
+    created_at = _utc_timestamp()
+    source_git = _source_git_state()
 
     # 加载模型（仅一次，放 CPU）
     print(f"[Init] 加载模型 {args.model} (CPU)...")
@@ -373,6 +630,7 @@ def main():
 
     # Warmup: 做几步训练让梯度变大，模拟训练中途 checkpoint
     if args.warmup_steps > 0:
+        set_seed(args.seed)
         print(f"  [Warmup] 做 {args.warmup_steps} 步训练...")
         _warmup_model = model.to(args.device)
         _wt_loader, _, _wt_type = get_data_loaders(
@@ -391,8 +649,7 @@ def main():
                 print(f"    step {step_i+1}/{args.warmup_steps}, loss={_loss.item():.4f}")
         model = _warmup_model.cpu()
         del _wt_batches, _opt
-        torch.cuda.empty_cache()
-        gc.collect()
+        _cleanup_device(args.device)
         print(f"  [Warmup] 完成")
 
     if args.normalize:
@@ -402,10 +659,9 @@ def main():
     if len(alphas) > 1:
         print(f"  [α sweep] alphas = {alphas}")
 
-    # 增量保存：每组 (seq_len, alpha) 完成后立即写盘，防止 OOM 丢数据
-    os.makedirs(args.output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    result_file = os.path.join(args.output_dir, f"{timestamp}_{args.model}_blockwise_analysis.json")
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+    resolved_device_name = _resolve_device_name(args.device)
+    resolved_dtype = _model_dtype(model)
 
     all_results = []
     for seq_len in seq_lengths:
@@ -423,15 +679,42 @@ def main():
                 device=args.device,
                 normalize=args.normalize,
                 abs_combine=args.abs_combine,
+                seed=args.seed,
+                checkpoint=args.checkpoint,
+                created_at=created_at,
+                device_name=resolved_device_name,
+                dtype=resolved_dtype,
+                source_git=source_git,
             )
             result["alpha"] = alpha
             result["normalize"] = args.normalize
             result["abs_combine"] = args.abs_combine
             all_results.append(result)
 
-            # 每组完成后立即保存
-            write_json(Path(result_file), {"results": all_results})
-            print(f"  [已保存] {len(all_results)} 组结果 → {result_file}")
+    if result_file.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing result file {result_file}; "
+            "choose a different --output-dir or an explicit --output-file"
+        )
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "created_at": created_at,
+        "seed": args.seed,
+        "model": args.model,
+        "dataset": args.dataset,
+        "checkpoint": args.checkpoint,
+        "device": args.device,
+        "device_name": resolved_device_name,
+        "torch_version": torch.__version__,
+        "dtype": resolved_dtype,
+        "hvp_batches": args.hvp_batches,
+        "batch_hashes": [result["batch_hash"] for result in all_results],
+        "source": source_git,
+        "measurement_order": list(MEASUREMENT_ORDER),
+        "results": all_results,
+    }
+    write_json(result_file, payload)
+    print(f"  [已保存] {len(all_results)} 组结果 → {result_file}")
 
     print(f"\n[Done] 全部 {len(all_results)} 组结果已保存至 {result_file}")
 

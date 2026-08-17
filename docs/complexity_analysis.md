@@ -34,9 +34,11 @@ fixed-size score chunks and does not concatenate all eligible scores.
 `inshrinkerator_style` adds first-order scoring over `B` batches, plus the same
 linear exact global selection per recovery.
 
-`dacp` adds blockwise Taylor/HVP scoring over `B` batches, per-layer moment
-collection, Weibull allocation, and exact per-layer masks. Allocation metadata
-records the exact prune target and layer rates.
+`dacp` adds blockwise Taylor/HVP scoring over `L` structural blocks and `B`
+scoring batches, per-layer moment collection, Weibull allocation, and exact
+per-layer masks. Allocation metadata records the exact prune target and layer
+rates. The block scorer's work is therefore accounted for as `L * B`; wall time
+must be measured on the target device rather than inferred from this count.
 
 Ignoring model-dependent forward/backward constants, one job therefore has the
 following accounting shape:
