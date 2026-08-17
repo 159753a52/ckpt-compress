@@ -1,9 +1,11 @@
 import hashlib
+import io
 import json
 import math
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -206,6 +208,150 @@ class TestPaperExperiments(unittest.TestCase):
             manifest.claim_gates["full_end_to_end_baseline_claim"]["enabled"],
             False,
         )
+
+    def test_ablation_contracts_are_native_and_serializable(self) -> None:
+        names = [
+            "magnitude_uniform",
+            "magnitude_weibull",
+            "taylor_uniform",
+            "dacp",
+            "taylor_exact_global",
+        ]
+        contracts = resolve_method_contracts(names)
+
+        self.assertEqual([contract.name for contract in contracts], names)
+        self.assertEqual(
+            [contract.owner for contract in contracts[:3]],
+            ["dacp_ablation"] * 3,
+        )
+        self.assertEqual(contracts[4].owner, "dacp_ablation")
+        self.assertEqual([contract.fidelity for contract in contracts[:3]], ["native"] * 3)
+        self.assertEqual(contracts[4].fidelity, "native")
+        serialized = [contract.to_result_dict() for contract in contracts]
+        self.assertEqual([item["name"] for item in serialized], names)
+        self.assertEqual(resolve_method_contracts(names), contracts)
+
+    def test_ablation_manifest_is_independent_and_exact(self) -> None:
+        manifest = load_paper_manifest(ROOT / "experiments/configs/paper_ablation_2x2.yaml")
+
+        self.assertEqual(
+            [contract.name for contract in manifest.methods],
+            [
+                "magnitude_uniform",
+                "magnitude_weibull",
+                "taylor_uniform",
+                "dacp",
+                "taylor_exact_global",
+            ],
+        )
+        self.assertEqual(manifest.claim_gates, {})
+        self.assertEqual(
+            [workload.name for workload in manifest.workloads], ["gpt2_medium_wikitext103"]
+        )
+        workload = manifest.workloads[0]
+        self.assertEqual(workload.prune_ratios, (0.5,))
+        self.assertEqual(workload.recovery_counts, (1,))
+        self.assertEqual(workload.seeds, (42,))
+
+    def test_ablation_dry_run_honors_manifest_and_method_subset(self) -> None:
+        output = io.StringIO()
+        manifest_path = ROOT / "experiments/configs/paper_ablation_2x2.yaml"
+        with redirect_stdout(output):
+            paper_script.main(
+                [
+                    "--manifest",
+                    str(manifest_path),
+                    "--methods",
+                    "taylor_uniform,dacp",
+                    "--dry-run",
+                ]
+            )
+
+        plan = json.loads(output.getvalue())
+        self.assertEqual(
+            [method["name"] for method in plan["methods"]],
+            ["taylor_uniform", "dacp"],
+        )
+        self.assertEqual(len(plan["jobs"]), 1)
+        self.assertEqual(plan["jobs"][0]["name"], "gpt2_medium_wikitext103")
+        self.assertEqual(plan["jobs"][0]["prune_ratio"], 0.5)
+        self.assertEqual(plan["jobs"][0]["recovery_count"], 1)
+        self.assertEqual(plan["jobs"][0]["seeds"], [42])
+
+    def test_ablation_dispatch_paths_record_exact_targets(self) -> None:
+        layers = [["a", "b"], ["c"]]
+        delta = {
+            "a": torch.tensor([1.0, 0.2]),
+            "b": torch.tensor([0.3]),
+            "c": torch.tensor([0.4]),
+        }
+        taylor_scores = {
+            "a": torch.tensor([0.4, 0.1]),
+            "b": torch.tensor([0.2]),
+            "c": torch.tensor([0.3]),
+        }
+        weibull_masks = {
+            "a": torch.tensor([True, False]),
+            "b": torch.tensor([True]),
+            "c": torch.tensor([True]),
+        }
+        weibull_allocation = {"target_pruned": 1, "layer_sizes": [3, 1]}
+        expected = {
+            "magnitude_uniform": ("residual_magnitude", "uniform_per_layer"),
+            "magnitude_weibull": ("residual_magnitude", "weibull_moment"),
+            "taylor_uniform": ("taylor_hvp", "uniform_per_layer"),
+            "dacp": ("taylor_hvp", "weibull_moment"),
+            "taylor_exact_global": ("taylor_hvp", "exact_global"),
+        }
+        with (
+            mock.patch.object(
+                paper_runner,
+                "compute_block_taylor_scores",
+                return_value=(taylor_scores, {"score_kind": "taylor_hvp", "hvp_batches": 1}),
+            ) as score,
+            mock.patch.object(
+                paper_runner,
+                "build_weibull_mask",
+                return_value=(weibull_masks, weibull_allocation),
+            ) as weibull,
+        ):
+            for method, (score_kind, allocation_kind) in expected.items():
+                with self.subTest(method=method):
+                    masks, metadata = paper_runner._score_and_mask(
+                        resolve_method_contracts([method])[0],
+                        TinyPaperModel(),
+                        [{"input_ids": torch.tensor([[0]]), "labels": torch.tensor([[0]])}],
+                        layers,
+                        layers,
+                        delta,
+                        prune_ratio=0.25,
+                        max_layer_ratio=0.95,
+                        task_type="lm",
+                        model_family="gpt2",
+                        device="cpu",
+                        distributed_moments=False,
+                    )
+                    self.assertEqual(metadata["score_kind"], score_kind)
+                    self.assertEqual(metadata["allocation_kind"], allocation_kind)
+                    self.assertEqual(metadata["target_pruned"], 1)
+                    self.assertEqual(metadata["layer_sizes"], [3, 1])
+                    self.assertEqual(
+                        sum(int((~mask).sum().item()) for mask in masks.values()),
+                        1,
+                    )
+
+        self.assertEqual(score.call_count, 3)
+        self.assertEqual(weibull.call_count, 2)
+
+    def test_ablation_owner_does_not_satisfy_main_style_claim_gate(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing baselines"):
+            validate_claim_gate(
+                resolve_method_contracts(["magnitude_uniform"]),
+                {
+                    "baseline_owners": ["excp", "inshrinkerator"],
+                    "required_baseline_fidelity": "style",
+                },
+            )
 
     def test_full_claim_rejects_style_adapters(self) -> None:
         contracts = resolve_method_contracts(["excp_style", "inshrinkerator_style"])
@@ -705,7 +851,17 @@ class TestPaperExperiments(unittest.TestCase):
         template = TinyPaperLanguageModel()
         optimizer_state = torch.optim.AdamW(template.parameters(), lr=1e-3).state_dict()
 
-        contracts = resolve_method_contracts(["excp_style", "inshrinkerator_style", "dacp"])
+        contracts = resolve_method_contracts(
+            [
+                "excp_style",
+                "inshrinkerator_style",
+                "magnitude_uniform",
+                "magnitude_weibull",
+                "taylor_uniform",
+                "dacp",
+                "taylor_exact_global",
+            ]
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             context = paper_script.WorkloadContext(
@@ -748,9 +904,21 @@ class TestPaperExperiments(unittest.TestCase):
                     )
 
                     self.assertEqual(len(result["cycles"]), 1)
-                    mask = result["cycles"][0]["compression"]["mask"]
+                    compression = result["cycles"][0]["compression"]
+                    for key in ("score_kind", "allocation_kind", "target_pruned", "layer_sizes"):
+                        self.assertIn(key, compression)
+                    self.assertEqual(compression["target_pruned"], 8)
+                    self.assertEqual(compression["layer_sizes"], [16])
+                    mask = compression["mask"]
                     self.assertEqual(mask["eligible_parameters"], 16)
                     self.assertEqual(mask["pruned"], 8)
+                    self.assertEqual(mask["layer_rates"], [0.5])
+                    if contract.name in {"magnitude_weibull", "dacp"}:
+                        allocation = compression["allocation"]
+                        self.assertIn("weibull_fits", allocation)
+                        self.assertIn("weibull_layer_counts", allocation)
+                        self.assertIn("weibull", allocation)
+                        self.assertIn("moment_reduction", allocation["weibull_fits"][0])
                     self.assertTrue(math.isfinite(result["final"]["perplexity"]))
                     store.append_result(result)
 

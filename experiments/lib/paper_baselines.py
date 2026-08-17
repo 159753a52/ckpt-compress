@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Mapping, Sequence
 
-from experiments.lib.residual_protocol import NO_COMPRESSION_METHOD, TAYLOR_WEIBULL_MOM_METHOD
+from experiments.lib.residual_protocol import (
+    NO_COMPRESSION_METHOD,
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +65,34 @@ METHOD_CONTRACTS = {
             "selection, transferred to the same residual sparsity and recovery "
             "protocol; excludes the full partition, search, and encoding pipeline."
         ),
+    ),
+    "magnitude_uniform": MethodContract(
+        name="magnitude_uniform",
+        owner="dacp_ablation",
+        fidelity="native",
+        internal_method=RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+        description="Residual magnitude scoring with uniform per-layer allocation.",
+    ),
+    "magnitude_weibull": MethodContract(
+        name="magnitude_weibull",
+        owner="dacp_ablation",
+        fidelity="native",
+        internal_method=RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+        description="Residual magnitude scoring with Weibull moment allocation.",
+    ),
+    "taylor_uniform": MethodContract(
+        name="taylor_uniform",
+        owner="dacp_ablation",
+        fidelity="native",
+        internal_method=TAYLOR_UNIFORM_METHOD,
+        description="Taylor HVP scoring with uniform per-layer allocation.",
+    ),
+    "taylor_exact_global": MethodContract(
+        name="taylor_exact_global",
+        owner="dacp_ablation",
+        fidelity="native",
+        internal_method=TAYLOR_EXACT_GLOBAL_METHOD,
+        description="Taylor HVP scoring with exact global top-k allocation oracle.",
     ),
 }
 

@@ -13,8 +13,23 @@ import torch
 
 from experiments.lib.paper_baselines import MethodContract
 from experiments.lib.paper_manifest import PaperWorkload, paper_job_id
-from experiments.lib.residual_masks import global_mask, layer_rates, mask_metrics, restore_with_mask
+from experiments.lib.residual_budget import uniform_counts
+from experiments.lib.residual_masks import (
+    global_mask,
+    layer_masks,
+    layer_rates,
+    mask_metrics,
+    restore_with_mask,
+)
 from experiments.lib.residual_methods import build_weibull_mask
+from experiments.lib.residual_protocol import (
+    NO_COMPRESSION_METHOD,
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+)
 from experiments.lib.residual_runtime import empty_device_cache, evaluate_task
 from experiments.lib.residual_scoring import (
     compute_block_first_order_scores,
@@ -130,9 +145,64 @@ def _build_global_mask(
     masks = global_mask(names, scores, target)
     return masks, {
         "allocation": "exact_global",
+        "allocation_kind": "exact_global",
+        "eligible_parameters": sum(sizes),
+        "target_eligible_sparsity": prune_ratio,
         "layer_sizes": sizes,
         "target_pruned": target,
     }
+
+
+def _build_uniform_mask(
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+    prune_ratio: float,
+) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
+    layer_sizes = [sum(scores[name].numel() for name in layer) for layer in layers]
+    eligible_parameters = sum(layer_sizes)
+    target = math.floor(prune_ratio * eligible_parameters)
+    counts = uniform_counts(layer_sizes, target, prune_ratio)
+    masks = layer_masks(layers, scores, counts)
+    return masks, {
+        "allocation": "uniform_per_layer",
+        "allocation_kind": "uniform_per_layer",
+        "eligible_parameters": eligible_parameters,
+        "target_eligible_sparsity": prune_ratio,
+        "layer_sizes": layer_sizes,
+        "target_pruned": target,
+        "uniform_layer_counts": counts,
+    }
+
+
+def _compression_metadata(
+    score_kind: str,
+    allocation_kind: str,
+    allocation: Mapping[str, object],
+    layers: Sequence[Sequence[str]],
+    scores: Mapping[str, torch.Tensor],
+    prune_ratio: float,
+    *,
+    scoring: Mapping[str, object] | None = None,
+    **extra: object,
+) -> dict[str, object]:
+    """Normalize allocation evidence while retaining method-specific details."""
+    default_layer_sizes = [sum(scores[name].numel() for name in layer) for layer in layers]
+    default_target = math.floor(prune_ratio * sum(default_layer_sizes))
+    normalized_allocation = dict(allocation)
+    normalized_allocation.setdefault("allocation_kind", allocation_kind)
+    normalized_allocation.setdefault("layer_sizes", default_layer_sizes)
+    normalized_allocation.setdefault("target_pruned", default_target)
+    result: dict[str, object] = {
+        "score_kind": score_kind,
+        "allocation_kind": allocation_kind,
+        "target_pruned": normalized_allocation["target_pruned"],
+        "layer_sizes": normalized_allocation["layer_sizes"],
+        "allocation": normalized_allocation,
+    }
+    if scoring is not None:
+        result["scoring"] = scoring
+    result.update(extra)
+    return result
 
 
 def _score_and_mask(
@@ -149,15 +219,20 @@ def _score_and_mask(
     device: str,
     distributed_moments: bool,
 ) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
-    if contract.name == "excp_style":
+    internal_method = contract.internal_method
+    if internal_method == "residual_magnitude_exact_global":
         magnitude = {name: value.abs() for name, value in delta.items()}
         masks, allocation = _build_global_mask(layers, magnitude, prune_ratio)
-        return masks, {
-            "score_kind": "residual_magnitude",
-            "scoring_batches": 0,
-            "allocation": allocation,
-        }
-    if contract.name == "inshrinkerator_style":
+        return masks, _compression_metadata(
+            "residual_magnitude",
+            "exact_global",
+            allocation,
+            layers,
+            magnitude,
+            prune_ratio,
+            scoring_batches=0,
+        )
+    if internal_method == "first_order_exact_global":
         named_parameters = dict(model.named_parameters())
         current_weights = {name: named_parameters[name].detach() for name in delta}
         scores, scoring = compute_block_first_order_scores(
@@ -171,13 +246,55 @@ def _score_and_mask(
             block_parameter_names=blocks,
         )
         masks, allocation = _build_global_mask(layers, scores, prune_ratio)
-        return masks, {
-            "scoring": scoring,
-            "allocation": allocation,
-            "score_probe": "current_full_weight",
-            "application_scope": "matched_checkpoint_residual",
-        }
-    if contract.name == "dacp":
+        return masks, _compression_metadata(
+            "first_order",
+            "exact_global",
+            allocation,
+            layers,
+            scores,
+            prune_ratio,
+            scoring=scoring,
+            score_probe="current_full_weight",
+            application_scope="matched_checkpoint_residual",
+        )
+
+    if internal_method in {
+        RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+        RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+    }:
+        scores = {name: value.abs() for name, value in delta.items()}
+        if internal_method == RESIDUAL_MAGNITUDE_UNIFORM_METHOD:
+            masks, allocation = _build_uniform_mask(layers, scores, prune_ratio)
+            allocation_kind = "uniform_per_layer"
+        else:
+            masks, allocation = build_weibull_mask(
+                layers,
+                scores,
+                prune_ratio,
+                max_layer_ratio=max_layer_ratio,
+                distributed_moments=distributed_moments,
+            )
+            allocation = {
+                **allocation,
+                "allocation": "weibull_moment",
+                "allocation_kind": "weibull_moment",
+            }
+            allocation_kind = "weibull_moment"
+        return masks, _compression_metadata(
+            "residual_magnitude",
+            allocation_kind,
+            allocation,
+            layers,
+            scores,
+            prune_ratio,
+            scoring_batches=0,
+        )
+
+    if internal_method in {
+        TAYLOR_UNIFORM_METHOD,
+        TAYLOR_WEIBULL_MOM_METHOD,
+        TAYLOR_EXACT_GLOBAL_METHOD,
+    }:
         scores, scoring = compute_block_taylor_scores(
             model,
             scoring_batches,
@@ -189,18 +306,36 @@ def _score_and_mask(
             model_family=model_family,
             block_parameter_names=blocks,
         )
-        masks, allocation = build_weibull_mask(
+        if internal_method == TAYLOR_UNIFORM_METHOD:
+            masks, allocation = _build_uniform_mask(layers, scores, prune_ratio)
+            allocation_kind = "uniform_per_layer"
+        elif internal_method == TAYLOR_WEIBULL_MOM_METHOD:
+            masks, allocation = build_weibull_mask(
+                layers,
+                scores,
+                prune_ratio,
+                max_layer_ratio=max_layer_ratio,
+                distributed_moments=distributed_moments,
+            )
+            allocation = {
+                **allocation,
+                "allocation": "weibull_moment",
+                "allocation_kind": "weibull_moment",
+            }
+            allocation_kind = "weibull_moment"
+        else:
+            masks, allocation = _build_global_mask(layers, scores, prune_ratio)
+            allocation_kind = "exact_global"
+        return masks, _compression_metadata(
+            "taylor_hvp",
+            allocation_kind,
+            allocation,
             layers,
             scores,
             prune_ratio,
-            max_layer_ratio=max_layer_ratio,
-            distributed_moments=distributed_moments,
+            scoring=scoring,
         )
-        return masks, {
-            "scoring": scoring,
-            "allocation": allocation,
-        }
-    raise ValueError(f"Method {contract.name} does not define a compression mask")
+    raise ValueError(f"Internal method {internal_method} does not define a compression mask")
 
 
 def run_method_trajectory(
@@ -264,7 +399,7 @@ def run_method_trajectory(
                 "training": training,
                 "before_recovery": before,
             }
-            if contract.name == "no_compression":
+            if contract.internal_method == NO_COMPRESSION_METHOD:
                 reconstructed_state = current_state
                 cycle["after_recovery"] = before
                 cycle["compression"] = None

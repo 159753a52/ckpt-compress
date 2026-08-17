@@ -94,6 +94,45 @@ its before/after metrics exactly. Only complete, validated `(seed, method)`
 records are skipped. A changed source tree, plan, checkpoint, batch plan, or
 result record fails instead of mixing incompatible evidence.
 
+## Single-seed 2x2 ablation
+
+`paper_ablation_2x2.yaml` is an independent manifest for the GPT-2 Medium,
+50% pruning, `K=1`, seed `42` gate. Its five methods form a 2x2 scoring and
+allocation comparison, with `dacp` as the Taylor-HVP plus Weibull-moment cell
+and `taylor_exact_global` as an exact global top-k oracle:
+
+| Method | Score | Allocation |
+|---|---|---|
+| `magnitude_uniform` | residual magnitude | uniform per layer |
+| `magnitude_weibull` | residual magnitude | Weibull moments |
+| `taylor_uniform` | Taylor HVP | uniform per layer |
+| `dacp` | Taylor HVP | Weibull moments |
+| `taylor_exact_global` | Taylor HVP | exact global top-k oracle |
+
+This isolates scoring and allocation choices only. One seed does not provide
+statistical significance and must not be presented as a significance claim.
+The manifest is intentionally separate from the default five-workload main
+table and has no baseline claim gate to bypass the main-table style-baseline
+gate.
+
+Inspect the exact ablation plan without loading a checkpoint:
+
+```bash
+python experiments/scripts/run_paper_experiments.py \
+  --manifest experiments/configs/paper_ablation_2x2.yaml \
+  --methods magnitude_uniform,magnitude_weibull,taylor_uniform,dacp,taylor_exact_global \
+  --dry-run
+```
+
+Run the fixed seed on the GPU only after the dry-run and input checks pass:
+
+```bash
+python experiments/scripts/run_paper_experiments.py \
+  --manifest experiments/configs/paper_ablation_2x2.yaml \
+  --device cuda \
+  --output-dir results/paper_runs/ablation_2x2
+```
+
 When all selected jobs for a workload are already complete, resume re-hashes
 the checkpoint before skipping model and dataset loading. If a workload has any
 pending job, the shared workload context performs that check once while loading

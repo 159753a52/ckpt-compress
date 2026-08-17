@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 
+
 RESIDUAL_MAGNITUDE_UNIFORM_METHOD = "residual_magnitude_uniform"
+RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD = "residual_magnitude_weibull_mom"
 FIRST_ORDER_UNIFORM_METHOD = "first_order_uniform"
 SECOND_ORDER_UNIFORM_METHOD = "second_order_uniform"
 TAYLOR_UNIFORM_METHOD = "taylor_uniform"
@@ -55,6 +57,7 @@ __all__ = [
     "NO_COMPRESSION_METHOD",
     "QUANTILE_METHOD_PREFIX",
     "RESIDUAL_MAGNITUDE_UNIFORM_METHOD",
+    "RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD",
     "SECOND_ORDER_UNIFORM_METHOD",
     "SHORT_GATE_METHODS",
     "SPECTRAL_METHOD_PREFIX",

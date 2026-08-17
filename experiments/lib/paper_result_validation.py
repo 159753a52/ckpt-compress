@@ -11,6 +11,13 @@ from typing import Mapping, MutableMapping, Sequence
 
 from experiments.lib.data import get_task_type
 from experiments.lib.models import get_model_type
+from experiments.lib.residual_protocol import (
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_WEIBULL_MOM_METHOD,
+)
 
 SCHEMA_VERSION = 5
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -22,6 +29,21 @@ _WEIBULL_INVALID_REASONS = {
     "degenerate coefficient of variation",
     "shape root not bracketed",
     "invalid scale",
+}
+_CANONICAL_COMPRESSION_METHODS = {
+    "residual_magnitude_exact_global": ("residual_magnitude", "exact_global"),
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD: ("residual_magnitude", "uniform_per_layer"),
+    RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD: ("residual_magnitude", "weibull_moment"),
+    "first_order_exact_global": ("first_order", "exact_global"),
+    TAYLOR_UNIFORM_METHOD: ("taylor_hvp", "uniform_per_layer"),
+    TAYLOR_WEIBULL_MOM_METHOD: ("taylor_hvp", "weibull_moment"),
+    TAYLOR_EXACT_GLOBAL_METHOD: ("taylor_hvp", "exact_global"),
+}
+_REQUIRED_CANONICAL_COMPRESSION_METHODS = {
+    RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+    RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+    TAYLOR_UNIFORM_METHOD,
+    TAYLOR_EXACT_GLOBAL_METHOD,
 }
 
 
@@ -482,6 +504,7 @@ def _validate_compression_evidence(
     value: object,
     *,
     method: str,
+    internal_method: object,
     prune_ratio: float,
     expected_config: Mapping[str, object],
     context: str,
@@ -547,9 +570,19 @@ def _validate_compression_evidence(
         layer_prune_counts.append(count)
     if sum(layer_prune_counts) != pruned:
         raise ValueError(f"{context} layer rates do not add up to the pruned count")
+    _validate_canonical_compression_metadata(
+        value,
+        allocation,
+        internal_method=internal_method,
+        expected_pruned=expected_pruned,
+        eligible=eligible,
+        layer_sizes=layer_sizes,
+        context=context,
+    )
     _validate_method_evidence(
         value,
         method=method,
+        internal_method=internal_method,
         expected_config=expected_config,
         layer_count=len(layer_sizes),
         layer_prune_counts=layer_prune_counts,
@@ -598,10 +631,60 @@ def _validate_scoring_metadata(
         raise ValueError(f"{context} has incompatible scoring execution metadata")
 
 
+def _validate_canonical_compression_metadata(
+    value: Mapping[str, object],
+    allocation: Mapping[str, object],
+    *,
+    internal_method: object,
+    expected_pruned: int,
+    eligible: int,
+    layer_sizes: Sequence[int],
+    context: str,
+) -> None:
+    """Validate the compact score/allocation summary on new paper records."""
+    expected = _CANONICAL_COMPRESSION_METHODS.get(internal_method)
+    if expected is None:
+        return
+    required = (
+        "score_kind",
+        "allocation_kind",
+        "target_pruned",
+        "layer_sizes",
+    )
+    present = [key in value for key in required]
+    if internal_method in _REQUIRED_CANONICAL_COMPRESSION_METHODS and not all(present):
+        raise ValueError(f"{context} is missing canonical score/allocation metadata")
+    if not any(present):
+        return
+    if not all(present):
+        raise ValueError(f"{context} has incomplete canonical score/allocation metadata")
+    expected_score_kind, expected_allocation_kind = expected
+    if value.get("score_kind") != expected_score_kind:
+        raise ValueError(f"{context} has incompatible score_kind")
+    if value.get("allocation_kind") != expected_allocation_kind:
+        raise ValueError(f"{context} has incompatible allocation_kind")
+    if value.get("target_pruned") != expected_pruned:
+        raise ValueError(f"{context} target_pruned does not match the exact prune budget")
+    if value.get("layer_sizes") != list(layer_sizes):
+        raise ValueError(f"{context} layer sizes do not match the mask")
+    if allocation.get("target_pruned") != expected_pruned:
+        raise ValueError(f"{context} allocation target_pruned does not match the summary")
+    if allocation.get("layer_sizes") != list(layer_sizes):
+        raise ValueError(f"{context} allocation layer sizes do not match the summary")
+    nested_kind = allocation.get("allocation_kind")
+    if nested_kind is not None and nested_kind != expected_allocation_kind:
+        raise ValueError(f"{context} allocation kind does not match the summary")
+    if value.get("score_kind") == "taylor_hvp":
+        scoring = value.get("scoring")
+        if isinstance(scoring, Mapping) and scoring.get("score_kind") != "taylor_hvp":
+            raise ValueError(f"{context} scoring evidence does not match score_kind")
+
+
 def _validate_method_evidence(
     compression: Mapping[str, object],
     *,
     method: str,
+    internal_method: object,
     expected_config: Mapping[str, object],
     layer_count: int,
     layer_prune_counts: Sequence[int],
@@ -634,7 +717,40 @@ def _validate_method_evidence(
             context=context,
         )
         return
-    if method == "dacp":
+    if internal_method in {
+        RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
+        TAYLOR_UNIFORM_METHOD,
+    }:
+        expected_score_kind = (
+            "residual_magnitude"
+            if internal_method == RESIDUAL_MAGNITUDE_UNIFORM_METHOD
+            else "taylor_hvp"
+        )
+        if (
+            compression.get("score_kind") != expected_score_kind
+            or compression.get("allocation_kind") != "uniform_per_layer"
+            or allocation.get("allocation") != "uniform_per_layer"
+            or allocation.get("uniform_layer_counts") != list(layer_prune_counts)
+            or allocation.get("target_eligible_sparsity") != expected_config.get("prune_ratio")
+        ):
+            raise ValueError(f"{context} has incompatible uniform allocation evidence")
+        if expected_score_kind == "residual_magnitude":
+            if compression.get("scoring_batches") != 0:
+                raise ValueError(f"{context} has incompatible magnitude scoring evidence")
+        else:
+            _validate_scoring_metadata(
+                compression.get("scoring"),
+                score_kind="taylor_hvp",
+                batch_key="hvp_batches",
+                expected_config=expected_config,
+                layer_count=layer_count,
+                context=context,
+            )
+        return
+    if internal_method in {
+        RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
+        TAYLOR_WEIBULL_MOM_METHOD,
+    }:
         fits = allocation.get("weibull_fits")
         counts = allocation.get("weibull_layer_counts")
         if (
@@ -669,6 +785,29 @@ def _validate_method_evidence(
             metadata=allocation["weibull"],
             context=context,
         )
+        if internal_method == RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD:
+            if (
+                compression.get("score_kind") != "residual_magnitude"
+                or compression.get("scoring_batches") != 0
+            ):
+                raise ValueError(f"{context} has incompatible magnitude scoring evidence")
+        else:
+            _validate_scoring_metadata(
+                compression.get("scoring"),
+                score_kind="taylor_hvp",
+                batch_key="hvp_batches",
+                expected_config=expected_config,
+                layer_count=layer_count,
+                context=context,
+            )
+        return
+    if internal_method == TAYLOR_EXACT_GLOBAL_METHOD:
+        if (
+            compression.get("score_kind") != "taylor_hvp"
+            or compression.get("allocation_kind") != "exact_global"
+            or allocation.get("allocation") != "exact_global"
+        ):
+            raise ValueError(f"{context} has incompatible Taylor exact-global evidence")
         _validate_scoring_metadata(
             compression.get("scoring"),
             score_kind="taylor_hvp",
@@ -952,6 +1091,7 @@ def _validate_complete_record(
             _validate_compression_evidence(
                 compression,
                 method=method,
+                internal_method=contract.get("internal_method"),
                 prune_ratio=prune_ratio,
                 expected_config=expected_config,
                 context=f"Compressed record {seed}/{method} cycle {index}",
