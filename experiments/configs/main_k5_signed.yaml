@@ -1,0 +1,30 @@
+schema_version: 1
+
+# Compounding-trend completion: K=5 compression-restoration cycles on the
+# primary LM workload (GPT-2 Medium, 50%), three seeds. Together with the
+# K=1 and K=3 suites this maps the per-recovery advantage growth curve.
+methods: [no_compression, excp_style, inshrinkerator_style, dacp, taylor_signed_benefit_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [5]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: gpt2_medium_wikitext103
+    model: gpt2-medium
+    dataset: wikitext103
+    checkpoint: checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt
+    data_dir: data/wikitext103
+    metric: perplexity
+    seeds: [42, 43, 44]
+    train_pool_batches: 148
