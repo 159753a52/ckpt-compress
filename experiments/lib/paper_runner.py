@@ -318,6 +318,7 @@ def _score_and_mask(
         if internal_method in {
             TAYLOR_SIGNED_UNIFORM_METHOD,
             TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+            TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD,
             TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
         }:
             aggregation = "signed_mean"
