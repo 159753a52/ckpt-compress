@@ -875,7 +875,8 @@ def _validate_method_evidence(
             if count < min(negative, capacity):
                 raise ValueError(
                     f"{context} layer {index} prunes fewer than its reserved "
-                    "negative-score coordinates"
+                    f"negative-score coordinates (count={count}, negative={negative}, "
+                    f"capacity={capacity}, size={size})"
                 )
             if count > capacity:
                 raise ValueError(f"{context} layer {index} exceeds its declared prune cap")
