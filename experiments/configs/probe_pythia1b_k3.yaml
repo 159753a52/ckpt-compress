@@ -1,0 +1,29 @@
+schema_version: 1
+
+# Scale-generalization point: Pythia-1B / Alpaca at the flagship scenario
+# (50% residual, K=3 compound recovery), three seeds.
+methods: [no_compression, excp_style, inshrinkerator_style, dacp, taylor_signed_benefit_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [3]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: pythia_1b_alpaca
+    model: pythia-1b
+    dataset: alpaca
+    checkpoint: checkpoints/pythia_1b_alpaca/checkpoint_step_1000.pt
+    data_dir: data/alpaca
+    metric: perplexity
+    seeds: [42, 43, 44]
+    train_pool_batches: 124
