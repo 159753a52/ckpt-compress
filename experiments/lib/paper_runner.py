@@ -311,13 +311,10 @@ def _score_and_mask(
             TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
         }:
             aggregation = "signed_mean"
-            score_kind = "taylor_hvp_signed"
         elif internal_method in {TAYLOR_MEANABS_UNIFORM_METHOD, TAYLOR_MEANABS_WEIBULL_MOM_METHOD}:
             aggregation = "mean_abs"
-            score_kind = "taylor_hvp_mean_abs"
         else:
             aggregation = "abs_mean"
-            score_kind = "taylor_hvp"
         scores, scoring = compute_block_taylor_scores(
             model,
             scoring_batches,
@@ -355,7 +352,7 @@ def _score_and_mask(
             masks, allocation = _build_global_mask(layers, scores, prune_ratio)
             allocation_kind = "exact_global"
         return masks, _compression_metadata(
-            score_kind,
+            scoring["score_kind"],
             allocation_kind,
             allocation,
             layers,

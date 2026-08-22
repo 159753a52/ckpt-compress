@@ -510,8 +510,13 @@ def compute_block_taylor_scores(
     else:
         output_scores = scores
 
+    aggregation_score_kinds = {
+        "abs_mean": "taylor_hvp",
+        "mean_abs": "taylor_hvp_mean_abs",
+        "signed_mean": "taylor_hvp_signed",
+    }
     return output_scores, {
-        "score_kind": "taylor_hvp",
+        "score_kind": aggregation_score_kinds[aggregation],
         "aggregation": aggregation,
         "total_seconds": time.perf_counter() - started,
         "layer_seconds": layer_seconds,
