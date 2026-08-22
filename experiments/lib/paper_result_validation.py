@@ -830,29 +830,39 @@ def _validate_method_evidence(
         fits = allocation.get("weibull_fits")
         counts = allocation.get("weibull_layer_counts")
         negative_counts = allocation.get("negative_counts")
+        problem = None
         if (
             compression.get("score_kind") != "taylor_hvp_signed"
             or compression.get("allocation_kind") != "signed_benefit_weibull"
             or allocation.get("allocation") != "signed_benefit_weibull"
-            or not isinstance(fits, list)
-            or len(fits) != layer_count
-            or not all(
-                isinstance(fit, Mapping) and isinstance(fit.get("valid"), bool)
-                for fit in fits
-            )
-            or not isinstance(counts, list)
-            or not all(isinstance(count, int) and not isinstance(count, bool) and count >= 0 for count in counts)
-            or counts != list(layer_prune_counts)
-            or sum(counts) != allocation.get("target_pruned")
-            or allocation.get("eligible_parameters") != sum(allocation["layer_sizes"])
-            or not isinstance(negative_counts, list)
-            or len(negative_counts) != layer_count
-            or not all(
-                isinstance(negative, int) and not isinstance(negative, bool) and negative >= 0
-                for negative in negative_counts
-            )
         ):
-            raise ValueError(f"{context} has invalid signed-benefit Weibull evidence")
+            problem = "score/allocation kind mismatch"
+        elif not isinstance(fits, list) or len(fits) != layer_count:
+            problem = f"weibull_fits length {type(fits)}, {len(fits) if isinstance(fits, list) else 'n/a'} != {layer_count}"
+        elif not all(
+            isinstance(fit, Mapping) and isinstance(fit.get("valid"), bool)
+            for fit in fits
+        ):
+            problem = "weibull_fits entries lack boolean valid flags"
+        elif not isinstance(counts, list) or not all(
+            isinstance(count, int) and not isinstance(count, bool) and count >= 0 for count in counts
+        ):
+            problem = "weibull_layer_counts is not a list of non-negative ints"
+        elif counts != list(layer_prune_counts):
+            problem = f"counts {counts[:4]}... != mask-derived {list(layer_prune_counts)[:4]}..."
+        elif sum(counts) != allocation.get("target_pruned"):
+            problem = f"count sum {sum(counts)} != target_pruned {allocation.get('target_pruned')}"
+        elif allocation.get("eligible_parameters") != sum(allocation["layer_sizes"]):
+            problem = "eligible_parameters does not match layer sizes"
+        elif not isinstance(negative_counts, list) or len(negative_counts) != layer_count:
+            problem = f"negative_counts length {len(negative_counts) if isinstance(negative_counts, list) else type(negative_counts)} != {layer_count}"
+        elif not all(
+            isinstance(negative, int) and not isinstance(negative, bool) and negative >= 0
+            for negative in negative_counts
+        ):
+            problem = "negative_counts is not a list of non-negative ints"
+        if problem is not None:
+            raise ValueError(f"{context} has invalid signed-benefit Weibull evidence: {problem}")
         layer_ratio = _finite_number(
             expected_config.get("max_layer_ratio"), context=f"{context}.config.max_layer_ratio"
         )
