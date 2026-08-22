@@ -1,0 +1,31 @@
+schema_version: 1
+
+# Classification-family evidence, measurement-corrected design:
+# BERT-Large / MNLI refit checkpoint (83.0% val acc), 50% residual, K=1.
+# Changes vs v1: eval_batches 100->500 (2000 examples, +-1.1pp noise) and
+# batch_size 2->8 for gradient/eval stability; all methods matched.
+methods: [no_compression, excp_style, inshrinkerator_style, dacp, taylor_signed_benefit_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [1]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 500
+  checkpoint_step: 3000
+  batch_size: 8
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: bert_large_mnli_refit
+    model: bert-large
+    dataset: mnli
+    checkpoint: checkpoints/bert_large_mnli_refit/checkpoint_step_3000.pt
+    data_dir: data
+    metric: accuracy
+    seeds: [45, 46]
+    train_pool_batches: 108
