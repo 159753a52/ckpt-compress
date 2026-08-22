@@ -92,10 +92,14 @@ def _validate_scoring_inputs(
                 f"Residual probe shape for {name!r} must match the parameter: "
                 f"{tuple(probe.shape)} != {tuple(parameter.shape)}"
             )
-        if parameter.device != torch.device(device):
+        requested_device = torch.device(device)
+        if parameter.device.type != requested_device.type or (
+            requested_device.index is not None
+            and parameter.device.index != requested_device.index
+        ):
             raise ValueError(
                 f"Parameter device for {name!r} must match scoring device: "
-                f"{parameter.device} != {torch.device(device)}"
+                f"{parameter.device} != {requested_device}"
             )
 
 
