@@ -1,0 +1,29 @@
+schema_version: 1
+
+# Cross-architecture test of the compounding advantage: Pythia-410M / Alpaca,
+# 50%, K=3, three seeds.
+methods: [no_compression, excp_style, inshrinkerator_style, dacp, taylor_signed_benefit_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [3]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: pythia_410m_alpaca
+    model: pythia-410m
+    dataset: alpaca
+    checkpoint: checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt
+    data_dir: data/alpaca
+    metric: perplexity
+    seeds: [42, 43, 44]
+    train_pool_batches: 124
