@@ -15,6 +15,11 @@ from experiments.lib.residual_protocol import (
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_MEANABS_UNIFORM_METHOD,
+    TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
+    TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_UNIFORM_METHOD,
+    TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_WEIBULL_MOM_METHOD,
 )
@@ -720,12 +725,16 @@ def _validate_method_evidence(
     if internal_method in {
         RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
         TAYLOR_UNIFORM_METHOD,
+        TAYLOR_SIGNED_UNIFORM_METHOD,
+        TAYLOR_MEANABS_UNIFORM_METHOD,
     }:
-        expected_score_kind = (
-            "residual_magnitude"
-            if internal_method == RESIDUAL_MAGNITUDE_UNIFORM_METHOD
-            else "taylor_hvp"
-        )
+        uniform_score_kinds = {
+            RESIDUAL_MAGNITUDE_UNIFORM_METHOD: "residual_magnitude",
+            TAYLOR_UNIFORM_METHOD: "taylor_hvp",
+            TAYLOR_SIGNED_UNIFORM_METHOD: "taylor_hvp_signed",
+            TAYLOR_MEANABS_UNIFORM_METHOD: "taylor_hvp_mean_abs",
+        }
+        expected_score_kind = uniform_score_kinds[internal_method]
         if (
             compression.get("score_kind") != expected_score_kind
             or compression.get("allocation_kind") != "uniform_per_layer"
@@ -740,7 +749,7 @@ def _validate_method_evidence(
         else:
             _validate_scoring_metadata(
                 compression.get("scoring"),
-                score_kind="taylor_hvp",
+                score_kind=expected_score_kind,
                 batch_key="hvp_batches",
                 expected_config=expected_config,
                 layer_count=layer_count,
@@ -750,7 +759,16 @@ def _validate_method_evidence(
     if internal_method in {
         RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
         TAYLOR_WEIBULL_MOM_METHOD,
+        TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+        TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     }:
+        weibull_score_kinds = {
+            RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD: "residual_magnitude",
+            TAYLOR_WEIBULL_MOM_METHOD: "taylor_hvp",
+            TAYLOR_SIGNED_WEIBULL_MOM_METHOD: "taylor_hvp_signed",
+            TAYLOR_MEANABS_WEIBULL_MOM_METHOD: "taylor_hvp_mean_abs",
+        }
+        expected_weibull_score_kind = weibull_score_kinds[internal_method]
         fits = allocation.get("weibull_fits")
         counts = allocation.get("weibull_layer_counts")
         if (
@@ -794,23 +812,28 @@ def _validate_method_evidence(
         else:
             _validate_scoring_metadata(
                 compression.get("scoring"),
-                score_kind="taylor_hvp",
+                score_kind=expected_weibull_score_kind,
                 batch_key="hvp_batches",
                 expected_config=expected_config,
                 layer_count=layer_count,
                 context=context,
             )
         return
-    if internal_method == TAYLOR_EXACT_GLOBAL_METHOD:
+    if internal_method in {TAYLOR_EXACT_GLOBAL_METHOD, TAYLOR_SIGNED_EXACT_GLOBAL_METHOD}:
+        expected_score_kind = (
+            "taylor_hvp_signed"
+            if internal_method == TAYLOR_SIGNED_EXACT_GLOBAL_METHOD
+            else "taylor_hvp"
+        )
         if (
-            compression.get("score_kind") != "taylor_hvp"
+            compression.get("score_kind") != expected_score_kind
             or compression.get("allocation_kind") != "exact_global"
             or allocation.get("allocation") != "exact_global"
         ):
             raise ValueError(f"{context} has incompatible Taylor exact-global evidence")
         _validate_scoring_metadata(
             compression.get("scoring"),
-            score_kind="taylor_hvp",
+            score_kind=expected_score_kind,
             batch_key="hvp_batches",
             expected_config=expected_config,
             layer_count=layer_count,
