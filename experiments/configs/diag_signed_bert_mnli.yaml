@@ -1,0 +1,30 @@
+schema_version: 1
+
+# Cross-architecture scenario probe for the optimized signed-score DACP:
+# BERT-Large / MNLI classification, 50%, K=1, three seeds.
+# Metric is accuracy (higher is better); paired wins flip accordingly.
+methods: [no_compression, excp_style, inshrinkerator_style, dacp, taylor_signed_uniform, taylor_signed_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [1]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: bert_large_mnli
+    model: bert-large
+    dataset: mnli
+    checkpoint: checkpoints/bert_large_mnli/checkpoint_step_1000.pt
+    data_dir: data
+    metric: accuracy
+    seeds: [42, 43, 44]
+    train_pool_batches: 108
