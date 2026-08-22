@@ -335,9 +335,22 @@ def _score_and_mask(
             TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
             TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
         }:
+            fit_scores = scores
+            score_shift = None
+            if aggregation == "signed_mean":
+                # Signed contributions are not non-negative; shift each layer
+                # by its minimum so moment fitting stays valid. A positive
+                # per-layer shift preserves within-layer ascending order, so
+                # mask selection still ranks by the original signed scores.
+                fit_scores = {}
+                for layer_names in layers:
+                    layer_min = min(scores[name].min().item() for name in layer_names)
+                    for name in layer_names:
+                        fit_scores[name] = scores[name] - layer_min
+                score_shift = "per_layer_min"
             masks, allocation = build_weibull_mask(
                 layers,
-                scores,
+                fit_scores,
                 prune_ratio,
                 max_layer_ratio=max_layer_ratio,
                 distributed_moments=distributed_moments,
@@ -347,6 +360,8 @@ def _score_and_mask(
                 "allocation": "weibull_moment",
                 "allocation_kind": "weibull_moment",
             }
+            if score_shift is not None:
+                allocation["score_shift"] = score_shift
             allocation_kind = "weibull_moment"
         else:
             masks, allocation = _build_global_mask(layers, scores, prune_ratio)
