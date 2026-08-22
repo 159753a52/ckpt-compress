@@ -343,8 +343,17 @@ def compute_block_taylor_scores(
     - ``signed_mean``: keep the sign of the averaged contribution. Ascending
       order then ranks coordinates by predicted reversion benefit first
       (negative predicted damage change).
+    - ``signed_first_order`` / ``signed_second_order``: same as ``signed_mean``
+      but reduced from only the first-order (-g*delta) or second-order
+      (0.5*delta*Hdelta) Taylor term.
     """
-    if aggregation not in {"abs_mean", "mean_abs", "signed_mean"}:
+    if aggregation not in {
+        "abs_mean",
+        "mean_abs",
+        "signed_mean",
+        "signed_first_order",
+        "signed_second_order",
+    }:
         raise ValueError(f"Unsupported Taylor score aggregation: {aggregation}")
     if not batches:
         raise ValueError("batches must contain at least one scoring batch")
@@ -438,11 +447,14 @@ def compute_block_taylor_scores(
                     probe = probes[name]
                     first_order = -gradient.detach() * probe
                     second_order = 0.5 * probe * hvp.detach()
-                    signed = first_order + second_order
-                    if aggregation == "mean_abs":
-                        contribution = signed.abs()
+                    if aggregation == "signed_first_order":
+                        contribution = first_order
+                    elif aggregation == "signed_second_order":
+                        contribution = second_order
                     else:
-                        contribution = signed
+                        contribution = first_order + second_order
+                    if aggregation == "mean_abs":
+                        contribution = contribution.abs()
                     signed_accumulator[name].add_(
                         contribution.float().cpu(),
                         alpha=1.0 / len(batches),
@@ -514,6 +526,8 @@ def compute_block_taylor_scores(
         "abs_mean": "taylor_hvp",
         "mean_abs": "taylor_hvp_mean_abs",
         "signed_mean": "taylor_hvp_signed",
+        "signed_first_order": "taylor_hvp_signed_fo",
+        "signed_second_order": "taylor_hvp_signed_so",
     }
     return output_scores, {
         "score_kind": aggregation_score_kinds[aggregation],

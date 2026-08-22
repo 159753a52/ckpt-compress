@@ -12,6 +12,8 @@ from experiments.lib.residual_protocol import (
     TAYLOR_EXACT_GLOBAL_METHOD,
     TAYLOR_MEANABS_UNIFORM_METHOD,
     TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+    TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_SIGNED_UNIFORM_METHOD,
     TAYLOR_UNIFORM_METHOD,
@@ -128,6 +130,26 @@ METHOD_CONTRACTS = {
             "Optimized implementation: signed Taylor contribution with exact "
             "global top-k selection (prunes most negative predicted damage "
             "change first across all layers)."
+        ),
+    ),
+    "taylor_signed_fo_uniform": MethodContract(
+        name="taylor_signed_fo_uniform",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+        description=(
+            "Optimized implementation: signed first-order Taylor term "
+            "(-g*delta, sign kept), uniform per-layer allocation."
+        ),
+    ),
+    "taylor_signed_so_uniform": MethodContract(
+        name="taylor_signed_so_uniform",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
+        description=(
+            "Optimized implementation: signed second-order Taylor term "
+            "(0.5*delta*(H*delta), sign kept), uniform per-layer allocation."
         ),
     ),
     "taylor_meanabs_uniform": MethodContract(

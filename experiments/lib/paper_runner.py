@@ -30,6 +30,8 @@ from experiments.lib.residual_protocol import (
     TAYLOR_MEANABS_UNIFORM_METHOD,
     TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+    TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_UNIFORM_METHOD,
     TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
@@ -302,6 +304,8 @@ def _score_and_mask(
         TAYLOR_SIGNED_UNIFORM_METHOD,
         TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
         TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+        TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+        TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
         TAYLOR_MEANABS_UNIFORM_METHOD,
         TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     }:
@@ -311,6 +315,15 @@ def _score_and_mask(
             TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
         }:
             aggregation = "signed_mean"
+        elif internal_method in {
+            TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+            TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
+        }:
+            aggregation = (
+                "signed_first_order"
+                if internal_method == TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD
+                else "signed_second_order"
+            )
         elif internal_method in {TAYLOR_MEANABS_UNIFORM_METHOD, TAYLOR_MEANABS_WEIBULL_MOM_METHOD}:
             aggregation = "mean_abs"
         else:
@@ -327,7 +340,13 @@ def _score_and_mask(
             model_family=model_family,
             block_parameter_names=blocks,
         )
-        if internal_method in {TAYLOR_UNIFORM_METHOD, TAYLOR_SIGNED_UNIFORM_METHOD, TAYLOR_MEANABS_UNIFORM_METHOD}:
+        if internal_method in {
+            TAYLOR_UNIFORM_METHOD,
+            TAYLOR_SIGNED_UNIFORM_METHOD,
+            TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+            TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
+            TAYLOR_MEANABS_UNIFORM_METHOD,
+        }:
             masks, allocation = _build_uniform_mask(layers, scores, prune_ratio)
             allocation_kind = "uniform_per_layer"
         elif internal_method in {

@@ -18,6 +18,8 @@ from experiments.lib.residual_protocol import (
     TAYLOR_MEANABS_UNIFORM_METHOD,
     TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
+    TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_UNIFORM_METHOD,
     TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
@@ -732,6 +734,8 @@ def _validate_method_evidence(
             RESIDUAL_MAGNITUDE_UNIFORM_METHOD: "residual_magnitude",
             TAYLOR_UNIFORM_METHOD: "taylor_hvp",
             TAYLOR_SIGNED_UNIFORM_METHOD: "taylor_hvp_signed",
+            TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD: "taylor_hvp_signed_fo",
+            TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD: "taylor_hvp_signed_so",
             TAYLOR_MEANABS_UNIFORM_METHOD: "taylor_hvp_mean_abs",
         }
         expected_score_kind = uniform_score_kinds[internal_method]
