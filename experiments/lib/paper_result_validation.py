@@ -18,6 +18,7 @@ from experiments.lib.residual_protocol import (
     TAYLOR_MEANABS_UNIFORM_METHOD,
     TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD,
     TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_UNIFORM_METHOD,
@@ -824,6 +825,58 @@ def _validate_method_evidence(
                 layer_count=layer_count,
                 context=context,
             )
+        return
+    if internal_method == TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD:
+        fits = allocation.get("weibull_fits")
+        counts = allocation.get("weibull_layer_counts")
+        negative_counts = allocation.get("negative_counts")
+        if (
+            compression.get("score_kind") != "taylor_hvp_signed"
+            or compression.get("allocation_kind") != "signed_benefit_weibull"
+            or allocation.get("allocation") != "signed_benefit_weibull"
+            or not isinstance(fits, list)
+            or len(fits) != layer_count
+            or not all(
+                isinstance(fit, Mapping) and isinstance(fit.get("valid"), bool)
+                for fit in fits
+            )
+            or not isinstance(counts, list)
+            or not all(isinstance(count, int) and not isinstance(count, bool) and count >= 0 for count in counts)
+            or counts != list(layer_prune_counts)
+            or sum(counts) != allocation.get("target_pruned")
+            or allocation.get("eligible_parameters") != sum(allocation["layer_sizes"])
+            or not isinstance(negative_counts, list)
+            or len(negative_counts) != layer_count
+            or not all(
+                isinstance(negative, int) and not isinstance(negative, bool) and negative >= 0
+                for negative in negative_counts
+            )
+        ):
+            raise ValueError(f"{context} has invalid signed-benefit Weibull evidence")
+        layer_ratio = _finite_number(
+            expected_config.get("max_layer_ratio"), context=f"{context}.config.max_layer_ratio"
+        )
+        for index, (count, negative, size) in enumerate(
+            zip(counts, negative_counts, allocation["layer_sizes"])
+        ):
+            capacity = math.floor(layer_ratio * size)
+            if negative > size:
+                raise ValueError(f"{context} layer {index} reports more negatives than parameters")
+            if count < min(negative, capacity):
+                raise ValueError(
+                    f"{context} layer {index} prunes fewer than its reserved "
+                    "negative-score coordinates"
+                )
+            if count > capacity:
+                raise ValueError(f"{context} layer {index} exceeds its declared prune cap")
+        _validate_scoring_metadata(
+            compression.get("scoring"),
+            score_kind="taylor_hvp_signed",
+            batch_key="hvp_batches",
+            expected_config=expected_config,
+            layer_count=layer_count,
+            context=context,
+        )
         return
     if internal_method in {TAYLOR_EXACT_GLOBAL_METHOD, TAYLOR_SIGNED_EXACT_GLOBAL_METHOD}:
         expected_score_kind = (

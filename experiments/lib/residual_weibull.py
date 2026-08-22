@@ -245,10 +245,104 @@ def weibull_counts(
     }
 
 
+def signed_benefit_weibull_counts(
+    fits: Sequence[WeibullFitView],
+    layer_sizes: Sequence[int],
+    negative_counts: Sequence[int],
+    target: int,
+    ratio: float,
+    max_layer_ratio: float,
+) -> Tuple[List[int], Dict[str, object]]:
+    """Two-stage allocation for signed benefit scores.
+
+    Stage 1 reserves each layer's negative-score coordinates (predicted to
+    reduce loss when reverted) up to the per-layer cap. Stage 2 distributes
+    the remaining budget across layers by Weibull moment allocation fitted on
+    the non-negative score remainder. Within-layer mask selection still ranks
+    by the original signed scores, so reserved coordinates are pruned first.
+    """
+    if not (
+        len(fits) == len(layer_sizes) == len(negative_counts)
+    ):
+        raise ValueError("Fits, layer sizes, and negative counts must align")
+    capacities = [min(size, int(math.floor(max_layer_ratio * size))) for size in layer_sizes]
+    reserved = [min(neg, cap) for neg, cap in zip(negative_counts, capacities)]
+    if sum(reserved) > target:
+        # Degenerate case: negatives alone exceed the global budget. Scale the
+        # reservation back proportionally with largest-remainder rounding.
+        scaled = [target * neg / max(sum(reserved), 1) for neg in reserved]
+        reserved = largest_remainder_counts(scaled, target, capacities)
+        remaining = 0
+    else:
+        remaining = target - sum(reserved)
+    stage2_capacities = [cap - res for cap, res in zip(capacities, reserved)]
+
+    def real_counts_at(threshold: float) -> List[float]:
+        result = []
+        for fit, size, capacity in zip(fits, layer_sizes, stage2_capacities):
+            if bool(fit.get("valid")) and capacity > 0:
+                count = size * weibull_cdf(threshold, fit)
+            else:
+                count = 0.0
+            result.append(min(count, float(capacity)))
+        return result
+
+    valid_scales = [
+        _positive_fit_parameter(fit, "scale") for fit in fits if bool(fit.get("valid"))
+    ]
+    metadata: Dict[str, object] = {
+        "reserved_negative_counts": reserved,
+        "stage2_capacities": stage2_capacities,
+        "stage2_target": remaining,
+    }
+    if remaining <= 0 or sum(stage2_capacities) == 0:
+        counts = largest_remainder_counts(
+            [float(count) for count in reserved], target, capacities
+        )
+        metadata["stage2"] = "skipped"
+        return counts, metadata
+    if not valid_scales or sum(real_counts_at(float("inf"))) <= 0:
+        fallback = largest_remainder_counts(
+            [remaining * cap for cap in stage2_capacities],
+            remaining,
+            stage2_capacities,
+        )
+        counts = [res + extra for res, extra in zip(reserved, fallback)]
+        metadata["stage2"] = "uniform_fallback"
+        return counts, metadata
+
+    reference_scale = max(valid_scales)
+    high_multiplier = 1.0
+    while (
+        sum(real_counts_at(reference_scale * high_multiplier)) < remaining
+        and high_multiplier < 1e12
+    ):
+        high_multiplier *= 2.0
+    threshold_multiplier = brentq(
+        lambda multiplier: sum(real_counts_at(reference_scale * multiplier)) - remaining,
+        0.0,
+        high_multiplier,
+        maxiter=200,
+    )
+    threshold = reference_scale * threshold_multiplier
+    stage2_real = real_counts_at(threshold)
+    stage2_counts = largest_remainder_counts(stage2_real, remaining, stage2_capacities)
+    counts = [res + extra for res, extra in zip(reserved, stage2_counts)]
+    metadata.update(
+        {
+            "stage2": "weibull_positive_part",
+            "threshold": threshold,
+            "stage2_real_counts": stage2_real,
+        }
+    )
+    return counts, metadata
+
+
 __all__ = [
     "fit_layer_weibull_mom",
     "fit_weibull_from_moments",
     "fit_weibull_mom",
+    "signed_benefit_weibull_counts",
     "weibull_cdf",
     "weibull_counts",
 ]

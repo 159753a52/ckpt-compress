@@ -321,3 +321,51 @@ class TestResidualAllocation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSignedBenefitWeibullCounts(unittest.TestCase):
+    def _scores(self) -> dict[str, torch.Tensor]:
+        generator = torch.Generator().manual_seed(0)
+        return {
+            "a": torch.randn(1000, generator=generator),
+            "b": torch.rand(1000, generator=generator) * 2.0 + 0.1,
+            "c": torch.rand(500, generator=generator) * 0.5 - 0.25,
+        }
+
+    def test_preserves_budget_reserves_negatives_and_respects_caps(self) -> None:
+        from experiments.lib.residual_weibull import signed_benefit_weibull_counts
+
+        layers = [["a", "b"], ["c"]]
+        scores = self._scores()
+        clamped = {name: values.clamp_min(0.0) for name, values in scores.items()}
+        fits = residual_weibull.fit_layer_weibull_mom(layers, clamped)
+        negative_counts = [
+            int(sum((scores[name] < 0).sum().item() for name in layer))
+            for layer in layers
+        ]
+        sizes = [sum(scores[name].numel() for name in layer) for layer in layers]
+        target = int(0.4 * sum(sizes))
+        counts, metadata = signed_benefit_weibull_counts(
+            fits, sizes, negative_counts, target, 0.4, 0.95
+        )
+        self.assertEqual(sum(counts), target)
+        for count, negative, size in zip(counts, negative_counts, sizes):
+            capacity = int(0.95 * size)
+            self.assertGreaterEqual(count, min(negative, capacity))
+            self.assertLessEqual(count, capacity)
+        self.assertEqual(metadata["stage2"], "weibull_positive_part")
+        self.assertEqual(metadata["stage2_target"], target - sum(min(n, int(0.95 * s)) for n, s in zip(negative_counts, sizes)))
+
+    def test_negative_overflow_scales_reservation_to_target(self) -> None:
+        from experiments.lib.residual_weibull import signed_benefit_weibull_counts
+
+        layers = [["a"]]
+        scores = self._scores()
+        clamped = {name: values.clamp_min(0.0) for name, values in scores.items()}
+        fits = residual_weibull.fit_layer_weibull_mom(layers, clamped)
+        sizes = [sum(scores[name].numel() for name in layer) for layer in layers]
+        counts, metadata = signed_benefit_weibull_counts(
+            fits, sizes, [sizes[0]], 100, 0.4, 0.95
+        )
+        self.assertEqual(counts, [100])
+        self.assertEqual(metadata["stage2"], "skipped")

@@ -11,6 +11,7 @@ from experiments.lib.residual_protocol import (
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
     TAYLOR_MEANABS_UNIFORM_METHOD,
+    TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD,
     TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
     TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
@@ -150,6 +151,19 @@ METHOD_CONTRACTS = {
         description=(
             "Optimized implementation: signed second-order Taylor term "
             "(0.5*delta*(H*delta), sign kept), uniform per-layer allocation."
+        ),
+    ),
+    "taylor_signed_benefit_weibull": MethodContract(
+        name="taylor_signed_benefit_weibull",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD,
+        description=(
+            "Optimized implementation: signed Taylor contribution with a "
+            "two-stage distribution-aware allocation — negative-score "
+            "coordinates (predicted reversion benefit) are reserved first, "
+            "then the remaining budget is distributed by Weibull moments "
+            "fitted on the non-negative score part."
         ),
     ),
     "taylor_meanabs_uniform": MethodContract(

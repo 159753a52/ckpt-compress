@@ -33,9 +33,14 @@ from experiments.lib.residual_protocol import (
     TAYLOR_SIGNED_FIRST_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_SECOND_ORDER_UNIFORM_METHOD,
     TAYLOR_SIGNED_UNIFORM_METHOD,
+    TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD,
     TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_WEIBULL_MOM_METHOD,
+)
+from experiments.lib.residual_weibull import (
+    fit_layer_weibull_mom,
+    signed_benefit_weibull_counts,
 )
 from experiments.lib.residual_runtime import empty_device_cache, evaluate_task
 from experiments.lib.residual_scoring import (
@@ -349,6 +354,40 @@ def _score_and_mask(
         }:
             masks, allocation = _build_uniform_mask(layers, scores, prune_ratio)
             allocation_kind = "uniform_per_layer"
+        elif internal_method == TAYLOR_SIGNED_BENEFIT_WEIBULL_METHOD:
+            layer_sizes = [sum(scores[name].numel() for name in layer) for layer in layers]
+            eligible_count = sum(layer_sizes)
+            target = int(math.floor(prune_ratio * eligible_count))
+            negative_counts = [
+                int(sum((scores[name] < 0).sum().item() for name in layer))
+                for layer in layers
+            ]
+            positive_fit_inputs = {
+                name: values.clamp_min(0.0) for name, values in scores.items()
+            }
+            fits = fit_layer_weibull_mom(layers, positive_fit_inputs)
+            counts, benefit_metadata = signed_benefit_weibull_counts(
+                fits,
+                layer_sizes,
+                negative_counts,
+                target,
+                prune_ratio,
+                max_layer_ratio,
+            )
+            masks = layer_masks(layers, scores, counts)
+            allocation = {
+                "eligible_parameters": eligible_count,
+                "target_pruned": target,
+                "target_eligible_sparsity": prune_ratio,
+                "layer_sizes": layer_sizes,
+                "weibull_layer_counts": counts,
+                "weibull_fits": fits,
+                "weibull": benefit_metadata,
+                "allocation": "signed_benefit_weibull",
+                "allocation_kind": "signed_benefit_weibull",
+                "negative_counts": negative_counts,
+            }
+            allocation_kind = "signed_benefit_weibull"
         elif internal_method in {
             TAYLOR_WEIBULL_MOM_METHOD,
             TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
