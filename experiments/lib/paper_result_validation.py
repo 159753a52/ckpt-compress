@@ -866,17 +866,33 @@ def _validate_method_evidence(
         layer_ratio = _finite_number(
             expected_config.get("max_layer_ratio"), context=f"{context}.config.max_layer_ratio"
         )
-        for index, (count, negative, size) in enumerate(
-            zip(counts, negative_counts, allocation["layer_sizes"])
+        from experiments.lib.residual_budget import largest_remainder_counts
+
+        capacities = [math.floor(layer_ratio * int(size)) for size in allocation["layer_sizes"]]
+        raw_reservations = [
+            min(negative, capacity)
+            for negative, capacity in zip(negative_counts, capacities)
+        ]
+        total_target = allocation.get("target_pruned")
+        if sum(raw_reservations) > int(total_target):
+            scaled = [
+                int(total_target) * reservation / max(sum(raw_reservations), 1)
+                for reservation in raw_reservations
+            ]
+            expected_reserved = largest_remainder_counts(scaled, int(total_target), capacities)
+        else:
+            expected_reserved = raw_reservations
+        for index, (count, negative, size, reserved) in enumerate(
+            zip(counts, negative_counts, allocation["layer_sizes"], expected_reserved)
         ):
-            capacity = math.floor(layer_ratio * size)
+            capacity = capacities[index]
             if negative > size:
                 raise ValueError(f"{context} layer {index} reports more negatives than parameters")
-            if count < min(negative, capacity):
+            if count < reserved:
                 raise ValueError(
                     f"{context} layer {index} prunes fewer than its reserved "
-                    f"negative-score coordinates (count={count}, negative={negative}, "
-                    f"capacity={capacity}, size={size})"
+                    f"negative-score coordinates (count={count}, reserved={reserved}, "
+                    f"negative={negative}, capacity={capacity}, size={size})"
                 )
             if count > capacity:
                 raise ValueError(f"{context} layer {index} exceeds its declared prune cap")
