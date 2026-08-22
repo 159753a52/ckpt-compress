@@ -34,6 +34,7 @@ from experiments.lib.residual_allocation import (  # noqa: E402
     fit_weibull_mom,
     largest_remainder_counts,
     reconstruct_directional_gradient,
+    signed_benefit_weibull_counts,
     trust_region_counts,
     uniform_counts,
     weibull_cdf,
