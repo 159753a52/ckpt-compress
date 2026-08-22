@@ -10,6 +10,10 @@ from experiments.lib.residual_protocol import (
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_MEANABS_UNIFORM_METHOD,
+    TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+    TAYLOR_SIGNED_UNIFORM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_WEIBULL_MOM_METHOD,
 )
@@ -93,6 +97,48 @@ METHOD_CONTRACTS = {
         fidelity="native",
         internal_method=TAYLOR_EXACT_GLOBAL_METHOD,
         description="Taylor HVP scoring with exact global top-k allocation oracle.",
+    ),
+    "taylor_signed_uniform": MethodContract(
+        name="taylor_signed_uniform",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_UNIFORM_METHOD,
+        description=(
+            "Optimized implementation: signed Taylor contribution (no absolute "
+            "value), uniform per-layer allocation; ascending order prunes "
+            "coordinates with the most negative predicted reversion damage first."
+        ),
+    ),
+    "taylor_signed_weibull": MethodContract(
+        name="taylor_signed_weibull",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+        description=(
+            "Optimized implementation: signed Taylor contribution with Weibull "
+            "moment allocation over shifted non-negative scores."
+        ),
+    ),
+    "taylor_signed_exact_global": MethodContract(
+        name="taylor_signed_exact_global",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+        description=(
+            "Optimized implementation: signed Taylor contribution with exact "
+            "global top-k selection (prunes most negative predicted damage "
+            "change first across all layers)."
+        ),
+    ),
+    "taylor_meanabs_uniform": MethodContract(
+        name="taylor_meanabs_uniform",
+        owner="dacp_ablation_optimized",
+        fidelity="native",
+        internal_method=TAYLOR_MEANABS_UNIFORM_METHOD,
+        description=(
+            "Optimized implementation: mean of per-batch absolute Taylor "
+            "contributions (no cross-batch cancellation), uniform allocation."
+        ),
     ),
 }
 

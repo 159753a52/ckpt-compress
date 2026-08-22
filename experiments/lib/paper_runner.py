@@ -27,6 +27,11 @@ from experiments.lib.residual_protocol import (
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
+    TAYLOR_MEANABS_UNIFORM_METHOD,
+    TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
+    TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+    TAYLOR_SIGNED_UNIFORM_METHOD,
+    TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_WEIBULL_MOM_METHOD,
 )
@@ -294,7 +299,25 @@ def _score_and_mask(
         TAYLOR_UNIFORM_METHOD,
         TAYLOR_WEIBULL_MOM_METHOD,
         TAYLOR_EXACT_GLOBAL_METHOD,
+        TAYLOR_SIGNED_UNIFORM_METHOD,
+        TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+        TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+        TAYLOR_MEANABS_UNIFORM_METHOD,
+        TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
     }:
+        if internal_method in {
+            TAYLOR_SIGNED_UNIFORM_METHOD,
+            TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+            TAYLOR_SIGNED_EXACT_GLOBAL_METHOD,
+        }:
+            aggregation = "signed_mean"
+            score_kind = "taylor_hvp_signed"
+        elif internal_method in {TAYLOR_MEANABS_UNIFORM_METHOD, TAYLOR_MEANABS_WEIBULL_MOM_METHOD}:
+            aggregation = "mean_abs"
+            score_kind = "taylor_hvp_mean_abs"
+        else:
+            aggregation = "abs_mean"
+            score_kind = "taylor_hvp"
         scores, scoring = compute_block_taylor_scores(
             model,
             scoring_batches,
@@ -302,14 +325,19 @@ def _score_and_mask(
             delta,
             device,
             return_components=False,
+            aggregation=aggregation,
             task_type=task_type,
             model_family=model_family,
             block_parameter_names=blocks,
         )
-        if internal_method == TAYLOR_UNIFORM_METHOD:
+        if internal_method in {TAYLOR_UNIFORM_METHOD, TAYLOR_SIGNED_UNIFORM_METHOD, TAYLOR_MEANABS_UNIFORM_METHOD}:
             masks, allocation = _build_uniform_mask(layers, scores, prune_ratio)
             allocation_kind = "uniform_per_layer"
-        elif internal_method == TAYLOR_WEIBULL_MOM_METHOD:
+        elif internal_method in {
+            TAYLOR_WEIBULL_MOM_METHOD,
+            TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
+            TAYLOR_MEANABS_WEIBULL_MOM_METHOD,
+        }:
             masks, allocation = build_weibull_mask(
                 layers,
                 scores,
@@ -327,7 +355,7 @@ def _score_and_mask(
             masks, allocation = _build_global_mask(layers, scores, prune_ratio)
             allocation_kind = "exact_global"
         return masks, _compression_metadata(
-            "taylor_hvp",
+            score_kind,
             allocation_kind,
             allocation,
             layers,

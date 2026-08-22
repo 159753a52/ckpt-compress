@@ -326,12 +326,26 @@ def compute_block_taylor_scores(
     device: str,
     return_components: bool = False,
     *,
+    aggregation: str = "abs_mean",
     task_type: str = "lm",
     model_family: str = "gpt2",
     block_parameter_names: Sequence[Sequence[str]] | None = None,
     loss_fn: Callable[[nn.Module, Mapping[str, torch.Tensor], str], torch.Tensor] | None = None,
 ) -> Tuple[TensorDict | Dict[str, TensorDict], Dict[str, object]]:
-    """Compute g and H_bb*delta_b from one graph per structural block."""
+    """Compute g and H_bb*delta_b from one graph per structural block.
+
+    ``aggregation`` selects how per-batch signed Taylor contributions are
+    reduced into one score per coordinate:
+
+    - ``abs_mean`` (default): mean of the signed contributions, then absolute
+      value. This is the original paper implementation.
+    - ``mean_abs``: mean of the per-batch absolute contributions.
+    - ``signed_mean``: keep the sign of the averaged contribution. Ascending
+      order then ranks coordinates by predicted reversion benefit first
+      (negative predicted damage change).
+    """
+    if aggregation not in {"abs_mean", "mean_abs", "signed_mean"}:
+        raise ValueError(f"Unsupported Taylor score aggregation: {aggregation}")
     if not batches:
         raise ValueError("batches must contain at least one scoring batch")
     named_params = dict(model.named_parameters())
@@ -425,8 +439,12 @@ def compute_block_taylor_scores(
                     first_order = -gradient.detach() * probe
                     second_order = 0.5 * probe * hvp.detach()
                     signed = first_order + second_order
+                    if aggregation == "mean_abs":
+                        contribution = signed.abs()
+                    else:
+                        contribution = signed
                     signed_accumulator[name].add_(
-                        signed.float().cpu(),
+                        contribution.float().cpu(),
                         alpha=1.0 / len(batches),
                     )
                     if return_components:
@@ -441,7 +459,10 @@ def compute_block_taylor_scores(
                 del loss, gradients, gradient_by_name, gradient_probe, hvps, hvp_by_name, probes
 
             for name in eligible_names:
-                scores[name] = signed_accumulator[name].abs()
+                score_values = signed_accumulator[name]
+                if aggregation != "signed_mean":
+                    score_values = score_values.abs()
+                scores[name] = score_values
                 _validate_output_score(named_params[name], scores[name], name)
                 if return_components:
                     first_order_scores[name] = first_order_accumulator[name].abs()
@@ -491,6 +512,7 @@ def compute_block_taylor_scores(
 
     return output_scores, {
         "score_kind": "taylor_hvp",
+        "aggregation": aggregation,
         "total_seconds": time.perf_counter() - started,
         "layer_seconds": layer_seconds,
         "checksum_before": list(checksum_before),

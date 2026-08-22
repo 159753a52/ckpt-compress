@@ -164,6 +164,7 @@ class TestResidualScoring(unittest.TestCase):
                 "hvp_batches",
                 "task_type",
                 "model_family",
+                "aggregation",
             },
         )
         self.assertEqual(metadata["checksum_before"], [3.25, 10.25])
@@ -176,6 +177,7 @@ class TestResidualScoring(unittest.TestCase):
         self.assertEqual(metadata["task_type"], "lm")
         self.assertEqual(metadata["model_family"], "gpt2")
         self.assertEqual(metadata["score_kind"], "taylor_hvp")
+        self.assertEqual(metadata["aggregation"], "abs_mean")
         self.assertEqual(len(metadata["layer_seconds"]), 1)
         for duration in [metadata["total_seconds"], *metadata["layer_seconds"]]:
             self.assertTrue(math.isfinite(duration))
@@ -187,6 +189,59 @@ class TestResidualScoring(unittest.TestCase):
             self.assertEqual(parameter.requires_grad, requires_grad_before[name])
             self.assertIsNone(parameter.grad)
         self.assertTrue(self.model.training)
+
+    def test_taylor_aggregation_modes(self) -> None:
+        """signed_mean keeps sign; mean_abs avoids cross-batch cancellation."""
+        batches = [
+            {"scale": torch.tensor(1.0)},
+            {"scale": torch.tensor(-1.0)},
+        ]
+        left_name = "transformer.h.0.left"
+        results = {}
+        for mode in ("abs_mean", "mean_abs", "signed_mean"):
+            with (
+                mock.patch.object(
+                    residual_scoring,
+                    "lm_loss",
+                    side_effect=self.quadratic_loss,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                scores, metadata = compute_block_taylor_scores(
+                    self.model,
+                    batches,
+                    self.layers,
+                    self.delta,
+                    device="cpu",
+                    aggregation=mode,
+                )
+            results[mode] = (scores, metadata)
+
+        # Contributions at scale +1 and -1 cancel exactly under signed averaging.
+        torch.testing.assert_close(
+            results["signed_mean"][0][left_name],
+            torch.zeros_like(self.delta[left_name]),
+        )
+        torch.testing.assert_close(
+            results["abs_mean"][0][left_name],
+            torch.zeros_like(self.delta[left_name]),
+        )
+        # mean_abs keeps the magnitude of non-cancelling contributions.
+        self.assertGreater(results["mean_abs"][0][left_name][1, 1].item(), 0.0)
+        for mode, (_, metadata) in results.items():
+            self.assertEqual(metadata["aggregation"], mode)
+
+    def test_taylor_aggregation_rejects_unknown_mode(self) -> None:
+        with redirect_stdout(io.StringIO()):
+            with self.assertRaises(ValueError):
+                compute_block_taylor_scores(
+                    self.model,
+                    self.batches,
+                    self.layers,
+                    self.delta,
+                    device="cpu",
+                    aggregation="bogus",
+                )
 
     def test_explicit_block_groups_support_non_gpt_parameter_names(self) -> None:
         with redirect_stdout(io.StringIO()):
