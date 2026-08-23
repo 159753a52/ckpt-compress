@@ -1,0 +1,30 @@
+schema_version: 1
+
+# End-to-end reproducibility check: re-run the flagship configuration
+# (taylor_signed_benefit_weibull, seed 42, 50%, K=3) in a fresh directory.
+# Expect bit-identical final perplexity to main_k3_signed (23.3788).
+methods: [taylor_signed_benefit_weibull]
+
+claim_gates: {}
+
+defaults:
+  prune_ratios: [0.5]
+  max_layer_ratio: 0.95
+  recovery_counts: [3]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 5.0e-5
+
+workloads:
+  - name: gpt2_medium_wikitext103
+    model: gpt2-medium
+    dataset: wikitext103
+    checkpoint: checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt
+    data_dir: data/wikitext103
+    metric: perplexity
+    seeds: [42]
+    train_pool_batches: 124
