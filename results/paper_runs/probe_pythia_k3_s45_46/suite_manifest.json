@@ -1,0 +1,122 @@
+{
+  "completed_jobs": {
+    "pythia_410m_alpaca_p1p0000000000000p-1_k3": {
+      "path": "pythia_410m_alpaca_p1p0000000000000p-1_k3.json",
+      "sha256": "22c69fc70aee54de48c53dab1faa9a4c0e33d657fa00f4e03357dc8baee5cbba"
+    }
+  },
+  "data_identities": {
+    "pythia_410m_alpaca": {
+      "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44"
+      },
+      "training_pool": {
+        "count": 124,
+        "sha256": "79220fc38409061ac46ae56cca062879bd118ce3db0432eeaa1e614ff454ae83"
+      }
+    }
+  },
+  "finished_at": "2026-08-22T17:11:19.873471+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/root/ckpt-compress/code/checkpoint_compress/data/alpaca",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 5e-05,
+        "max_layer_ratio": 0.95,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca",
+        "prune_ratio": 0.5,
+        "prune_ratios": [
+          0.5
+        ],
+        "recovery_count": 3,
+        "recovery_counts": [
+          3
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-05,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          45,
+          46
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 124
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      },
+      {
+        "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline.",
+        "fidelity": "style",
+        "internal_method": "first_order_exact_global",
+        "name": "inshrinkerator_style",
+        "owner": "inshrinkerator"
+      },
+      {
+        "description": "Taylor damage scoring with Weibull moment allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_weibull_mom",
+        "name": "dacp",
+        "owner": "dacp"
+      },
+      {
+        "description": "Optimized implementation: signed Taylor contribution with a two-stage distribution-aware allocation \u2014 negative-score coordinates (predicted reversion benefit) are reserved first, then the remaining budget is distributed by Weibull moments fitted on the non-negative score part.",
+        "fidelity": "native",
+        "internal_method": "taylor_signed_benefit_weibull",
+        "name": "taylor_signed_benefit_weibull",
+        "owner": "dacp_ablation_optimized"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "pythia_410m_alpaca_p1p0000000000000p-1_k3"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "3312ebfa6b14eb4d0304d96a37cbf6b458b89c60",
+    "git_dirty": false,
+    "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/probe_pythia_k3_s45_46.yaml",
+    "manifest_sha256": "92e2d88e1b7a253a318c7f5423e9262f20299562c4826d11fe44dbbb82fd38a1",
+    "source_file_count": 209,
+    "source_state_sha256": "7a77e79541585232d2b0e76346d8c4273a92059c55f9d61d05751dfb06ec6440"
+  },
+  "schema_version": 5,
+  "started_at": "2026-08-22T16:55:10.655145+00:00",
+  "status": "complete"
+}

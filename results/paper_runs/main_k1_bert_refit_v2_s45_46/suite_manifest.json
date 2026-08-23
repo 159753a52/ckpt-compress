@@ -1,0 +1,122 @@
+{
+  "completed_jobs": {
+    "bert_large_mnli_refit_p1p0000000000000p-1_k1": {
+      "path": "bert_large_mnli_refit_p1p0000000000000p-1_k1.json",
+      "sha256": "e38f87c1337c71a370ea0b4a6ca86866c669e08b8d42ff8f35c80b4e3d05832c"
+    }
+  },
+  "data_identities": {
+    "bert_large_mnli_refit": {
+      "checkpoint_sha256": "4346ad40c6207b84e30137cc60cd0749c2c3ed0b3c864b24baa54c34cd81c260",
+      "checkpoint_step": 3000,
+      "evaluation_batches": {
+        "count": 500,
+        "sha256": "eefc898afd41f40dd935f94c784b0f7154933af636cb526462826f11bd50464b"
+      },
+      "training_pool": {
+        "count": 108,
+        "sha256": "904f0ef2dd9b6e4006ee78443d4cc542ef9a7110bab5b0b8fa70dc32e7d6ce3e"
+      }
+    }
+  },
+  "finished_at": "2026-08-22T22:58:07.157431+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 8,
+        "checkpoint": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/checkpoints/bert_large_mnli_refit/checkpoint_step_3000.pt",
+        "checkpoint_step": 3000,
+        "data_dir": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/data",
+        "dataset": "mnli",
+        "eval_batches": 500,
+        "hvp_batches": 8,
+        "learning_rate": 5e-05,
+        "max_layer_ratio": 0.95,
+        "metric": "accuracy",
+        "model": "bert-large",
+        "model_family": "bert",
+        "name": "bert_large_mnli_refit",
+        "prune_ratio": 0.5,
+        "prune_ratios": [
+          0.5
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-05,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          45,
+          46
+        ],
+        "seq_length": 128,
+        "task_type": "cls",
+        "total_steps": 100,
+        "train_pool_batches": 108
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      },
+      {
+        "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline.",
+        "fidelity": "style",
+        "internal_method": "first_order_exact_global",
+        "name": "inshrinkerator_style",
+        "owner": "inshrinkerator"
+      },
+      {
+        "description": "Taylor damage scoring with Weibull moment allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_weibull_mom",
+        "name": "dacp",
+        "owner": "dacp"
+      },
+      {
+        "description": "Optimized implementation: signed Taylor contribution with a two-stage distribution-aware allocation \u2014 negative-score coordinates (predicted reversion benefit) are reserved first, then the remaining budget is distributed by Weibull moments fitted on the non-negative score part.",
+        "fidelity": "native",
+        "internal_method": "taylor_signed_benefit_weibull",
+        "name": "taylor_signed_benefit_weibull",
+        "owner": "dacp_ablation_optimized"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "bert_large_mnli_refit_p1p0000000000000p-1_k1"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "3aeb1a1da1455d642ca938eeefadfcd541a558fe",
+    "git_dirty": false,
+    "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/main_k1_bert_refit_v2_s45_46.yaml",
+    "manifest_sha256": "28f01b13528c07a266b63599d7989ff77d1eac162db4842ddcc0ba01deced08d",
+    "source_file_count": 216,
+    "source_state_sha256": "7feadddc1ff9f69de07393b9c985bc9ef9b1216339bbb8ed4b72b6755c7587a0"
+  },
+  "schema_version": 5,
+  "started_at": "2026-08-22T22:32:38.665358+00:00",
+  "status": "complete"
+}

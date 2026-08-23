@@ -1,0 +1,125 @@
+{
+  "completed_jobs": {
+    "gpt2_medium_wikitext103_p1p3333333333333p-2_k3": {
+      "path": "gpt2_medium_wikitext103_p1p3333333333333p-2_k3.json",
+      "sha256": "8b56dfc402420cdd2b6656916b72bdbd6b2c13e97f5e767207cfc74390375884"
+    }
+  },
+  "data_identities": {
+    "gpt2_medium_wikitext103": {
+      "checkpoint_sha256": "8f638a55db55dfac5e1046ab58f9e80b1f7c729608d4f23d242ef71dce4d3c9f",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "cc634e1a4dc67223fabcb68573d990fd2e3cd1f17464fdfbbee7ff8a754da419"
+      },
+      "training_pool": {
+        "count": 124,
+        "sha256": "9fb0886f3f3d87c471a78bfc10ea0c3b3b564f2f92a1632a6f75951332c2f03f"
+      }
+    }
+  },
+  "finished_at": "2026-08-22T15:28:28.891949+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/root/ckpt-compress/code/checkpoint_compress/data/wikitext103",
+        "dataset": "wikitext103",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 5e-05,
+        "max_layer_ratio": 0.95,
+        "metric": "perplexity",
+        "model": "gpt2-medium",
+        "model_family": "gpt2",
+        "name": "gpt2_medium_wikitext103",
+        "prune_ratio": 0.3,
+        "prune_ratios": [
+          0.3
+        ],
+        "recovery_count": 3,
+        "recovery_counts": [
+          3
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-05,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42,
+          43,
+          44,
+          45,
+          46
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 124
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      },
+      {
+        "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline.",
+        "fidelity": "style",
+        "internal_method": "first_order_exact_global",
+        "name": "inshrinkerator_style",
+        "owner": "inshrinkerator"
+      },
+      {
+        "description": "Taylor damage scoring with Weibull moment allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_weibull_mom",
+        "name": "dacp",
+        "owner": "dacp"
+      },
+      {
+        "description": "Optimized implementation: signed Taylor contribution with a two-stage distribution-aware allocation \u2014 negative-score coordinates (predicted reversion benefit) are reserved first, then the remaining budget is distributed by Weibull moments fitted on the non-negative score part.",
+        "fidelity": "native",
+        "internal_method": "taylor_signed_benefit_weibull",
+        "name": "taylor_signed_benefit_weibull",
+        "owner": "dacp_ablation_optimized"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "gpt2_medium_wikitext103_p1p3333333333333p-2_k3"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "49d0129c902cd6f47e300032571bd2f652fdd62a",
+    "git_dirty": false,
+    "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/main_k3_signed_p030.yaml",
+    "manifest_sha256": "78f59ba8bbb255dd7d87dfb9c0ba4cf23d5067caad4f222674a9ed07aed61047",
+    "source_file_count": 206,
+    "source_state_sha256": "9474a850c40b3ffa2df72c879d210ac05f354a3554d7950a7260764f6aa306c4"
+  },
+  "schema_version": 5,
+  "started_at": "2026-08-22T14:49:45.068099+00:00",
+  "status": "complete"
+}

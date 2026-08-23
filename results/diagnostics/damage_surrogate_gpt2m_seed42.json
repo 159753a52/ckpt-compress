@@ -1,0 +1,757 @@
+{
+  "batch_hash": "cc634e1a4dc67223fabcb68573d990fd2e3cd1f17464fdfbbee7ff8a754da419",
+  "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+  "checkpoint_digest": "8f638a55db55dfac5e1046ab58f9e80b1f7c729608d4f23d242ef71dce4d3c9f",
+  "dataset": "wikitext103",
+  "device": "cuda",
+  "dtype": "torch.float32",
+  "evaluation_batches": {
+    "count": 100,
+    "sha256": "cc634e1a4dc67223fabcb68573d990fd2e3cd1f17464fdfbbee7ff8a754da419"
+  },
+  "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/paper_experiments.yaml",
+  "manifest_digest": "97442587827da13341c17b727bab5d019a70c6be8b1eb9cbe6d7169892150299",
+  "mask_generation": {
+    "eligible_parameter_count": 301989888,
+    "exact_budget": true,
+    "mask_count": 32,
+    "per_layer_sizes": [
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912,
+      12582912
+    ],
+    "random_mask_count": 29,
+    "random_seed": 42,
+    "target_pruned": 150994944,
+    "taylor_per_layer_prune_counts": [
+      6615279,
+      6909395,
+      6440629,
+      6351889,
+      6128407,
+      5701147,
+      5805936,
+      5620578,
+      5367064,
+      5770613,
+      5709708,
+      5823874,
+      5913570,
+      5915385,
+      6111648,
+      5917537,
+      6489438,
+      6460243,
+      6892217,
+      7001372,
+      7022527,
+      7154889,
+      6930368,
+      6941231
+    ]
+  },
+  "model": "gpt2-medium",
+  "prune_ratio": 0.5,
+  "recovery_count": 1,
+  "schema_version": 1,
+  "scoring": {
+    "first_order": {
+      "changed_parameter_versions": [],
+      "checksum_after": [
+        148096.484375,
+        29538310.0
+      ],
+      "checksum_before": [
+        148096.484375,
+        29538310.0
+      ],
+      "checksum_delta": [
+        0.0,
+        0.0
+      ],
+      "layer_seconds": [
+        0.7202247719978914,
+        0.7009208599993144,
+        0.6833206919982331,
+        0.6673598890047288,
+        0.6606605229972047,
+        0.6520441020038561,
+        0.6446969650060055,
+        0.632841427999665,
+        0.6198883230026695,
+        0.6058230869966792,
+        0.5933600260032108,
+        0.5867792520002695,
+        0.5775515240020468,
+        0.5660306639983901,
+        0.5555399809964001,
+        0.5434440640019602,
+        0.5358451259962749,
+        0.5218704910002998,
+        0.5134311009969679,
+        0.5426851009979146,
+        0.5205038499989314,
+        0.47925410700554494,
+        0.47129012199729914,
+        0.4728184810010134
+      ],
+      "model_family": "gpt2",
+      "model_mode": "eval",
+      "optimizer_constructed": false,
+      "score_kind": "first_order",
+      "scoring_batches": 8,
+      "task_type": "lm",
+      "total_seconds": 14.304409955002484
+    },
+    "scoring_batch_hash": "73a6d1771e387a5ce603e016292cf1ad6b7688f3675a50ff552ffb13aba518a3",
+    "taylor": {
+      "aggregation": "abs_mean",
+      "changed_parameter_versions": [],
+      "checksum_after": [
+        148096.484375,
+        29538310.0
+      ],
+      "checksum_before": [
+        148096.484375,
+        29538310.0
+      ],
+      "checksum_delta": [
+        0.0,
+        0.0
+      ],
+      "hvp_batches": 8,
+      "layer_seconds": [
+        1.441611820999242,
+        1.4046178790013073,
+        1.397832025999378,
+        1.3623847719936748,
+        1.3005877420000616,
+        1.249457728001289,
+        1.2219262090002303,
+        1.1702175280006486,
+        1.1322689169974183,
+        1.0976229469961254,
+        1.057138306001434,
+        1.042019396998512,
+        1.0027569379963097,
+        0.9645679090026533,
+        0.9027012340011424,
+        0.8764920109970262,
+        0.8442169539994211,
+        0.8140715389963589,
+        0.7642373319977196,
+        0.7207253590022447,
+        0.6830198489988106,
+        0.6533738290017936,
+        0.6164104749987018,
+        0.5762426770015736
+      ],
+      "model_family": "gpt2",
+      "model_mode": "eval",
+      "optimizer_constructed": false,
+      "score_kind": "taylor_hvp",
+      "task_type": "lm",
+      "total_seconds": 24.4802539920056
+    }
+  },
+  "seed": 42,
+  "source_digest": "c2b91e59c4e791dc7f71f7f9708548994eba70642dfc6db9b856ccae503cff31",
+  "source_files": [
+    "experiments/lib/damage_surrogate_validation.py",
+    "experiments/lib/paper_manifest.py",
+    "experiments/lib/residual_masks.py",
+    "experiments/lib/residual_runtime.py",
+    "experiments/lib/residual_scoring.py",
+    "experiments/lib/residual_training.py",
+    "experiments/scripts/run_damage_surrogate_validation.py"
+  ],
+  "state_construction": {
+    "batch_plan": {
+      "scoring_batches": [
+        "73a6d1771e387a5ce603e016292cf1ad6b7688f3675a50ff552ffb13aba518a3"
+      ],
+      "training_segments": [
+        "73d143f3d345ce1d5cd01fc28ba739b5ad002ae5629c41889dfc34e024c9b268",
+        "e1027c85bd66d763aeaf0aee4ff05b1a078eca2d8e717106320cb5cf6a9d18e1"
+      ]
+    },
+    "pre_recovery_training_steps": 50,
+    "protocol": {
+      "learning_rate": 5e-05,
+      "learning_rate_source": "manifest",
+      "optimizer_state": "restored_from_checkpoint",
+      "scheduler": {
+        "eta_min": 0.0,
+        "name": "cosine_annealing",
+        "scope": "matched_recovery_horizon",
+        "state": "fresh",
+        "t_max": 100
+      }
+    },
+    "reference_checkpoint_step": 1000
+  },
+  "status": "complete",
+  "validation": {
+    "correlations": {
+      "first_order": {
+        "kendall": -0.22177419354838715,
+        "mask_count": 32,
+        "spearman": -0.29912023460410553
+      },
+      "magnitude": {
+        "kendall": -0.036290322580645164,
+        "mask_count": 32,
+        "spearman": -0.06854838709677419
+      },
+      "taylor": {
+        "kendall": -0.20967741935483875,
+        "mask_count": 32,
+        "spearman": -0.28958944281524923
+      }
+    },
+    "default_score_family": "taylor",
+    "mask_count": 32,
+    "pruned_count": 150994944,
+    "records": [
+      {
+        "actual_delta_loss": -0.014179956912994562,
+        "base_loss": 3.2163375997543335,
+        "id": "magnitude",
+        "mask_fingerprint": "511cb35d4d1b5caa9e6e4e9fcc485cb05c4997c166f6ca7297091f27748a1b5e",
+        "masked_loss": 3.202157642841339,
+        "predicted_cost": 29616.79972076416,
+        "predicted_costs": {
+          "first_order": 0.7946173906093463,
+          "magnitude": 29616.79972076416,
+          "taylor": 0.794873186852783
+        },
+        "prediction_family": "magnitude",
+        "pruned_count": 150994944,
+        "source": "magnitude"
+      },
+      {
+        "actual_delta_loss": -0.02425806999206559,
+        "base_loss": 3.2163375997543335,
+        "id": "first_order",
+        "mask_fingerprint": "400b15a79ba9678db7565f950fa1fc41e7593f41add2b82cd36eaec4e67d6957",
+        "masked_loss": 3.192079529762268,
+        "predicted_cost": 0.34458580904174596,
+        "predicted_costs": {
+          "first_order": 0.34458580904174596,
+          "magnitude": 46407.948066711426,
+          "taylor": 0.3523141510086134
+        },
+        "prediction_family": "first_order",
+        "pruned_count": 150994944,
+        "source": "first_order"
+      },
+      {
+        "actual_delta_loss": -0.024477980136871302,
+        "base_loss": 3.2163375997543335,
+        "id": "taylor",
+        "mask_fingerprint": "9abfe4e8851244b4907937edaeccef71f8d0241323ac494a2ab3a7611ddec807",
+        "masked_loss": 3.1918596196174622,
+        "predicted_cost": 0.3447542678914033,
+        "predicted_costs": {
+          "first_order": 0.3521580660017207,
+          "magnitude": 46410.82881164551,
+          "taylor": 0.3447542678914033
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "taylor"
+      },
+      {
+        "actual_delta_loss": -0.06510000467300436,
+        "base_loss": 3.2163375997543335,
+        "id": "random_000",
+        "mask_fingerprint": "b79cb80bb32348e00186c99b85082a2ea4871283f8f636c1a874c1f82417bbc3",
+        "masked_loss": 3.151237595081329,
+        "predicted_cost": 1.9779878687113523,
+        "predicted_costs": {
+          "first_order": 1.9787238128483295,
+          "magnitude": 73512.81196594238,
+          "taylor": 1.9779878687113523
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06531675338745124,
+        "base_loss": 3.2163375997543335,
+        "id": "random_001",
+        "mask_fingerprint": "d361c55565194297cecdcbb931c1a57130e51d58c96e8b1e338458ca3e209c70",
+        "masked_loss": 3.1510208463668823,
+        "predicted_cost": 1.978220128454268,
+        "predicted_costs": {
+          "first_order": 1.9789794832468033,
+          "magnitude": 73515.71492004395,
+          "taylor": 1.978220128454268
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.0651605653762819,
+        "base_loss": 3.2163375997543335,
+        "id": "random_002",
+        "mask_fingerprint": "d690d7e5a485ff8131f39e634dd9fb4e38bde076e9064d45c724b4e98c25865d",
+        "masked_loss": 3.1511770343780516,
+        "predicted_cost": 1.9779603560455143,
+        "predicted_costs": {
+          "first_order": 1.9787231492809951,
+          "magnitude": 73522.13414001465,
+          "taylor": 1.9779603560455143
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06521453857421866,
+        "base_loss": 3.2163375997543335,
+        "id": "random_003",
+        "mask_fingerprint": "10d1dd04554f9667d43b8b3cddbbdbeda4908ce93fc93249cb843dfde4bc0adb",
+        "masked_loss": 3.151123061180115,
+        "predicted_cost": 1.9780746879987419,
+        "predicted_costs": {
+          "first_order": 1.9788610599935055,
+          "magnitude": 73519.77178955078,
+          "taylor": 1.9780746879987419
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06512770891189579,
+        "base_loss": 3.2163375997543335,
+        "id": "random_004",
+        "mask_fingerprint": "5d130f7d654478fc4e33354c9b490bce7527506e854513f3a3f06c1603edaaab",
+        "masked_loss": 3.1512098908424377,
+        "predicted_cost": 1.97805255651474,
+        "predicted_costs": {
+          "first_order": 1.9788308325223625,
+          "magnitude": 73520.87629699707,
+          "taylor": 1.97805255651474
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06504640102386494,
+        "base_loss": 3.2163375997543335,
+        "id": "random_005",
+        "mask_fingerprint": "0f0dcf1efcd488bdbfe8bf1bdd085ebdd87c22e572f1390d9760f4be7734dc48",
+        "masked_loss": 3.1512911987304686,
+        "predicted_cost": 1.9778807163238525,
+        "predicted_costs": {
+          "first_order": 1.9786340459249914,
+          "magnitude": 73520.15356445312,
+          "taylor": 1.9778807163238525
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06507162094116214,
+        "base_loss": 3.2163375997543335,
+        "id": "random_006",
+        "mask_fingerprint": "514b16efd530099b95b0186cbeab92ee1f344a4bcf7fb1acb9b34e75a9a334e4",
+        "masked_loss": 3.1512659788131714,
+        "predicted_cost": 1.978135233744979,
+        "predicted_costs": {
+          "first_order": 1.9789093844592571,
+          "magnitude": 73518.75141906738,
+          "taylor": 1.978135233744979
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06502157926559438,
+        "base_loss": 3.2163375997543335,
+        "id": "random_007",
+        "mask_fingerprint": "29bfd1b745e16a174d5f40d3a61c726b9610c0ec3d6e74c7ef483d48f61893da",
+        "masked_loss": 3.151316020488739,
+        "predicted_cost": 1.9785957327112556,
+        "predicted_costs": {
+          "first_order": 1.9793766858056188,
+          "magnitude": 73524.95346069336,
+          "taylor": 1.9785957327112556
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06510956764221199,
+        "base_loss": 3.2163375997543335,
+        "id": "random_008",
+        "mask_fingerprint": "4a00cf3aa76f154f381ec7f0f9560d33a015062ee2e61266aada3e79e3020cf0",
+        "masked_loss": 3.1512280321121215,
+        "predicted_cost": 1.9779558116570115,
+        "predicted_costs": {
+          "first_order": 1.9787262096069753,
+          "magnitude": 73523.7642364502,
+          "taylor": 1.9779558116570115
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.0651609778404234,
+        "base_loss": 3.2163375997543335,
+        "id": "random_009",
+        "mask_fingerprint": "330eb8934a3521bfe8a22097fe2b0ddc3ef73364ada30f3a9596793bc46e9d5f",
+        "masked_loss": 3.15117662191391,
+        "predicted_cost": 1.9782854318618774,
+        "predicted_costs": {
+          "first_order": 1.9790617763064802,
+          "magnitude": 73519.1146850586,
+          "taylor": 1.9782854318618774
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06520002841949468,
+        "base_loss": 3.2163375997543335,
+        "id": "random_010",
+        "mask_fingerprint": "be2c4b30a48b38cb0f53c34352e6591783d90576e29cb04f8454a5b3491f22c5",
+        "masked_loss": 3.151137571334839,
+        "predicted_cost": 1.9778707572259009,
+        "predicted_costs": {
+          "first_order": 1.9786318819969893,
+          "magnitude": 73517.72579956055,
+          "taylor": 1.9778707572259009
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06500498771667473,
+        "base_loss": 3.2163375997543335,
+        "id": "random_011",
+        "mask_fingerprint": "61e09e3db37f260a8d2cbbd3c598e61689ab9765af4d91d346af4d09da1ea9ab",
+        "masked_loss": 3.151332612037659,
+        "predicted_cost": 1.977780217770487,
+        "predicted_costs": {
+          "first_order": 1.9785561468452215,
+          "magnitude": 73519.30848693848,
+          "taylor": 1.977780217770487
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06515877246856672,
+        "base_loss": 3.2163375997543335,
+        "id": "random_012",
+        "mask_fingerprint": "b0c364b2314c42fa2c58ed1c2bde4ac1cb3faae84a553a4d80bf412658b9d49c",
+        "masked_loss": 3.151178827285767,
+        "predicted_cost": 1.9775530798360705,
+        "predicted_costs": {
+          "first_order": 1.9782817279919982,
+          "magnitude": 73513.79071044922,
+          "taylor": 1.9775530798360705
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06522031068801892,
+        "base_loss": 3.2163375997543335,
+        "id": "random_013",
+        "mask_fingerprint": "22ea1873534770730ce3ef94b41ef1bcc4dd52b3efab89a47d19e161a73dca75",
+        "masked_loss": 3.1511172890663146,
+        "predicted_cost": 1.9780329731293023,
+        "predicted_costs": {
+          "first_order": 1.9787900615483522,
+          "magnitude": 73518.09156799316,
+          "taylor": 1.9780329731293023
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06502332448959347,
+        "base_loss": 3.2163375997543335,
+        "id": "random_014",
+        "mask_fingerprint": "987dd4220124b9eb3c8d7e495f9c3b363cea7fd7f7879634159a33ce1c274371",
+        "masked_loss": 3.15131427526474,
+        "predicted_cost": 1.9781803907826543,
+        "predicted_costs": {
+          "first_order": 1.9789579757489264,
+          "magnitude": 73520.88139343262,
+          "taylor": 1.9781803907826543
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.0651545238494875,
+        "base_loss": 3.2163375997543335,
+        "id": "random_015",
+        "mask_fingerprint": "9485a88c9a9034c464eba80b886c875833a958f8d510e9f4127a130caf62966e",
+        "masked_loss": 3.151183075904846,
+        "predicted_cost": 1.9784246613271534,
+        "predicted_costs": {
+          "first_order": 1.9791967822238803,
+          "magnitude": 73519.40147399902,
+          "taylor": 1.9784246613271534
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06517542600631732,
+        "base_loss": 3.2163375997543335,
+        "id": "random_016",
+        "mask_fingerprint": "9055fce928e8ab800dc6de8784c8249968f195e85c6bfe86bc07148afa3aa723",
+        "masked_loss": 3.151162173748016,
+        "predicted_cost": 1.978386726230383,
+        "predicted_costs": {
+          "first_order": 1.9791482198052108,
+          "magnitude": 73521.36535644531,
+          "taylor": 1.978386726230383
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06531276226043703,
+        "base_loss": 3.2163375997543335,
+        "id": "random_017",
+        "mask_fingerprint": "9c461fdfdc3f97e7e52c7bbb73b7ea91caf625805bff4aee0d923d19f5caba69",
+        "masked_loss": 3.1510248374938965,
+        "predicted_cost": 1.9784627007320523,
+        "predicted_costs": {
+          "first_order": 1.9792378079146147,
+          "magnitude": 73520.47914123535,
+          "taylor": 1.9784627007320523
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06510249137878432,
+        "base_loss": 3.2163375997543335,
+        "id": "random_018",
+        "mask_fingerprint": "7c8574baaafc5b17b03b37e82b85033636e00d9e91495ef3777643db4bbec965",
+        "masked_loss": 3.151235108375549,
+        "predicted_cost": 1.9778629131615162,
+        "predicted_costs": {
+          "first_order": 1.9786758106201887,
+          "magnitude": 73515.62092590332,
+          "taylor": 1.9778629131615162
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06527955532073992,
+        "base_loss": 3.2163375997543335,
+        "id": "random_019",
+        "mask_fingerprint": "8a399e2b215ea4dc11416efbf4397aaf5c41fd9a4a579f36978111b076205df0",
+        "masked_loss": 3.1510580444335936,
+        "predicted_cost": 1.9780553705058992,
+        "predicted_costs": {
+          "first_order": 1.9788474142551422,
+          "magnitude": 73518.34571838379,
+          "taylor": 1.9780553705058992
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06525703191757204,
+        "base_loss": 3.2163375997543335,
+        "id": "random_020",
+        "mask_fingerprint": "5e2960749d4c090f0e30779069c2c16d385e6378f26dbb120ef54075cfb13e5b",
+        "masked_loss": 3.1510805678367615,
+        "predicted_cost": 1.9778958675451577,
+        "predicted_costs": {
+          "first_order": 1.978656749241054,
+          "magnitude": 73519.12089538574,
+          "taylor": 1.9778958675451577
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06527222871780403,
+        "base_loss": 3.2163375997543335,
+        "id": "random_021",
+        "mask_fingerprint": "9249acd6f882aa4d047a6913878d6c1e54fd2d47c16a267f1d90e56a714068ea",
+        "masked_loss": 3.1510653710365295,
+        "predicted_cost": 1.9779816968366504,
+        "predicted_costs": {
+          "first_order": 1.9787281197495759,
+          "magnitude": 73519.4467010498,
+          "taylor": 1.9779816968366504
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.0652190399169923,
+        "base_loss": 3.2163375997543335,
+        "id": "random_022",
+        "mask_fingerprint": "7ebbe50691a51442df0396e81b21020c59402b1a9736f6b9cdf72dba7f6061e4",
+        "masked_loss": 3.1511185598373412,
+        "predicted_cost": 1.9780809092335403,
+        "predicted_costs": {
+          "first_order": 1.9788644406944513,
+          "magnitude": 73520.33500671387,
+          "taylor": 1.9780809092335403
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06490166902542116,
+        "base_loss": 3.2163375997543335,
+        "id": "random_023",
+        "mask_fingerprint": "ed3a22f8b81fba0e51dbc4d3d9a937c52db486595eccc2395ee4a0247f4c2bf2",
+        "masked_loss": 3.1514359307289124,
+        "predicted_cost": 1.97808619402349,
+        "predicted_costs": {
+          "first_order": 1.9788492256775498,
+          "magnitude": 73519.92080688477,
+          "taylor": 1.97808619402349
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06517645835876484,
+        "base_loss": 3.2163375997543335,
+        "id": "random_024",
+        "mask_fingerprint": "7ae641dd12bf8ecf3743c249c39f03e375b3660870b573f546e11b798e3c0c19",
+        "masked_loss": 3.1511611413955687,
+        "predicted_cost": 1.978390745818615,
+        "predicted_costs": {
+          "first_order": 1.9791974695399404,
+          "magnitude": 73517.96368408203,
+          "taylor": 1.978390745818615
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06522594928741476,
+        "base_loss": 3.2163375997543335,
+        "id": "random_025",
+        "mask_fingerprint": "f4b02aa3ee3f5e214a573a9870fa80a7f192326413608e0d031bc5f1cf0e7caf",
+        "masked_loss": 3.1511116504669188,
+        "predicted_cost": 1.9778918409720063,
+        "predicted_costs": {
+          "first_order": 1.9786685523577034,
+          "magnitude": 73516.04289245605,
+          "taylor": 1.9778918409720063
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06515706062316884,
+        "base_loss": 3.2163375997543335,
+        "id": "random_026",
+        "mask_fingerprint": "4235d3c4a24c0c0f28293dfc508fe12e44022b4be5ec93627777284a198f0b46",
+        "masked_loss": 3.1511805391311647,
+        "predicted_cost": 1.9780688527971506,
+        "predicted_costs": {
+          "first_order": 1.9788345345295966,
+          "magnitude": 73518.66796875,
+          "taylor": 1.9780688527971506
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06518466949462898,
+        "base_loss": 3.2163375997543335,
+        "id": "random_027",
+        "mask_fingerprint": "94bdd351cd7510effd8c7ac4ca62c115d503a8727dd595e6ff9e2aff4b6b40ca",
+        "masked_loss": 3.1511529302597046,
+        "predicted_cost": 1.9776585903018713,
+        "predicted_costs": {
+          "first_order": 1.978454499039799,
+          "magnitude": 73513.67044067383,
+          "taylor": 1.9776585903018713
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      },
+      {
+        "actual_delta_loss": -0.06515667676925663,
+        "base_loss": 3.2163375997543335,
+        "id": "random_028",
+        "mask_fingerprint": "0d5ade45ef7e53f4f6c1912dd304460f9ab8ac57b4ab4787d4f3b217a29dfbea",
+        "masked_loss": 3.151180922985077,
+        "predicted_cost": 1.9779354664497077,
+        "predicted_costs": {
+          "first_order": 1.9787284079939127,
+          "magnitude": 73518.10758972168,
+          "taylor": 1.9779354664497077
+        },
+        "prediction_family": "taylor",
+        "pruned_count": 150994944,
+        "source": "random"
+      }
+    ],
+    "score_families": [
+      "magnitude",
+      "first_order",
+      "taylor"
+    ]
+  },
+  "workload": "gpt2_medium_wikitext103"
+}

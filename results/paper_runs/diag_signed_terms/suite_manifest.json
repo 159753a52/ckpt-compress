@@ -1,0 +1,100 @@
+{
+  "completed_jobs": {
+    "gpt2_medium_wikitext103_p1p0000000000000p-1_k1": {
+      "path": "gpt2_medium_wikitext103_p1p0000000000000p-1_k1.json",
+      "sha256": "0036304da441b6e2c5688cf84e5a6bf860f59151022908089c68e444d6e9c700"
+    }
+  },
+  "data_identities": {
+    "gpt2_medium_wikitext103": {
+      "checkpoint_sha256": "8f638a55db55dfac5e1046ab58f9e80b1f7c729608d4f23d242ef71dce4d3c9f",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "cc634e1a4dc67223fabcb68573d990fd2e3cd1f17464fdfbbee7ff8a754da419"
+      },
+      "training_pool": {
+        "count": 124,
+        "sha256": "9fb0886f3f3d87c471a78bfc10ea0c3b3b564f2f92a1632a6f75951332c2f03f"
+      }
+    }
+  },
+  "finished_at": "2026-08-22T10:48:57.466564+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/root/ckpt-compress/code/checkpoint_compress/data/wikitext103",
+        "dataset": "wikitext103",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 5e-05,
+        "max_layer_ratio": 0.95,
+        "metric": "perplexity",
+        "model": "gpt2-medium",
+        "model_family": "gpt2",
+        "name": "gpt2_medium_wikitext103",
+        "prune_ratio": 0.5,
+        "prune_ratios": [
+          0.5
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-05,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 124
+      }
+    ],
+    "methods": [
+      {
+        "description": "Optimized implementation: signed first-order Taylor term (-g*delta, sign kept), uniform per-layer allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_signed_fo_uniform",
+        "name": "taylor_signed_fo_uniform",
+        "owner": "dacp_ablation_optimized"
+      },
+      {
+        "description": "Optimized implementation: signed second-order Taylor term (0.5*delta*(H*delta), sign kept), uniform per-layer allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_signed_so_uniform",
+        "name": "taylor_signed_so_uniform",
+        "owner": "dacp_ablation_optimized"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "gpt2_medium_wikitext103_p1p0000000000000p-1_k1"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "aa4470029eeac45d63db33ae4d179629b538c11a",
+    "git_dirty": false,
+    "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/diag_signed_terms.yaml",
+    "manifest_sha256": "6f28b939773054a4500f10f0a2963959ca7dc97095495a00ddea0d2c133b0893",
+    "source_file_count": 202,
+    "source_state_sha256": "8f4e71e7d9a2bfdb99084e8c8e382374ff75c85db03788a992defca3dd85a007"
+  },
+  "schema_version": 5,
+  "started_at": "2026-08-22T10:46:37.144318+00:00",
+  "status": "complete"
+}
