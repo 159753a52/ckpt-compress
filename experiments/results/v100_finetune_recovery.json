@@ -1,0 +1,87 @@
+{
+  "metadata": {
+    "model": "gpt2",
+    "dataset": "Salesforce/wikitext-2-raw-v1",
+    "phase1_steps": 100,
+    "phase2_resume_steps": 50,
+    "initial_w0_val_loss": 3.6767742077509564,
+    "initial_w0_val_ppl": 39.51870909519726,
+    "step100_uncompressed_val_loss": 3.28139013449351,
+    "step100_uncompressed_val_ppl": 26.61274228859242,
+    "hvp_calculation_ms": 438.35639799999626
+  },
+  "step100_compression_sweep": [
+    {
+      "sparsity": 0.5,
+      "magnitude": {
+        "loss": 3.278452221552531,
+        "ppl": 26.534671107948643,
+        "delta_loss": -0.002937912940979004
+      },
+      "first_order": {
+        "loss": 3.2852943658828737,
+        "ppl": 26.71684768593259,
+        "delta_loss": 0.003904231389363577
+      },
+      "ours": {
+        "loss": 3.286488747596741,
+        "ppl": 26.74877686427851,
+        "delta_loss": 0.005098613103230676
+      },
+      "loss_damage_reduction_pct": 0.0
+    },
+    {
+      "sparsity": 0.8,
+      "magnitude": {
+        "loss": 3.2914284547170003,
+        "ppl": 26.88123487035212,
+        "delta_loss": 0.01003832022349016
+      },
+      "first_order": {
+        "loss": 3.3234997669855755,
+        "ppl": 27.757324935090207,
+        "delta_loss": 0.04210963249206534
+      },
+      "ours": {
+        "loss": 3.3454899708429973,
+        "ppl": 28.374474926658838,
+        "delta_loss": 0.06409983634948713
+      },
+      "loss_damage_reduction_pct": -538.5514201817389
+    },
+    {
+      "sparsity": 0.9,
+      "magnitude": {
+        "loss": 3.333382511138916,
+        "ppl": 28.03300346222255,
+        "delta_loss": 0.05199237664540579
+      },
+      "first_order": {
+        "loss": 3.372929342587789,
+        "ppl": 29.163832909528757,
+        "delta_loss": 0.09153920809427873
+      },
+      "ours": {
+        "loss": 3.41632452805837,
+        "ppl": 30.45726422367739,
+        "delta_loss": 0.1349343935648597
+      },
+      "loss_damage_reduction_pct": -159.52726586270205
+    }
+  ],
+  "step150_resumption_recovery": {
+    "uncompressed": {
+      "loss": 3.2967262744903563,
+      "ppl": 27.02402471143012
+    },
+    "magnitude_80pct": {
+      "loss": 3.3054357608159384,
+      "ppl": 27.26041802297135
+    },
+    "ours_hvp_80pct": {
+      "loss": 3.3185222784678143,
+      "ppl": 27.619506448451553
+    },
+    "ppl_advantage_over_magnitude": -0.35908842548020203
+  }
+}

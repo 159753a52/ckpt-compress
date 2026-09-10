@@ -344,7 +344,10 @@ def _get_wikitext_dataloader(
             texts = f.readlines()
         print(f"Loaded {len(texts)} lines from local file: {file_path}")
     else:
-        dataset = load_dataset("wikitext", dataset_config, split=split)
+        try:
+            dataset = load_dataset("Salesforce/wikitext", dataset_config, split=split)
+        except Exception:
+            dataset = load_dataset("wikitext", dataset_config, split=split)
         texts = dataset["text"]
 
     wiki_dataset = WikiText2Dataset(
