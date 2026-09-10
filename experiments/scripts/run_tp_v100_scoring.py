@@ -47,24 +47,49 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class BenchmarkTransformerBlock(nn.Module):
-    """Synthetic standard Transformer block matching GPT-2 dimensions."""
+class AllReduceAutograd(torch.autograd.Function):
+    """Autograd-aware AllReduce for Megatron-style Tensor Parallelism."""
 
-    def __init__(self, hidden_dim: int):
+    @staticmethod
+    def forward(ctx, x):
+        out = x.clone()
+        dist.all_reduce(out, op=dist.ReduceOp.SUM)
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        out = grad_output.clone()
+        dist.all_reduce(out, op=dist.ReduceOp.SUM)
+        return out
+
+
+class TPBenchmarkTransformerBlock(nn.Module):
+    """Synthetic standard Transformer block matching GPT-2 dimensions for TP."""
+
+    def __init__(self, hidden_dim: int, rank: int, world_size: int):
         super().__init__()
-        # Attention components
-        self.c_attn = nn.Linear(hidden_dim, 3 * hidden_dim, bias=False)
-        self.c_proj = nn.Linear(hidden_dim, hidden_dim, bias=False)
-        # MLP components
-        self.c_fc = nn.Linear(hidden_dim, 4 * hidden_dim, bias=False)
-        self.mlp_c_proj = nn.Linear(4 * hidden_dim, hidden_dim, bias=False)
+        self.rank = rank
+        self.world_size = world_size
+        # ColParallel (qkv): split out_features
+        self.qkv = nn.Linear(hidden_dim, 3 * hidden_dim // world_size, bias=False)
+        # RowParallel (out_proj): split in_features
+        self.out_proj = nn.Linear(hidden_dim // world_size, hidden_dim, bias=False)
+        # ColParallel (fc1): split out_features
+        self.fc1 = nn.Linear(hidden_dim, 4 * hidden_dim // world_size, bias=False)
+        # RowParallel (fc2): split in_features
+        self.fc2 = nn.Linear(4 * hidden_dim // world_size, hidden_dim, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        qkv = self.c_attn(x)
-        attn_out = self.c_proj(x)
+        qkv = self.qkv(x)
+        q, k, v = qkv.chunk(3, dim=-1)
+        attn_out = self.out_proj(q)
+        if self.world_size > 1 and dist.is_available() and dist.is_initialized():
+            attn_out = AllReduceAutograd.apply(attn_out)
         h = x + attn_out
-        mlp_act = torch.relu(self.c_fc(h))
-        mlp_out = self.mlp_c_proj(mlp_act)
+        mlp_act = torch.relu(self.fc1(h))
+        mlp_out = self.fc2(mlp_act)
+        if self.world_size > 1 and dist.is_available() and dist.is_initialized():
+            mlp_out = AllReduceAutograd.apply(mlp_out)
         return h + mlp_out
 
 
@@ -119,15 +144,19 @@ def main() -> None:
 
     tp_config = TPConfig(rank=rank, world_size=world_size, device=device)
 
-    # 1. Build synthetic model & inputs
+    # 1. Build synthetic TP model & inputs
     torch.manual_seed(42 + rank)
-    model = BenchmarkTransformerBlock(args.model_dim).to(device)
+    model = TPBenchmarkTransformerBlock(args.model_dim, rank, world_size).to(device)
     x = torch.randn(args.batch_size, args.seq_len, args.model_dim, device=device)
 
-    # 2. Build reference checkpoint and delta
-    full_delta: dict[str, torch.Tensor] = {}
-    for name, param in model.named_parameters():
-        full_delta[name] = torch.randn_like(param) * 0.02
+    # 2. Build full reference delta (unpartitioned) across all layers
+    torch.manual_seed(100)
+    full_delta: dict[str, torch.Tensor] = {
+        "qkv.weight": torch.randn(3 * args.model_dim, args.model_dim) * 0.02,
+        "out_proj.weight": torch.randn(args.model_dim, args.model_dim) * 0.02,
+        "fc1.weight": torch.randn(4 * args.model_dim, args.model_dim) * 0.02,
+        "fc2.weight": torch.randn(args.model_dim, 4 * args.model_dim) * 0.02,
+    }
 
     candidate_masks = build_candidate_masks(full_delta, args.prune_ratio)
 

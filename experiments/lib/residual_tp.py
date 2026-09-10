@@ -144,9 +144,10 @@ def compute_tp_local_projections(
         for param_name, grad in sensitivity.items():
             if param_name not in delta:
                 continue
-            d = delta[param_name]
+            d = delta[param_name].to(device=grad.device, non_blocking=True)
             mask = cand_mask_dict.get(param_name)
             if mask is not None:
+                mask = mask.to(device=grad.device, non_blocking=True)
                 pruned_delta = d * (~mask).to(d.dtype)
             else:
                 pruned_delta = d
