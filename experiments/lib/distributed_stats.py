@@ -139,10 +139,56 @@ def reduce_score_moments(
     }
 
 
+def reduce_candidate_scalars(
+    scores: torch.Tensor | Sequence[float],
+    process_group=None,
+) -> tuple[torch.Tensor, dict[str, object]]:
+    """All-reduce low-dimensional candidate projection scores across TP ranks.
+
+    Only communicates K scalars (e.g. K=3 for lambda in {0, 0.5, 1.0}),
+    yielding extreme communication efficiency.
+    """
+    if isinstance(scores, (list, tuple)):
+        scores_tensor = torch.tensor(scores, dtype=torch.float64)
+    elif isinstance(scores, torch.Tensor):
+        scores_tensor = scores.detach().to(dtype=torch.float64)
+    else:
+        raise TypeError(f"scores must be a tensor or sequence of floats, got {type(scores)}")
+
+    if scores_tensor.numel() == 0:
+        raise ValueError("Candidate scores must be non-empty")
+    if not torch.isfinite(scores_tensor).all().item():
+        raise ValueError("Candidate scores must contain only finite values")
+
+    if not dist.is_available() or not dist.is_initialized():
+        return scores_tensor.cpu(), {
+            "distributed": False,
+            "world_size": 1,
+            "backend": None,
+            "communicated_scalars_per_rank": 0,
+            "communicated_bytes_per_rank": 0,
+        }
+
+    device = _collective_device(process_group)
+    payload = scores_tensor.to(device=device).clone()
+    dist.all_reduce(payload, op=dist.ReduceOp.SUM, group=process_group)
+    reduced = payload.cpu()
+    world_size = dist.get_world_size(process_group)
+    num_scalars = reduced.numel()
+    return reduced, {
+        "distributed": True,
+        "world_size": world_size,
+        "backend": str(dist.get_backend(process_group)),
+        "communicated_scalars_per_rank": num_scalars,
+        "communicated_bytes_per_rank": num_scalars * 8,
+    }
+
+
 __all__ = [
     "ScoreMoments",
     "layer_score_moments",
     "merge_score_moments",
+    "reduce_candidate_scalars",
     "reduce_score_moments",
     "score_moments",
 ]
