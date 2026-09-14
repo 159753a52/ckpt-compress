@@ -225,21 +225,26 @@ def main():
         if len(scoring_batches) >= args.max_batches:
             break
 
-    # Configurations to test:
-    # 1. Fixed 1-batch (r=1)
-    # 2. Fixed 2-batches (r=2)
-    # 3. Fixed 4-batches (r=4)
-    # 4. Fixed 8-batches (r=8, full baseline)
-    # 5. Adaptive Incremental (tol=0.04, min=1, max=8)
-    # 6. Adaptive Incremental Strict (tol=0.02, min=1, max=8)
+    # Pre-measure baseline 8-batch scoring time
+    _, _, base_8_time, _ = run_incremental_probing_score(
+        model=model,
+        delta=delta,
+        eligible_names=eligible_names,
+        named_params=named_params,
+        scoring_batches=scoring_batches,
+        opt=optimizer,
+        device=device,
+        early_stopping_tol=None,
+        min_batches=1,
+    )
 
     configurations = [
         {"name": "Fixed 1-Batch", "max_b": 1, "tol": None, "min_b": 1},
         {"name": "Fixed 2-Batches", "max_b": 2, "tol": None, "min_b": 1},
         {"name": "Fixed 4-Batches", "max_b": 4, "tol": None, "min_b": 1},
         {"name": "Fixed 8-Batches (Full)", "max_b": 8, "tol": None, "min_b": 1},
-        {"name": "Adaptive Incremental (tol=0.04)", "max_b": 8, "tol": 0.04, "min_b": 1},
-        {"name": "Adaptive Incremental (tol=0.02)", "max_b": 8, "tol": 0.02, "min_b": 1},
+        {"name": "Adaptive Incremental (tol=0.35)", "max_b": 8, "tol": 0.35, "min_b": 2},
+        {"name": "Adaptive Incremental (tol=0.25)", "max_b": 8, "tol": 0.25, "min_b": 2},
     ]
 
     target_sparsities = [0.75, 0.85]  # 4.0x and 6.7x physical compression
@@ -253,7 +258,6 @@ def main():
         print(f"{'Method / Configuration':<35} | {'Batches':<8} | {'Scoring Time':<13} | {'PPL':<7} | {'ΔPPL':<8} | {'Speedup':<8} | {'Lossless?'}")
         print("-" * 115)
 
-        base_8_time = None
         for cfg in configurations:
             sub_batches = scoring_batches[: cfg["max_b"]]
             scores, b_used, s_time, stopped = run_incremental_probing_score(
@@ -268,16 +272,13 @@ def main():
                 min_batches=cfg["min_b"],
             )
 
-            if cfg["name"].startswith("Fixed 8-Batches"):
-                base_8_time = s_time
-
             restored = apply_compression(state_w1, state_w0, delta, scores, eligible_names, sparsity)
             model.load_state_dict(restored)
             rec_loss = evaluate_dataloader(model, val_loader, device)
             rec_ppl = compute_ppl(rec_loss)
             delta_ppl = rec_ppl - ppl_w1
 
-            speedup = (base_8_time / s_time) if base_8_time else 1.0
+            speedup = base_8_time / s_time
             is_lossless = delta_ppl <= 0.15
             lossless_str = "★ YES" if is_lossless else "NO"
 
@@ -294,6 +295,7 @@ def main():
                 "scoring_time_ms": s_time * 1000,
                 "restored_ppl": rec_ppl,
                 "delta_ppl": delta_ppl,
+                "speedup": round(speedup, 3),
                 "early_stopped": stopped,
                 "is_lossless": is_lossless,
             })
