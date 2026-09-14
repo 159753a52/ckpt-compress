@@ -331,6 +331,8 @@ def compute_block_taylor_scores(
     model_family: str = "gpt2",
     block_parameter_names: Sequence[Sequence[str]] | None = None,
     loss_fn: Callable[[nn.Module, Mapping[str, torch.Tensor], str], torch.Tensor] | None = None,
+    early_stopping_tolerance: float | None = None,
+    min_batches: int = 1,
 ) -> Tuple[TensorDict | Dict[str, TensorDict], Dict[str, object]]:
     """Compute g and H_bb*delta_b from one graph per structural block.
 
@@ -384,6 +386,8 @@ def compute_block_taylor_scores(
     layer_seconds: List[float] = []
     started = time.perf_counter()
 
+    max_batches_evaluated = 0
+    early_stopped_any = False
     model.eval()
     try:
         for layer_index, eligible_names in enumerate(layers):
@@ -409,7 +413,10 @@ def compute_block_taylor_scores(
                     name: torch.zeros_like(delta[name], dtype=torch.float32, device="cpu")
                     for name in eligible_names
                 }
+            batches_evaluated = 0
+            prev_running_scores: Dict[str, torch.Tensor] | None = None
             for batch in batches:
+                batches_evaluated += 1
                 with sdpa_kernel(SDPBackend.MATH):
                     loss = loss_function(model, batch, device)
                     gradients = torch.autograd.grad(
@@ -438,6 +445,7 @@ def compute_block_taylor_scores(
                     )
                     hvp_by_name = dict(zip(block_names, hvps))
 
+                step_alpha = 1.0 / batches_evaluated
                 for name in eligible_names:
                     gradient = gradient_by_name[name]
                     hvp = hvp_by_name[name]
@@ -455,20 +463,38 @@ def compute_block_taylor_scores(
                         contribution = first_order + second_order
                     if aggregation == "mean_abs":
                         contribution = contribution.abs()
-                    signed_accumulator[name].add_(
-                        contribution.float().cpu(),
-                        alpha=1.0 / len(batches),
-                    )
+
+                    # Exact online running mean update: m_b = m_{b-1} + (c_b - m_{b-1}) / b
+                    diff = contribution.float().cpu() - signed_accumulator[name]
+                    signed_accumulator[name].add_(diff, alpha=step_alpha)
                     if return_components:
-                        first_order_accumulator[name].add_(
-                            first_order.float().cpu(),
-                            alpha=1.0 / len(batches),
-                        )
-                        second_order_accumulator[name].add_(
-                            second_order.float().cpu(),
-                            alpha=1.0 / len(batches),
-                        )
+                        diff_fo = first_order.float().cpu() - first_order_accumulator[name]
+                        first_order_accumulator[name].add_(diff_fo, alpha=step_alpha)
+                        diff_so = second_order.float().cpu() - second_order_accumulator[name]
+                        second_order_accumulator[name].add_(diff_so, alpha=step_alpha)
                 del loss, gradients, gradient_by_name, gradient_probe, hvps, hvp_by_name, probes
+
+                # Adaptive early-stopping condition across consecutive batches
+                if (
+                    early_stopping_tolerance is not None
+                    and batches_evaluated >= min_batches
+                    and batches_evaluated < len(batches)
+                ):
+                    if prev_running_scores is not None:
+                        total_diff = sum(
+                            (signed_accumulator[n] - prev_running_scores[n]).abs().sum().item()
+                            for n in eligible_names
+                        )
+                        total_norm = sum(
+                            prev_running_scores[n].abs().sum().item()
+                            for n in eligible_names
+                        )
+                        rel_diff = total_diff / (total_norm + 1e-8)
+                        if rel_diff <= early_stopping_tolerance:
+                            early_stopped_any = True
+                            break
+                    prev_running_scores = {n: signed_accumulator[n].clone() for n in eligible_names}
+            max_batches_evaluated = max(max_batches_evaluated, batches_evaluated)
 
             for name in eligible_names:
                 score_values = signed_accumulator[name]
@@ -529,7 +555,7 @@ def compute_block_taylor_scores(
         "signed_first_order": "taylor_hvp_signed_fo",
         "signed_second_order": "taylor_hvp_signed_so",
     }
-    return output_scores, {
+    meta = {
         "score_kind": aggregation_score_kinds[aggregation],
         "aggregation": aggregation,
         "total_seconds": time.perf_counter() - started,
@@ -540,10 +566,14 @@ def compute_block_taylor_scores(
         "changed_parameter_versions": changed_versions,
         "optimizer_constructed": False,
         "model_mode": "eval",
-        "hvp_batches": len(batches),
+        "hvp_batches": max_batches_evaluated if early_stopping_tolerance is not None else len(batches),
         "task_type": task_type,
         "model_family": model_family,
     }
+    if early_stopping_tolerance is not None:
+        meta["planned_hvp_batches"] = len(batches)
+        meta["early_stopped"] = early_stopped_any
+    return output_scores, meta
 
 
 __all__ = [
