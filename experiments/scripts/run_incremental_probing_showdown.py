@@ -88,7 +88,7 @@ def run_incremental_probing_score(
             hvps = torch.autograd.grad(probe, el_params, retain_graph=False)
 
         step_alpha = 1.0 / batches_used
-        for n, g, h in zip(eligible_names, grads):
+        for n, g, h in zip(eligible_names, grads, hvps):
             running_grad[n].add_(g.detach() - running_grad[n], alpha=step_alpha)
             running_hvp[n].add_(h.detach() - running_hvp[n], alpha=step_alpha)
 
