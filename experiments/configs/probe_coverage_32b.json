@@ -1,0 +1,53 @@
+{
+  "protocol_version": "probe-coverage-32b-v1",
+  "cuda_visible_devices": "5,6,7",
+  "model_path": "/data/models/DeepSeek-R1-Distill-Qwen-32B",
+  "train_text": "/home/gridtest/models/wikitext_train.txt",
+  "val_text": "/home/gridtest/models/wikitext_valid.txt",
+  "work_dir": "/home/gridtest/dacp_probe/run1",
+  "layer_split": [22, 22, 20],
+  "seq_len": 1024,
+  "train": {
+    "lr": 1e-05,
+    "betas": [0.9, 0.999],
+    "eps": 1e-08,
+    "weight_decay": 0.01,
+    "clip": 1.0,
+    "sr_seed": 1234,
+    "ref_step": 100,
+    "ckpt_step": 200
+  },
+  "chunks": {
+    "score_start": 1000,
+    "score_count": 4,
+    "gate_start": 1100,
+    "gate_count": 8,
+    "val_count": 32,
+    "eval_batch": 4
+  },
+  "score_micro_batch": 1,
+  "recovery_steps": 50,
+  "cycles": 3,
+  "sparsities": [0.95, 0.98],
+  "weibull_cap": 0.99,
+  "weibull_cap_original": 0.95,
+  "subsample_stride": 2003,
+  "probe": {
+    "estimator": "coverage",
+    "max_rounds": 8,
+    "seeds": [0, 1, 2],
+    "fixed_rounds": [1, 2, 3, 4, 5],
+    "rules": [
+      {"name": "mean90", "key": "mean_mass", "tau": 0.90, "min_round": 1},
+      {"name": "mean95", "key": "mean_mass", "tau": 0.95, "min_round": 1},
+      {"name": "p05_90", "key": "p05_mass", "tau": 0.90, "min_round": 1},
+      {"name": "stable99", "key": "overlap_prev_global_0.95", "tau": 0.99, "min_round": 2}
+    ]
+  },
+  "chain_methods": ["no_compression", "dacp", "hvp_global", "probe_mean95", "excp_style", "inshrinkerator_style"],
+  "chain_probe_seed": 0,
+  "tolerance": {
+    "immediate_rel_ppl": 0.01,
+    "noninferiority_nats": 0.002
+  }
+}
