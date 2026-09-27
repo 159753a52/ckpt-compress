@@ -391,15 +391,19 @@ class Scorer:
         zeros = 0
         inexact = 0
         sq = 0.0
+        self.fix = []  # per tensor: (flat idx, ref values, theta values) where bf16 d is inexact
         for n in self.names:
             p = self.pipe.param(n)
             b = self.ref[n].to(p.device)
             d = (p.float() - b.float()).to(torch.bfloat16)
-            inexact += int(((p - d) != b).sum())
+            bad = ((p - d) != b) | ((b + d) != p)
+            idx = bad.reshape(-1).nonzero().reshape(-1)
+            self.fix.append((idx, b.reshape(-1)[idx].clone(), p.detach().reshape(-1)[idx].clone()))
+            inexact += int(idx.numel())
             zeros += int((d == 0).sum())
             sq += float(d.float().square().sum().double())
             self.d.append(d)
-            del b
+            del b, bad
         rec = {
             "eligible_coords": self.total,
             "zero_residual_coords": zeros,
@@ -407,10 +411,9 @@ class Scorer:
             "residual_l2": math.sqrt(sq),
             "bf16_inexact_residual_coords": inexact,
         }
-        # theta - d == b bitwise lets masks be applied and undone arithmetically;
-        # otherwise fall back to copying the stored tensors.
-        self.exact = inexact == 0
-        self.theta_cpu = None if self.exact else self.ctx.snapshot(self.names)
+        # Masks are applied and undone arithmetically with d; coordinates where
+        # bf16 subtraction/addition is inexact are overwritten from stored values,
+        # so both directions are bit-exact.
         self.records["residual"] = rec
         self.ctx.log("residual", **rec)
         return rec
@@ -442,7 +445,8 @@ class Scorer:
             (loss / self.positions).backward()
             del logits, loss
         t1 = now()
-        self.g = [pipe.param(n).grad.detach().to("cpu").pin_memory() for n in self.names]
+        # Keep g on its GPU until the probe phase needs the memory.
+        self.g = [pipe.param(n).grad.detach() for n in self.names]
         pipe.zero_grad()
         pipe.set_requires_grad([])
         rec = {
@@ -456,7 +460,14 @@ class Scorer:
         return rec
 
     def g_dev(self, i: int) -> torch.Tensor:
-        return self.g[i].to(self.d[i].device, non_blocking=True)
+        return self.g[i].to(self.d[i].device)
+
+    def offload_gradient(self) -> float:
+        t0 = now()
+        if self.g and self.g[0].is_cuda:
+            self.g = [g.to("cpu") for g in self.g]
+            torch.cuda.empty_cache()
+        return round(now() - t0, 3)
 
     # ---------------------------------------------------------- selection
     def targets_for(self, prefix: str, moments: Optional[List[ScoreMoments]]) -> Tuple[List[Target], Dict[str, object]]:
@@ -539,18 +550,16 @@ class Scorer:
         """sign=-1: theta -> b on pruned coords; sign=+1 restores (exact when d exact)."""
         for i, n in enumerate(self.names):
             p = self.pipe.param(n)
-            if not self.exact:
-                if sign < 0:
-                    m = unpack_mask(packed[i].to(p.device), p.shape)
-                    p.copy_(torch.where(m, self.ref[n].to(p.device), p))
-                else:
-                    p.copy_(self.theta_cpu[n].to(p.device))
-                continue
             m = unpack_mask(packed[i].to(p.device), p.shape)
             if sign < 0:
                 p.sub_(torch.where(m, self.d[i], torch.zeros_like(self.d[i])))
             else:
                 p.add_(torch.where(m, self.d[i], torch.zeros_like(self.d[i])))
+            idx, bvals, tvals = self.fix[i]
+            if idx.numel():
+                hit = m.reshape(-1)[idx]
+                flat = p.view(-1)
+                flat[idx[hit]] = (bvals if sign < 0 else tvals)[hit]
 
     def immediate_eval(self, packed: List[torch.Tensor]) -> Dict[str, object]:
         self.apply_mask(packed, -1)
@@ -601,7 +610,7 @@ class Scorer:
                         acc[n] += h[n]
                 del h
             for n in names:
-                hd[self.names.index(n)] = acc[n].to("cpu").pin_memory()
+                hd[self.names.index(n)] = acc[n].to("cpu")
             del acc
             per_block.append(round(now() - tb, 3))
             if layer % 8 == 0:
@@ -611,7 +620,7 @@ class Scorer:
         del cached
         for i, n in enumerate(self.names):
             if hd[i] is None:  # smoke mode only
-                hd[i] = torch.zeros(self.pipe.param(n).shape, dtype=torch.float32).pin_memory()
+                hd[i] = torch.zeros(self.pipe.param(n).shape, dtype=torch.float32)
         self.hd = hd
         rec = {
             "cache_forward_s": round(t_cache, 3),
@@ -627,7 +636,7 @@ class Scorer:
 
     def hvp_score(self, i: int) -> torch.Tensor:
         d = self.d[i].float()
-        hd = self.hd[i].to(d.device, non_blocking=True)
+        hd = self.hd[i].to(d.device)
         return (-self.g_dev(i).float() * d + 0.5 * d * hd).abs()
 
 
@@ -785,7 +794,6 @@ def phase_score(ctx: Context, args) -> None:
         return
     ref, theta, _, _, step, meta = load_ckpt(ctx, verify_hash=not args.skip_hash)
     ctx.load_params(theta)
-    del theta
     s = Scorer(ctx, {n: ref[n] for n in ctx.pipe.eligible_names}, out)
     del ref
     cfg = ctx.cfg
@@ -818,11 +826,21 @@ def phase_score(ctx: Context, args) -> None:
         return info
 
     rec["methods"] = {name: summarize(name, summ) for name, summ in methods.items()}
+    # After ten apply/undo cycles the parameters must equal the checkpoint bitwise.
+    rec["restore_mismatch_after_evals"] = sum(
+        int((ctx.pipe.param(n).detach().cpu() != theta[n]).sum()) for n in ctx.pipe.eligible_names
+    )
+    ctx.log("restore_check", mismatch=rec["restore_mismatch_after_evals"])
+    if rec["restore_mismatch_after_evals"]:
+        raise RuntimeError("mask apply/undo is not bit-exact")
+    del theta
     rec["residual"] = s.records["residual"]
     rec["gradient"] = s.records["gradient"]
     rec["hvp"] = s.records["hvp"]
 
     # ------------------------------------------------ probes
+    s.hd = None
+    rec["gradient_offload_s"] = s.offload_gradient()
     pcfg = cfg["probe"]
     rec["probes"] = {}
     for seed in pcfg["seeds"][: args.max_seeds]:
@@ -1058,6 +1076,7 @@ def chain_mask(ctx: Context, method: str, ref: dict, out: Path, sp: float, cycle
             s.hd = None
         elif method.startswith("probe_"):
             rule = next(r for r in cfg["probe"]["rules"] if r["name"] == method[len("probe_"):])
+            info["gradient_offload_s"] = s.offload_gradient()
             run = ProbeRun(s, cfg["chain_probe_seed"] + 100 * cycle, cfg["probe"]["max_rounds"], cfg["probe"]["estimator"])
             rounds = []
             while True:
