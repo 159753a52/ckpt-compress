@@ -1,0 +1,233 @@
+{
+ "schema_version": 1,
+ "script": "experiments/scripts/run_system_bytes_comparison.py",
+ "argv": [
+  "--manifest",
+  "experiments/configs/probe_pythia410m_campaign.yaml",
+  "--workload",
+  "pythia_410m_alpaca",
+  "--checkpoint-root",
+  "/home/gridtest/dacp_probe/assets/checkpoints",
+  "--data-root",
+  "/home/gridtest/dacp_probe/assets/data",
+  "--device",
+  "cpu",
+  "--output",
+  "/home/gridtest/dacp_probe/campaign/system_bytes/smoke.json",
+  "--seeds",
+  "42",
+  "--alphas",
+  "1e-3",
+  "--ours",
+  "probe_topk_m1_exact_global",
+  "--insh-bins",
+  "16"
+ ],
+ "provenance": {
+  "manifest": "/home/gridtest/dacp_probe_code/f864e1b/experiments/configs/probe_pythia410m_campaign.yaml",
+  "manifest_sha256": "bf18bc261ff9cc6e429b4b89ee282858f23f375ed58d27606b0989b9d9fe1e91",
+  "git_commit": "f864e1b92fa1f93605cd235bd92f68f26aff8403",
+  "git_dirty": false,
+  "dirty_source_paths": [],
+  "source_file_count": 278,
+  "source_state_sha256": "1664f01dcf0b26145bbf1f4f68bbbd377d927df0ba2c9997d3b1ce1619f2e74a",
+  "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+  "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+  "checkpoint_step": 1000,
+  "base_model": "/home/gridtest/dacp_probe/assets/models/pythia-410m"
+ },
+ "data_identity": {
+  "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+  "checkpoint_step": 1000,
+  "training_pool": {
+   "count": 140,
+   "sha256": "ce6719149f8566a31e4f25b7dba101fce835ec972b65e4cc6aa3efb9e9cdca26"
+  },
+  "evaluation_batches": {
+   "count": 100,
+   "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+  }
+ },
+ "reference": {
+  "checkpoint": {
+   "loss": 1.7211526735048381,
+   "perplexity": 5.590969313658916,
+   "seconds": 60.489958092104644,
+   "batches": 100,
+   "examples": 200
+  },
+  "base": {
+   "loss": 2.6711079101732595,
+   "perplexity": 14.455976247124964,
+   "seconds": 56.24827857688069,
+   "batches": 100,
+   "examples": 200
+  },
+  "fp32_bytes": {
+   "weights": 1621336064,
+   "exp_avg": 1621336064,
+   "exp_avg_sq": 1621336064
+  },
+  "fp32_serialized_residual_and_moments": {
+   "torch_save": 4864008192
+  },
+  "parameters": 405334016,
+  "eligible_parameters": 301989888
+ },
+ "records": [
+  {
+   "method": "excp_pipeline",
+   "fidelity": "reimplementation_of_upstream_excp_script",
+   "seed": 42,
+   "operating_point": {
+    "alpha": 0.001,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.8226980997456445,
+   "eligible_kept": 53543381,
+   "all_kept_mask": 84238620,
+   "kept_residual_nonzeros": 84238620,
+   "kept_moment_nonzeros": 7562544,
+   "mask_method": null,
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 78654004,
+     "lzma1": 78468644
+    },
+    "exp_avg": {
+     "torch_save": 202922630,
+     "zlib6": 12252429,
+     "lzma1": 10315236
+    },
+    "exp_avg_sq": {
+     "torch_save": 202922630,
+     "zlib6": 11809110,
+     "lzma1": 10000268
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608686894,
+    "zlib6": 102715543,
+    "lzma1": 98784148
+   },
+   "restored": {
+    "loss": 1.7733756866486972,
+    "perplexity": 5.890705010312981,
+    "seconds": 52.66774184908718,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.5533534833353191,
+    "exp_avg": 0.9363623608682882,
+    "exp_avg_sq": 0.985944663309766
+   },
+   "seconds": 128.66418056399561
+  },
+  {
+   "method": "probe_topk_m1_exact_global_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 42,
+   "operating_point": {
+    "alpha": 0.001,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.8226980997456445,
+   "eligible_kept": 53543381,
+   "all_kept_mask": 84238620,
+   "kept_residual_nonzeros": 84238620,
+   "kept_moment_nonzeros": 11013186,
+   "mask_method": {
+    "internal_method": "probe_topk_m1_exact_global",
+    "allocation_kind": "exact_global",
+    "scoring_seconds": 56.91045042616315
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 80507625,
+     "lzma1": 80344944
+    },
+    "exp_avg": {
+     "torch_save": 202922630,
+     "zlib6": 17104671,
+     "lzma1": 15083924
+    },
+    "exp_avg_sq": {
+     "torch_save": 202922630,
+     "zlib6": 16731152,
+     "lzma1": 14686912
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608686894,
+    "zlib6": 114343448,
+    "lzma1": 110115780
+   },
+   "restored": {
+    "loss": 1.7634181850074284,
+    "perplexity": 5.83233937570994,
+    "seconds": 52.84106044587679,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.6042849928420378,
+    "exp_avg": 0.8119601656035227,
+    "exp_avg_sq": 0.7745735805617661
+   },
+   "seconds": 135.49314636201598
+  },
+  {
+   "method": "inshrinkerator_like",
+   "fidelity": "reimplementation_of_inshrinkerator_partition_and_quantization_simplified",
+   "seed": 42,
+   "operating_point": {
+    "n_bins": 16,
+    "protect_fraction": 0.005,
+    "prune_fraction": 0.2
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 453500922,
+     "zlib6": 271029462,
+     "lzma1": 269484760
+    },
+    "exp_avg": {
+     "torch_save": 449980282,
+     "zlib6": 228616205,
+     "lzma1": 226506960
+    },
+    "exp_avg_sq": {
+     "torch_save": 449980282,
+     "zlib6": 157561640,
+     "lzma1": 145819024
+    }
+   },
+   "total_bytes": {
+    "torch_save": 1353461486,
+    "zlib6": 657207307,
+    "lzma1": 641810744
+   },
+   "restored": {
+    "loss": 6.598262972111803,
+    "perplexity": 733.819416744762,
+    "seconds": 53.11929501686245,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "weights": 0.11969626627005478,
+    "residual": 14.589526623575082,
+    "exp_avg": 0.07244562214406824,
+    "exp_avg_sq": 0.020753224298241623
+   },
+   "seconds": 841.5184997119941
+  }
+ ],
+ "elapsed_seconds": 1301.947298657149,
+ "written_at": "2026-09-28T07:00:49.590145+00:00"
+}

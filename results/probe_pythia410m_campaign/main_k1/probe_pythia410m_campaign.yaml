@@ -1,0 +1,68 @@
+schema_version: 1
+
+# Pythia-410M / Alpaca campaign: matched residual-recovery comparison of the
+# coverage-tracked probe scores and DACP against the ExCP-style and
+# Inshrinkerator-style baselines (style fidelity, not full reproductions).
+#
+# Differences from probe_small_models.yaml (which is left unchanged):
+# - learning_rate 1e-6 (was 5e-5). Pilots (probe_pythia410m_lr_pilot*.yaml,
+#   no_compression, seed 42, K=1; checkpoint PPL 5.591 on the same 100
+#   evaluation batches) gave PPL after the first 50-step segment / final:
+#   5e-5: 10.24 / 8.59 (probe_small_models run), 2e-5: 6.630 / 6.372,
+#   1e-5: 5.961 / 5.869, 5e-6: 5.720 / 5.699, 2e-6: 5.617 / 5.612,
+#   1e-6: 5.595 / 5.593. Every tested rate raises the control's perplexity
+#   (batch 2 x 128 tokens is far noisier than the fine-tune's 4 x 512 and the
+#   fine-tune ends at lr ~0), so 1e-6 is the largest tested rate at which the
+#   uncompressed control does not degrade (+0.002 final).
+# - max_layer_ratio 0.995 (was 0.95) so that the declared 0.98 and 0.99 prune
+#   ratios are admissible; the loader requires max_layer_ratio >= every ratio.
+# - train_pool_batches 140 = total_steps + max(K) * hvp_batches, so K=1, 3
+#   and 5 jobs draw from one shared cached training pool.
+# - a second workload recovers from a longer fine-tune (3000 steps).
+# Every compressed method except dacp uses exact global top-k selection.
+methods:
+  - no_compression
+  - excp_style
+  - inshrinkerator_style
+  - first_order_exact_global
+  - taylor_exact_global
+  - dacp
+  - probe_topk_m1_exact_global
+  - probe_sample_m1_exact_global
+  - probe_headtail_m2_exact_global
+
+claim_gates:
+  matched_scoring_main_table:
+    baseline_owners: [excp, inshrinkerator]
+    required_baseline_fidelity: style
+
+defaults:
+  prune_ratios: [0.5, 0.7, 0.9, 0.95, 0.98, 0.99]
+  max_layer_ratio: 0.995
+  recovery_counts: [1, 3, 5]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  batch_size: 2
+  seq_length: 128
+  learning_rate: 1.0e-6
+  seeds: [42, 43, 44]
+  model: pythia-410m
+  dataset: alpaca
+  data_dir: data
+  metric: perplexity
+  train_pool_batches: 140
+
+workloads:
+  # Repository fine-tune: finetune_pythia_410m.py, 1000 steps, batch 4,
+  # sequence 512, lr 2e-5, 100 warmup steps + cosine decay, AMP.
+  - name: pythia_410m_alpaca
+    checkpoint: checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt
+    checkpoint_step: 1000
+
+  # Same script and hyper-parameters with --total_steps 3000 (the script cannot
+  # resume, so this is an independent 3000-step run: 300 warmup steps + cosine
+  # decay over 3000 steps), saved at step 3000.
+  - name: pythia_410m_alpaca_step3000
+    checkpoint: checkpoints/pythia_410m_alpaca_step3000/checkpoint_step_3000.pt
+    checkpoint_step: 3000

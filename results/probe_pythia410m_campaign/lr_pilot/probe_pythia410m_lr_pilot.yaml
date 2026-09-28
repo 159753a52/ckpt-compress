@@ -1,0 +1,36 @@
+schema_version: 1
+
+# Recovery learning-rate pilot for probe_pythia410m_campaign.yaml.
+# probe_small_models.yaml recovers the Pythia-410M step-1000 checkpoint at
+# lr 5e-5; there the uncompressed control degrades from PPL 5.59 (checkpoint)
+# to about 10 after the first 50-step segment, although fine-tuning used
+# lr 2e-5 with warmup and cosine decay. This pilot measures the uncompressed
+# control (and excp_style at 90% for context) at lr 1e-5 and 2e-5, K=1,
+# seed 42, with every other setting identical to the campaign manifest.
+methods:
+  - no_compression
+  - excp_style
+
+defaults:
+  prune_ratios: [0.9]
+  max_layer_ratio: 0.995
+  recovery_counts: [1]
+  total_steps: 100
+  hvp_batches: 8
+  eval_batches: 100
+  checkpoint_step: 1000
+  batch_size: 2
+  seq_length: 128
+  seeds: [42]
+  model: pythia-410m
+  dataset: alpaca
+  checkpoint: checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt
+  data_dir: data
+  metric: perplexity
+  train_pool_batches: 108
+
+workloads:
+  - name: pythia_410m_alpaca_lr1e-5
+    learning_rate: 1.0e-5
+  - name: pythia_410m_alpaca_lr2e-5
+    learning_rate: 2.0e-5

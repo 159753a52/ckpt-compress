@@ -1,0 +1,218 @@
+{
+  "completed_jobs": {
+    "pythia_410m_alpaca_lr1e-6_p1pccccccccccccdp-1_k1": {
+      "path": "pythia_410m_alpaca_lr1e-6_p1pccccccccccccdp-1_k1.json",
+      "sha256": "59409db051fbe60e31e656e604f9d5ba58d6961153997008383b466040d815c9"
+    },
+    "pythia_410m_alpaca_lr2e-6_p1pccccccccccccdp-1_k1": {
+      "path": "pythia_410m_alpaca_lr2e-6_p1pccccccccccccdp-1_k1.json",
+      "sha256": "18265d166fb9f14e31cc6752dbed864794bae5ff1c2b2434c60607f315d39d50"
+    },
+    "pythia_410m_alpaca_lr5e-6_p1pccccccccccccdp-1_k1": {
+      "path": "pythia_410m_alpaca_lr5e-6_p1pccccccccccccdp-1_k1.json",
+      "sha256": "2236637af7d94cdd62e8999f5045a7a79517faa7dc66560cce09277ac3f7b74f"
+    }
+  },
+  "data_identities": {
+    "pythia_410m_alpaca_lr1e-6": {
+      "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+      },
+      "training_pool": {
+        "count": 108,
+        "sha256": "179f007ef3591cb97496c2a75bd9f50bd8c576c2f2aa5da706f939be8c5aac5b"
+      }
+    },
+    "pythia_410m_alpaca_lr2e-6": {
+      "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+      },
+      "training_pool": {
+        "count": 108,
+        "sha256": "179f007ef3591cb97496c2a75bd9f50bd8c576c2f2aa5da706f939be8c5aac5b"
+      }
+    },
+    "pythia_410m_alpaca_lr5e-6": {
+      "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+      },
+      "training_pool": {
+        "count": 108,
+        "sha256": "179f007ef3591cb97496c2a75bd9f50bd8c576c2f2aa5da706f939be8c5aac5b"
+      }
+    }
+  },
+  "finished_at": "2026-09-28T06:26:19.670930+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/home/gridtest/dacp_probe_code/39a3c76/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/home/gridtest/dacp_probe_code/39a3c76/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 5e-06,
+        "max_layer_ratio": 0.995,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca_lr5e-6",
+        "prune_ratio": 0.9,
+        "prune_ratios": [
+          0.9
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-06,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 108
+      },
+      {
+        "batch_size": 2,
+        "checkpoint": "/home/gridtest/dacp_probe_code/39a3c76/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/home/gridtest/dacp_probe_code/39a3c76/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 2e-06,
+        "max_layer_ratio": 0.995,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca_lr2e-6",
+        "prune_ratio": 0.9,
+        "prune_ratios": [
+          0.9
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 2e-06,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 108
+      },
+      {
+        "batch_size": 2,
+        "checkpoint": "/home/gridtest/dacp_probe_code/39a3c76/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/home/gridtest/dacp_probe_code/39a3c76/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 1e-06,
+        "max_layer_ratio": 0.995,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca_lr1e-6",
+        "prune_ratio": 0.9,
+        "prune_ratios": [
+          0.9
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 1e-06,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 108
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "pythia_410m_alpaca_lr5e-6_p1pccccccccccccdp-1_k1",
+    "pythia_410m_alpaca_lr2e-6_p1pccccccccccccdp-1_k1",
+    "pythia_410m_alpaca_lr1e-6_p1pccccccccccccdp-1_k1"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "39a3c7688cf7bd5cbafe213df416972fab783abd",
+    "git_dirty": false,
+    "manifest": "/home/gridtest/dacp_probe_code/39a3c76/experiments/configs/probe_pythia410m_lr_pilot2.yaml",
+    "manifest_sha256": "cb605bc889feaad237d3a866dd6bcf1aef9a2c15a69633b6bf165e02ca3b837f",
+    "source_file_count": 274,
+    "source_state_sha256": "5e006c8bc576b996f5165ee24de5815228fe8fddf0444c93cb06df6b689a1bc2"
+  },
+  "schema_version": 5,
+  "started_at": "2026-09-28T06:22:52.544988+00:00",
+  "status": "complete"
+}

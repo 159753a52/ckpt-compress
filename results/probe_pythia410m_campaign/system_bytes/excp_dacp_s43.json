@@ -1,0 +1,724 @@
+{
+ "schema_version": 1,
+ "script": "experiments/scripts/run_system_bytes_comparison.py",
+ "argv": [
+  "--manifest",
+  "experiments/configs/probe_pythia410m_campaign.yaml",
+  "--workload",
+  "pythia_410m_alpaca",
+  "--checkpoint-root",
+  "/home/gridtest/dacp_probe/assets/checkpoints",
+  "--data-root",
+  "/home/gridtest/dacp_probe/assets/data",
+  "--device",
+  "cpu",
+  "--output",
+  "/home/gridtest/dacp_probe/campaign/system_bytes/excp_dacp_s43.json",
+  "--seeds",
+  "43",
+  "--alphas",
+  "1e-5,5e-5,2e-4,1e-3",
+  "--ours",
+  "dacp,probe_topk_m1_exact_global",
+  "--insh-bins="
+ ],
+ "provenance": {
+  "manifest": "/home/gridtest/dacp_probe_code/0d39433/experiments/configs/probe_pythia410m_campaign.yaml",
+  "manifest_sha256": "bf18bc261ff9cc6e429b4b89ee282858f23f375ed58d27606b0989b9d9fe1e91",
+  "git_commit": "0d394339131cbfd85304d5bf87675390b3d33f60",
+  "git_dirty": false,
+  "dirty_source_paths": [],
+  "source_file_count": 278,
+  "source_state_sha256": "31e2dd57c45f14690a2013d98e841eae43e64f290bb3956852b6d484935f8a8e",
+  "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+  "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+  "checkpoint_step": 1000,
+  "base_model": "/home/gridtest/dacp_probe/assets/models/pythia-410m"
+ },
+ "data_identity": {
+  "checkpoint_sha256": "b1a0b3f4bc9ae8db0c86d762a172769e3745c7cd60eb7fcb75607145ed26a49b",
+  "checkpoint_step": 1000,
+  "training_pool": {
+   "count": 140,
+   "sha256": "ce6719149f8566a31e4f25b7dba101fce835ec972b65e4cc6aa3efb9e9cdca26"
+  },
+  "evaluation_batches": {
+   "count": 100,
+   "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+  }
+ },
+ "reference": {
+  "checkpoint": {
+   "loss": 1.7211523157689976,
+   "perplexity": 5.590967313569167,
+   "seconds": 93.54421055596322,
+   "batches": 100,
+   "examples": 200
+  },
+  "base": {
+   "loss": 2.6711112515216904,
+   "perplexity": 14.456024549659212,
+   "seconds": 67.68505069287494,
+   "batches": 100,
+   "examples": 200
+  },
+  "fp32_bytes": {
+   "weights": 1621336064,
+   "exp_avg": 1621336064,
+   "exp_avg_sq": 1621336064
+  },
+  "fp32_serialized_residual_and_moments": {
+   "torch_save": 4864008192
+  },
+  "parameters": 405334016,
+  "eligible_parameters": 301989888
+ },
+ "records": [
+  {
+   "method": "excp_pipeline",
+   "fidelity": "reimplementation_of_upstream_excp_script",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 1e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.012104107273949517,
+   "eligible_kept": 298334570,
+   "all_kept_mask": 399166744,
+   "kept_residual_nonzeros": 399166744,
+   "kept_moment_nonzeros": 39258610,
+   "mask_method": null,
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 182713746,
+     "lzma1": 183052560
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 44501023,
+     "lzma1": 43655496
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 43037356,
+     "lzma1": 41688788
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 270252125,
+    "lzma1": 268396844
+   },
+   "restored": {
+    "loss": 1.7184995902271494,
+    "perplexity": 5.576155666076372,
+    "seconds": 67.98526426497847,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.12281477495949802,
+    "exp_avg": 0.5207063129556482,
+    "exp_avg_sq": 0.6587661058002997
+   },
+   "seconds": 194.58486481104046
+  },
+  {
+   "method": "dacp_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 1e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.012104107273949517,
+   "eligible_kept": 298334570,
+   "all_kept_mask": 399166744,
+   "kept_residual_nonzeros": 399166744,
+   "kept_moment_nonzeros": 39427664,
+   "mask_method": {
+    "internal_method": "taylor_weibull_mom",
+    "allocation_kind": "weibull_moment",
+    "scoring_seconds": 533.9467040922027
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 182576857,
+     "lzma1": 182907460
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 44470055,
+     "lzma1": 43643212
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 43140202,
+     "lzma1": 41783120
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 270187114,
+    "lzma1": 268333792
+   },
+   "restored": {
+    "loss": 1.7182802508485813,
+    "perplexity": 5.574932729681732,
+    "seconds": 69.82051004678942,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.1257816959376513,
+    "exp_avg": 0.5136316387432672,
+    "exp_avg_sq": 0.661686029847512
+   },
+   "seconds": 202.92422693804838
+  },
+  {
+   "method": "probe_topk_m1_exact_global_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 1e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.012104107273949517,
+   "eligible_kept": 298334570,
+   "all_kept_mask": 399166744,
+   "kept_residual_nonzeros": 399166744,
+   "kept_moment_nonzeros": 39425025,
+   "mask_method": {
+    "internal_method": "probe_topk_m1_exact_global",
+    "allocation_kind": "exact_global",
+    "scoring_seconds": 51.79083938919939
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 183263213,
+     "lzma1": 183516044
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 44491737,
+     "lzma1": 43663312
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 43104302,
+     "lzma1": 41761264
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 270859252,
+    "lzma1": 268940620
+   },
+   "restored": {
+    "loss": 1.7181674651897618,
+    "perplexity": 5.574303992677867,
+    "seconds": 70.17192549095489,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.12599616987927476,
+    "exp_avg": 0.5159538491453296,
+    "exp_avg_sq": 0.6559100470897914
+   },
+   "seconds": 201.3497543160338
+  },
+  {
+   "method": "excp_pipeline",
+   "fidelity": "reimplementation_of_upstream_excp_script",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 5e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.06043887138366699,
+   "eligible_kept": 283737960,
+   "all_kept_mask": 375459487,
+   "kept_residual_nonzeros": 375459487,
+   "kept_moment_nonzeros": 37186302,
+   "mask_method": null,
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 186450302,
+     "lzma1": 186533436
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 42968976,
+     "lzma1": 42135508
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 41650306,
+     "lzma1": 40314328
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 271069584,
+    "lzma1": 268983272
+   },
+   "restored": {
+    "loss": 1.7186757376540673,
+    "perplexity": 5.577137978062369,
+    "seconds": 63.83908592793159,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.12025636379406696,
+    "exp_avg": 0.5637018312799944,
+    "exp_avg_sq": 0.6778001546002101
+   },
+   "seconds": 189.05929968203418
+  },
+  {
+   "method": "dacp_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 5e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.06043887138366699,
+   "eligible_kept": 283737960,
+   "all_kept_mask": 375459487,
+   "kept_residual_nonzeros": 375151916,
+   "kept_moment_nonzeros": 37934240,
+   "mask_method": {
+    "internal_method": "taylor_weibull_mom",
+    "allocation_kind": "weibull_moment",
+    "scoring_seconds": 534.5935747839976
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 186668642,
+     "lzma1": 186597580
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 43575343,
+     "lzma1": 42756144
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 42225009,
+     "lzma1": 40884468
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 272468994,
+    "lzma1": 270238192
+   },
+   "restored": {
+    "loss": 1.7178688626052494,
+    "perplexity": 5.5726397395862985,
+    "seconds": 63.834457639139146,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.13820567370016784,
+    "exp_avg": 0.5391537021943423,
+    "exp_avg_sq": 0.6551692563357017
+   },
+   "seconds": 190.27532871603034
+  },
+  {
+   "method": "probe_topk_m1_exact_global_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 5e-05,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.06043887138366699,
+   "eligible_kept": 283737960,
+   "all_kept_mask": 375459487,
+   "kept_residual_nonzeros": 375459487,
+   "kept_moment_nonzeros": 37931635,
+   "mask_method": {
+    "internal_method": "probe_topk_m1_exact_global",
+    "allocation_kind": "exact_global",
+    "scoring_seconds": 48.243138294899836
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 187072745,
+     "lzma1": 186952156
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 43556926,
+     "lzma1": 42738252
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 42263236,
+     "lzma1": 40916380
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 272892907,
+    "lzma1": 270606788
+   },
+   "restored": {
+    "loss": 1.717591579056929,
+    "perplexity": 5.571094752475447,
+    "seconds": 66.16437623696402,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.13841458890224678,
+    "exp_avg": 0.5401088700723661,
+    "exp_avg_sq": 0.6518229550552117
+   },
+   "seconds": 193.5366863179952
+  },
+  {
+   "method": "excp_pipeline",
+   "fidelity": "reimplementation_of_upstream_excp_script",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.0002,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.2373767892519633,
+   "eligible_kept": 230304498,
+   "all_kept_mask": 295197119,
+   "kept_residual_nonzeros": 295197119,
+   "kept_moment_nonzeros": 29749888,
+   "mask_method": null,
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 172270534,
+     "lzma1": 175155368
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 37122048,
+     "lzma1": 35995520
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 36124679,
+     "lzma1": 34694616
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 245517261,
+    "lzma1": 245845504
+   },
+   "restored": {
+    "loss": 1.7177908629031577,
+    "perplexity": 5.572205092298146,
+    "seconds": 63.67093015299179,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.14736178604947076,
+    "exp_avg": 0.690371153340291,
+    "exp_avg_sq": 0.8204895815330797
+   },
+   "seconds": 184.36884444509633
+  },
+  {
+   "method": "dacp_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.0002,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.2373767892519633,
+   "eligible_kept": 230304498,
+   "all_kept_mask": 295197119,
+   "kept_residual_nonzeros": 295197119,
+   "kept_moment_nonzeros": 32154354,
+   "mask_method": {
+    "internal_method": "taylor_weibull_mom",
+    "allocation_kind": "weibull_moment",
+    "scoring_seconds": 525.6168011708651
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 172801229,
+     "lzma1": 174836316
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 39125084,
+     "lzma1": 38138200
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 38155687,
+     "lzma1": 36750992
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 250082000,
+    "lzma1": 249725508
+   },
+   "restored": {
+    "loss": 1.7130822268278518,
+    "perplexity": 5.546029280928932,
+    "seconds": 70.46643772907555,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.21755493984161164,
+    "exp_avg": 0.6216523534910076,
+    "exp_avg_sq": 0.7239706637840295
+   },
+   "seconds": 192.08293235395104
+  },
+  {
+   "method": "probe_topk_m1_exact_global_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.0002,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.2373767892519633,
+   "eligible_kept": 230304498,
+   "all_kept_mask": 295197119,
+   "kept_residual_nonzeros": 295197119,
+   "kept_moment_nonzeros": 32134001,
+   "mask_method": {
+    "internal_method": "probe_topk_m1_exact_global",
+    "allocation_kind": "exact_global",
+    "scoring_seconds": 48.04648470086977
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 172441383,
+     "lzma1": 174478024
+    },
+    "exp_avg": {
+     "torch_save": 202841634,
+     "zlib6": 39219573,
+     "lzma1": 38218700
+    },
+    "exp_avg_sq": {
+     "torch_save": 202841634,
+     "zlib6": 38197487,
+     "lzma1": 36792356
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608524902,
+    "zlib6": 249858443,
+    "lzma1": 249489080
+   },
+   "restored": {
+    "loss": 1.7131351658851603,
+    "perplexity": 5.546322890262503,
+    "seconds": 70.20679596392438,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.2177433712536214,
+    "exp_avg": 0.6171697831723265,
+    "exp_avg_sq": 0.7092161092134511
+   },
+   "seconds": 195.26358009595424
+  },
+  {
+   "method": "excp_pipeline",
+   "fidelity": "reimplementation_of_upstream_excp_script",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.001,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.8226980931229062,
+   "eligible_kept": 53543383,
+   "all_kept_mask": 84238622,
+   "kept_residual_nonzeros": 84238622,
+   "kept_moment_nonzeros": 7562544,
+   "mask_method": null,
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 79046700,
+     "lzma1": 78764096
+    },
+    "exp_avg": {
+     "torch_save": 202922630,
+     "zlib6": 12256799,
+     "lzma1": 10315520
+    },
+    "exp_avg_sq": {
+     "torch_save": 202922630,
+     "zlib6": 11827467,
+     "lzma1": 10013340
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608686894,
+    "zlib6": 103130966,
+    "lzma1": 99092956
+   },
+   "restored": {
+    "loss": 1.7734100845710066,
+    "perplexity": 5.890907641811305,
+    "seconds": 64.08359091589227,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.5528652413107639,
+    "exp_avg": 0.9362725134886495,
+    "exp_avg_sq": 0.9869776223359631
+   },
+   "seconds": 135.51753256400116
+  },
+  {
+   "method": "dacp_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.001,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.8226980931229062,
+   "eligible_kept": 53543383,
+   "all_kept_mask": 84238622,
+   "kept_residual_nonzeros": 84238622,
+   "kept_moment_nonzeros": 11183783,
+   "mask_method": {
+    "internal_method": "taylor_weibull_mom",
+    "allocation_kind": "weibull_moment",
+    "scoring_seconds": 519.7649407270364
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 80818055,
+     "lzma1": 80505812
+    },
+    "exp_avg": {
+     "torch_save": 202922630,
+     "zlib6": 17207235,
+     "lzma1": 15181736
+    },
+    "exp_avg_sq": {
+     "torch_save": 202922630,
+     "zlib6": 16853468,
+     "lzma1": 14789868
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608686894,
+    "zlib6": 114878758,
+    "lzma1": 110477416
+   },
+   "restored": {
+    "loss": 1.7695597280054352,
+    "perplexity": 5.868269157981324,
+    "seconds": 62.63884430099279,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.6038169522284672,
+    "exp_avg": 0.8078485585672774,
+    "exp_avg_sq": 0.7413043861602026
+   },
+   "seconds": 141.94944462901913
+  },
+  {
+   "method": "probe_topk_m1_exact_global_excpq",
+   "fidelity": "ours_with_excp_moment_rule_and_quantizer",
+   "seed": 43,
+   "operating_point": {
+    "alpha": 0.001,
+    "beta": 2.0,
+    "bits": 4
+   },
+   "excp_eligible_sparsity": 0.8226980931229062,
+   "eligible_kept": 53543383,
+   "all_kept_mask": 84238622,
+   "kept_residual_nonzeros": 84238622,
+   "kept_moment_nonzeros": 11104911,
+   "mask_method": {
+    "internal_method": "probe_topk_m1_exact_global",
+    "allocation_kind": "exact_global",
+    "scoring_seconds": 48.84476403915323
+   },
+   "bytes": {
+    "weights": {
+     "torch_save": 202841634,
+     "zlib6": 80960621,
+     "lzma1": 80686080
+    },
+    "exp_avg": {
+     "torch_save": 202922630,
+     "zlib6": 17194823,
+     "lzma1": 15177488
+    },
+    "exp_avg_sq": {
+     "torch_save": 202922630,
+     "zlib6": 16846123,
+     "lzma1": 14801000
+    }
+   },
+   "total_bytes": {
+    "torch_save": 608686894,
+    "zlib6": 115001567,
+    "lzma1": 110664568
+   },
+   "restored": {
+    "loss": 1.7683699118885887,
+    "perplexity": 5.861291148856234,
+    "seconds": 64.85682801087387,
+    "batches": 100,
+    "examples": 200
+   },
+   "relative_l2_error": {
+    "residual": 0.6036023290886351,
+    "exp_avg": 0.8111174023146893,
+    "exp_avg_sq": 0.7417452345967737
+   },
+   "seconds": 145.16528402804397
+  }
+ ],
+ "elapsed_seconds": 4689.556825620821,
+ "written_at": "2026-09-28T08:23:11.353274+00:00"
+}

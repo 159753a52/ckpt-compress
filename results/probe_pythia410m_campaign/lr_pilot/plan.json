@@ -1,0 +1,104 @@
+{
+  "jobs": [
+    {
+      "name": "pythia_410m_alpaca_lr1e-5",
+      "model": "pythia-410m",
+      "model_family": "pythia",
+      "dataset": "alpaca",
+      "task_type": "lm",
+      "checkpoint": "/home/gridtest/dacp_probe_code/e286b0f/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+      "checkpoint_step": 1000,
+      "data_dir": "/home/gridtest/dacp_probe_code/e286b0f/data",
+      "metric": "perplexity",
+      "seeds": [
+        42
+      ],
+      "prune_ratios": [
+        0.9
+      ],
+      "max_layer_ratio": 0.995,
+      "recovery_counts": [
+        1
+      ],
+      "batch_size": 2,
+      "seq_length": 128,
+      "total_steps": 100,
+      "hvp_batches": 8,
+      "eval_batches": 100,
+      "train_pool_batches": 108,
+      "learning_rate": 1e-05,
+      "prune_ratio": 0.9,
+      "recovery_count": 1,
+      "recovery_protocol": {
+        "optimizer_state": "restored_from_checkpoint",
+        "learning_rate_source": "manifest",
+        "learning_rate": 1e-05,
+        "scheduler": {
+          "name": "cosine_annealing",
+          "state": "fresh",
+          "scope": "matched_recovery_horizon",
+          "t_max": 100,
+          "eta_min": 0.0
+        }
+      }
+    },
+    {
+      "name": "pythia_410m_alpaca_lr2e-5",
+      "model": "pythia-410m",
+      "model_family": "pythia",
+      "dataset": "alpaca",
+      "task_type": "lm",
+      "checkpoint": "/home/gridtest/dacp_probe_code/e286b0f/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+      "checkpoint_step": 1000,
+      "data_dir": "/home/gridtest/dacp_probe_code/e286b0f/data",
+      "metric": "perplexity",
+      "seeds": [
+        42
+      ],
+      "prune_ratios": [
+        0.9
+      ],
+      "max_layer_ratio": 0.995,
+      "recovery_counts": [
+        1
+      ],
+      "batch_size": 2,
+      "seq_length": 128,
+      "total_steps": 100,
+      "hvp_batches": 8,
+      "eval_batches": 100,
+      "train_pool_batches": 108,
+      "learning_rate": 2e-05,
+      "prune_ratio": 0.9,
+      "recovery_count": 1,
+      "recovery_protocol": {
+        "optimizer_state": "restored_from_checkpoint",
+        "learning_rate_source": "manifest",
+        "learning_rate": 2e-05,
+        "scheduler": {
+          "name": "cosine_annealing",
+          "state": "fresh",
+          "scope": "matched_recovery_horizon",
+          "t_max": 100,
+          "eta_min": 0.0
+        }
+      }
+    }
+  ],
+  "methods": [
+    {
+      "name": "no_compression",
+      "owner": "control",
+      "fidelity": "native",
+      "internal_method": "no_compression",
+      "description": "Training trajectory without lossy checkpoint restoration."
+    },
+    {
+      "name": "excp_style",
+      "owner": "excp",
+      "fidelity": "style",
+      "internal_method": "residual_magnitude_exact_global",
+      "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization."
+    }
+  ]
+}
