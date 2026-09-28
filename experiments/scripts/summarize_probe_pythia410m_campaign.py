@@ -29,7 +29,7 @@ def _mean_std(values: list[float]) -> str:
         return "n/a"
     mean = statistics.fmean(values)
     std = statistics.stdev(values) if len(values) > 1 else 0.0
-    return f"{mean:.3f} +- {std:.3f}"
+    return f"{mean:.4f} +- {std:.4f}"
 
 
 def _sign(method: dict[int, float], baseline: dict[int, float]) -> str:
@@ -91,7 +91,7 @@ def render(tables: dict[tuple, list[dict]]) -> str:
             final = finals[method]
             shared = sorted(set(final) & set(control))
             d_nc = (
-                f"{statistics.fmean(final[s] - control[s] for s in shared):+.3f}"
+                f"{statistics.fmean(final[s] - control[s] for s in shared):+.4f}"
                 if shared
                 else "n/a"
             )
