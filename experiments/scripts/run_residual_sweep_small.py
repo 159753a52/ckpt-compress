@@ -457,55 +457,10 @@ def main() -> None:
     seeds = [int(x) for x in args.seeds.split(",")]
     spec = REGIMES[args.regime]
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    t_start = time.time()
-    configure_hf_offline()
-
-    set_seed(0)
-    train_loader, val_loader, task_type = get_data_loaders("pythia-410m", "alpaca", 2, 128, data_dir=str(args.data_root))
-    pool = cache_batches(train_loader, 140, task_type)
-    eval_batches = cache_batches(val_loader, 100, task_type)
-    del train_loader, val_loader
-    if len(pool) != 140 or len(eval_batches) != 100:
-        raise RuntimeError("data loaders returned too few batches")
-
-    model, family = load_model("pythia-410m", pretrained=False, device="cpu", dataset_name="alpaca")
-    layers = eligible_layers(model, family)
-    blocks = transformer_layers(model, family)
-    names = [n for layer in layers for n in layer]
-
-    ckpt_path = args.checkpoint_root / spec["checkpoint"]
-    ckpt = load_training_checkpoint(ckpt_path)
-    model.load_state_dict(ckpt.model_state, strict=True)
-    cur = {n: ckpt.model_state[n].detach().float().clone() for n in names}
-    prov = {"checkpoint": str(ckpt_path), "checkpoint_step": ckpt.step, "checkpoint_sha256": sha256_file(ckpt_path)}
-    del ckpt
-    if spec["reference"] == "base":
-        base, _ = load_model("pythia-410m", pretrained=True, device="cpu", dataset_name="alpaca")
-        bsd = base.state_dict()
-        ref = {n: bsd[n].detach().float().clone() for n in names}
-        from dacp.utils.paths import resolve_model_source
-        prov["reference"] = {"kind": "pretrained_base", "source": str(resolve_model_source("pythia-410m", "EleutherAI/pythia-410m"))}
-        del base, bsd
-    else:
-        rpath = args.checkpoint_root / spec["reference"]
-        rck = load_training_checkpoint(rpath)
-        ref = {n: rck.model_state[n].detach().float().clone() for n in names}
-        prov["reference"] = {"kind": "checkpoint", "checkpoint": str(rpath), "checkpoint_step": rck.step,
-                             "checkpoint_sha256": sha256_file(rpath)}
-        del rck
-    model.to(args.device)
-    s = Sweep(model, family, layers, blocks, cur, ref, eval_batches, args.device)
-    del cur, ref
-    residual = s.residual_stats()
-    s.apply(None)
-    unc = s.evaluate()
-    none_keep = {n: torch.zeros_like(s.delta[n], dtype=torch.bool) for n in names}
-    s.apply(none_keep)
-    full_restore = s.evaluate()
-    s.apply(None)
-    del none_keep
-    print(f"regime {args.regime}: residual {residual}; uncompressed {unc}; full restore {full_restore}", flush=True)
-    setup_s = time.time() - t_start
+    ctx = load_regime(args.regime, args.checkpoint_root, args.data_root, args.device)
+    s, pool, eval_batches, family = ctx["sweep"], ctx["pool"], ctx["eval_batches"], ctx["family"]
+    unc, full_restore, residual, prov = ctx["uncompressed"], ctx["full_restore"], ctx["residual"], ctx["provenance"]
+    setup_s = ctx["setup_seconds"]
 
     for seed in seeds:
         path = args.out_dir / f"{args.regime}_seed{seed}{args.tag}.json"
@@ -539,6 +494,72 @@ def main() -> None:
         })
         write_json(path, _jsonable(res))
         print(f"wrote {path} ({res['seconds']} s, peak {res['peak_gib']} GiB)", flush=True)
+
+
+def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str) -> dict:
+    """Load data batches, model, checkpoint and reference for one regime; build the Sweep."""
+    from experiments.lib.data import cache_batches, get_data_loaders
+    from experiments.lib.models import load_model
+    from experiments.lib.residual_runtime import (
+        configure_hf_offline,
+        load_training_checkpoint,
+        set_seed,
+        sha256_file,
+    )
+    from experiments.lib.residual_scoring import eligible_layers, transformer_layers
+
+    spec = REGIMES[regime]
+    t_start = time.time()
+    configure_hf_offline()
+
+    set_seed(0)
+    train_loader, val_loader, task_type = get_data_loaders("pythia-410m", "alpaca", 2, 128, data_dir=str(data_root))
+    pool = cache_batches(train_loader, 140, task_type)
+    eval_batches = cache_batches(val_loader, 100, task_type)
+    del train_loader, val_loader
+    if len(pool) != 140 or len(eval_batches) != 100:
+        raise RuntimeError("data loaders returned too few batches")
+
+    model, family = load_model("pythia-410m", pretrained=False, device="cpu", dataset_name="alpaca")
+    layers = eligible_layers(model, family)
+    blocks = transformer_layers(model, family)
+    names = [n for layer in layers for n in layer]
+
+    ckpt_path = checkpoint_root / spec["checkpoint"]
+    ckpt = load_training_checkpoint(ckpt_path)
+    model.load_state_dict(ckpt.model_state, strict=True)
+    cur = {n: ckpt.model_state[n].detach().float().clone() for n in names}
+    prov = {"checkpoint": str(ckpt_path), "checkpoint_step": ckpt.step, "checkpoint_sha256": sha256_file(ckpt_path)}
+    del ckpt
+    if spec["reference"] == "base":
+        base, _ = load_model("pythia-410m", pretrained=True, device="cpu", dataset_name="alpaca")
+        bsd = base.state_dict()
+        ref = {n: bsd[n].detach().float().clone() for n in names}
+        from dacp.utils.paths import resolve_model_source
+        prov["reference"] = {"kind": "pretrained_base", "source": str(resolve_model_source("pythia-410m", "EleutherAI/pythia-410m"))}
+        del base, bsd
+    else:
+        rpath = checkpoint_root / spec["reference"]
+        rck = load_training_checkpoint(rpath)
+        ref = {n: rck.model_state[n].detach().float().clone() for n in names}
+        prov["reference"] = {"kind": "checkpoint", "checkpoint": str(rpath), "checkpoint_step": rck.step,
+                             "checkpoint_sha256": sha256_file(rpath)}
+        del rck
+    model.to(device)
+    s = Sweep(model, family, layers, blocks, cur, ref, eval_batches, device)
+    del cur, ref
+    residual = s.residual_stats()
+    s.apply(None)
+    unc = s.evaluate()
+    none_keep = {n: torch.zeros_like(s.delta[n], dtype=torch.bool) for n in names}
+    s.apply(none_keep)
+    full_restore = s.evaluate()
+    s.apply(None)
+    del none_keep
+    print(f"regime {regime}: residual {residual}; uncompressed {unc}; full restore {full_restore}", flush=True)
+    return {"sweep": s, "pool": pool, "eval_batches": eval_batches, "family": family,
+            "uncompressed": unc, "full_restore": full_restore, "residual": residual,
+            "provenance": prov, "setup_seconds": time.time() - t_start}
 
 
 if __name__ == "__main__":
