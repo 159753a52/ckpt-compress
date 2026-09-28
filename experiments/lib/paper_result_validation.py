@@ -12,6 +12,9 @@ from typing import Mapping, MutableMapping, Sequence
 from experiments.lib.data import get_task_type
 from experiments.lib.models import get_model_type
 from experiments.lib.residual_protocol import (
+    PROBE_METHODS,
+    RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD,
+    parse_probe_method_id,
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
@@ -46,12 +49,19 @@ _CANONICAL_COMPRESSION_METHODS = {
     TAYLOR_UNIFORM_METHOD: ("taylor_hvp", "uniform_per_layer"),
     TAYLOR_WEIBULL_MOM_METHOD: ("taylor_hvp", "weibull_moment"),
     TAYLOR_EXACT_GLOBAL_METHOD: ("taylor_hvp", "exact_global"),
+    RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD: ("first_order", "exact_global"),
+    **{
+        method_id: (f"probe_gn_{estimator}", "exact_global")
+        for method_id, (estimator, _rounds) in PROBE_METHODS.items()
+    },
 }
 _REQUIRED_CANONICAL_COMPRESSION_METHODS = {
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
+    RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD,
+    *PROBE_METHODS,
 }
 
 
@@ -639,6 +649,67 @@ def _validate_scoring_metadata(
         raise ValueError(f"{context} has incompatible scoring execution metadata")
 
 
+def _validate_probe_scoring_metadata(
+    value: object,
+    *,
+    score_kind: str,
+    estimator: str,
+    rounds: int,
+    expected_config: Mapping[str, object],
+    context: str,
+) -> None:
+    if not isinstance(value, Mapping) or value.get("score_kind") != score_kind:
+        raise ValueError(f"{context} has incompatible scoring evidence")
+    if value.get("scoring_batches") != expected_config.get("hvp_batches"):
+        raise ValueError(f"{context} has incompatible scoring batch count")
+    for key in ("task_type", "model_family"):
+        if value.get(key) != expected_config.get(key):
+            raise ValueError(f"{context} scoring {key} does not match the job")
+    _finite_number(
+        value.get("total_seconds"), context=f"{context}.scoring.total_seconds", minimum=0.0
+    )
+    phases = value.get("phase_seconds")
+    if not isinstance(phases, Mapping) or not phases:
+        raise ValueError(f"{context} is missing probe phase timings")
+    for phase, seconds in phases.items():
+        _finite_number(seconds, context=f"{context}.scoring.phase_seconds.{phase}", minimum=0.0)
+    before = _numeric_pair(
+        value.get("checksum_before"), context=f"{context}.scoring.checksum_before"
+    )
+    after = _numeric_pair(value.get("checksum_after"), context=f"{context}.scoring.checksum_after")
+    delta = _numeric_pair(value.get("checksum_delta"), context=f"{context}.scoring.checksum_delta")
+    if before != after or any(item != 0.0 for item in delta):
+        raise ValueError(f"{context} scoring changed model parameters")
+    if value.get("changed_parameter_versions") != []:
+        raise ValueError(f"{context} scoring reports changed parameter versions")
+    if value.get("optimizer_constructed") is not False or value.get("model_mode") != "eval":
+        raise ValueError(f"{context} has incompatible scoring execution metadata")
+    probe = value.get("probe")
+    if (
+        not isinstance(probe, Mapping)
+        or probe.get("estimator") != estimator
+        or probe.get("rounds") != rounds
+        or probe.get("signs") != "rademacher"
+        or probe.get("curvature") != "full_gauss_newton"
+    ):
+        raise ValueError(f"{context} has incompatible probe configuration evidence")
+    per_round = probe.get("per_round")
+    if not isinstance(per_round, list) or len(per_round) != rounds:
+        raise ValueError(f"{context} has incomplete per-round probe evidence")
+    for index, record in enumerate(per_round, start=1):
+        if not isinstance(record, Mapping) or record.get("round") != index:
+            raise ValueError(f"{context} has invalid probe round {index}")
+        for key in ("mean_mass", "p05_mass", "repeat_rate"):
+            number = _finite_number(
+                record.get(key), context=f"{context}.scoring.probe.round{index}.{key}"
+            )
+            if not 0.0 <= number <= 1.0:
+                raise ValueError(f"{context} probe round {index} {key} must be in [0, 1]")
+    _finite_number(
+        probe.get("repeat_rate"), context=f"{context}.scoring.probe.repeat_rate", minimum=0.0
+    )
+
+
 def _validate_canonical_compression_metadata(
     value: Mapping[str, object],
     allocation: Mapping[str, object],
@@ -722,6 +793,43 @@ def _validate_method_evidence(
             batch_key="scoring_batches",
             expected_config=expected_config,
             layer_count=layer_count,
+            context=context,
+        )
+        return
+    if internal_method == RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD:
+        if (
+            compression.get("score_kind") != "first_order"
+            or compression.get("allocation_kind") != "exact_global"
+            or compression.get("score_probe") != "checkpoint_residual"
+            or allocation.get("allocation") != "exact_global"
+        ):
+            raise ValueError(f"{context} has incompatible residual first-order evidence")
+        _validate_scoring_metadata(
+            compression.get("scoring"),
+            score_kind="first_order",
+            batch_key="scoring_batches",
+            expected_config=expected_config,
+            layer_count=layer_count,
+            context=context,
+        )
+        return
+    probe_spec = parse_probe_method_id(internal_method)
+    if probe_spec is not None:
+        estimator, rounds = probe_spec
+        score_kind = f"probe_gn_{estimator}"
+        if (
+            compression.get("score_kind") != score_kind
+            or compression.get("allocation_kind") != "exact_global"
+            or compression.get("score_probe") != "checkpoint_residual"
+            or allocation.get("allocation") != "exact_global"
+        ):
+            raise ValueError(f"{context} has incompatible probe exact-global evidence")
+        _validate_probe_scoring_metadata(
+            compression.get("scoring"),
+            score_kind=score_kind,
+            estimator=estimator,
+            rounds=rounds,
+            expected_config=expected_config,
             context=context,
         )
         return

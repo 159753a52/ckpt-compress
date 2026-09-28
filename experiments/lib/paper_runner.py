@@ -24,6 +24,7 @@ from experiments.lib.residual_masks import (
 from experiments.lib.residual_methods import build_weibull_mask
 from experiments.lib.residual_protocol import (
     NO_COMPRESSION_METHOD,
+    RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD,
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
@@ -37,7 +38,9 @@ from experiments.lib.residual_protocol import (
     TAYLOR_SIGNED_WEIBULL_MOM_METHOD,
     TAYLOR_UNIFORM_METHOD,
     TAYLOR_WEIBULL_MOM_METHOD,
+    parse_probe_method_id,
 )
+from experiments.lib.residual_probe_scoring import compute_probe_gn_scores
 from experiments.lib.residual_weibull import (
     fit_layer_weibull_mom,
     signed_benefit_weibull_counts,
@@ -230,8 +233,59 @@ def _score_and_mask(
     model_family: str,
     device: str,
     distributed_moments: bool,
+    *,
+    seed: int = 0,
 ) -> tuple[dict[str, torch.Tensor], dict[str, object]]:
     internal_method = contract.internal_method
+    probe_spec = parse_probe_method_id(internal_method)
+    if probe_spec is not None:
+        estimator, rounds = probe_spec
+        scores, scoring = compute_probe_gn_scores(
+            model,
+            scoring_batches,
+            layers,
+            delta,
+            device,
+            estimator=estimator,
+            rounds=rounds,
+            seed=seed,
+            task_type=task_type,
+            model_family=model_family,
+            block_parameter_names=blocks,
+        )
+        masks, allocation = _build_global_mask(layers, scores, prune_ratio)
+        return masks, _compression_metadata(
+            scoring["score_kind"],
+            "exact_global",
+            allocation,
+            layers,
+            scores,
+            prune_ratio,
+            scoring=scoring,
+            score_probe="checkpoint_residual",
+        )
+    if internal_method == RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD:
+        scores, scoring = compute_block_first_order_scores(
+            model,
+            scoring_batches,
+            layers,
+            delta,
+            device,
+            task_type=task_type,
+            model_family=model_family,
+            block_parameter_names=blocks,
+        )
+        masks, allocation = _build_global_mask(layers, scores, prune_ratio)
+        return masks, _compression_metadata(
+            "first_order",
+            "exact_global",
+            allocation,
+            layers,
+            scores,
+            prune_ratio,
+            scoring=scoring,
+            score_probe="checkpoint_residual",
+        )
     if internal_method == "residual_magnitude_exact_global":
         magnitude = {name: value.abs() for name, value in delta.items()}
         masks, allocation = _build_global_mask(layers, magnitude, prune_ratio)
@@ -525,6 +579,7 @@ def run_method_trajectory(
                     workload.model_family,
                     device,
                     distributed_moments,
+                    seed=seed + segment_index * 1_000_000,
                 )
                 restore_with_mask(model, current_state, reconstructed_state, masks, device)
                 reconstructed_state = clone_model_state_to_cpu(model)

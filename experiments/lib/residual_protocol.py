@@ -27,6 +27,16 @@ TAYLOR_MEANABS_WEIBULL_MOM_METHOD = "taylor_meanabs_weibull_mom"
 TAYLOR_COMPONENTS_UNIFORM_METHOD = "taylor_components_uniform"
 TAYLOR_COMPONENTS_EXACT_GLOBAL_METHOD = "taylor_components_exact_global"
 
+# Residual first-order score |g*delta| with exact global selection. Distinct
+# from the full-weight ``first_order_exact_global`` internal method used by the
+# Inshrinkerator-style adapter.
+RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD = "residual_first_order_exact_global"
+
+# Coverage-tracked Gauss--Newton probe scores |-g*d + 0.5*d*(F_hat d)| with
+# exact global selection; ids are ``probe_<estimator>_m<rounds>_exact_global``.
+PROBE_ESTIMATORS = ("sample", "topk", "headtail")
+PROBE_ROUNDS = (1, 2, 4, 8)
+
 TAYLOR_METHOD_PREFIX = "taylor_"
 SPECTRAL_METHOD_PREFIX = "taylor_spectral_k"
 QUANTILE_METHOD_PREFIX = "taylor_quantile_"
@@ -61,11 +71,37 @@ def quantile_method_id(cost_normalization: str, smoothness: float) -> str:
     return f"{QUANTILE_METHOD_PREFIX}{normalization_slug}_smooth_l{float_slug(smoothness)}"
 
 
+def probe_method_id(estimator: str, rounds: int) -> str:
+    if estimator not in PROBE_ESTIMATORS:
+        raise ValueError(f"Unknown probe estimator: {estimator!r}")
+    if isinstance(rounds, bool) or not isinstance(rounds, int) or rounds < 1:
+        raise ValueError(f"Probe rounds must be a positive integer, got {rounds!r}")
+    return f"probe_{estimator}_m{rounds}_exact_global"
+
+
+PROBE_METHODS = {
+    probe_method_id(estimator, rounds): (estimator, rounds)
+    for estimator in PROBE_ESTIMATORS
+    for rounds in PROBE_ROUNDS
+}
+
+
+def parse_probe_method_id(method: object) -> tuple[str, int] | None:
+    """Return ``(estimator, rounds)`` for a registered probe method, else None."""
+    return PROBE_METHODS.get(method) if isinstance(method, str) else None
+
+
 __all__ = [
     "BASE_METHODS",
     "FIRST_ORDER_UNIFORM_METHOD",
     "FIXED_METHODS",
     "NO_COMPRESSION_METHOD",
+    "PROBE_ESTIMATORS",
+    "PROBE_METHODS",
+    "PROBE_ROUNDS",
+    "RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD",
+    "parse_probe_method_id",
+    "probe_method_id",
     "QUANTILE_METHOD_PREFIX",
     "RESIDUAL_MAGNITUDE_UNIFORM_METHOD",
     "RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD",

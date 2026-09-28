@@ -153,6 +153,36 @@ rejected. The runner also hashes the checkpoint and locks that digest for every
 job of the same workload; the digest records provenance but is not used as a
 substitute for the restricted loader.
 
+## Small-model probe breadth study
+
+`probe_small_models.yaml` runs the causal-LM workloads (GPT-2 Medium,
+Pythia-410M, Pythia-1B) at 50% and 90% pruning, `K=1`, seeds 42/43/44. Besides
+the style baselines, `taylor_exact_global`, and `dacp`, it adds native
+`dacp_probe` methods, all with exact global top-k selection:
+
+| Method | Score |
+|---|---|
+| `first_order_exact_global` | residual first order `abs(g*d)` |
+| `probe_topk_m{1,2,4,8}_exact_global` | `abs(-g*d + 0.5*d*u)`, round k uses each position's k-th most probable token |
+| `probe_sample_m{1,2,4,8}_exact_global` | same score, `y ~ p` per round, de-duplicated per position |
+| `probe_headtail_m{1,2,4,8}_exact_global` | `m-1` head rounds plus one renormalised tail sample (unbiased for the full Gauss-Newton matrix) |
+
+`u = sum_k w_k (w_k . d)` uses one backward per round of
+`sum_t c_t CE(z_t, y_t)` with `c_t = xi_t sqrt(p_t(y)) / sqrt(B N_b)`, which
+matches the batch mean of per-batch token-mean losses used by the Taylor
+scorer. `g` is the true-label gradient over the same scoring batches. Signs are
+seeded from the job seed and recovery cycle. Each record stores per-round
+coverage mass (mean, p05), repeat rate, and scoring phase timings. The probe
+scores require token cross-entropy and reject non-LM workloads.
+
+```bash
+bash experiments/scripts/run_probe_small_models.sh 7 gpt2_medium_wikitext103
+```
+
+The script accepts only physical GPUs 5, 6, and 7, exports
+`CUDA_VISIBLE_DEVICES`, and writes to
+`results/paper_runs/probe_small_models/<workload>`, resuming an existing suite.
+
 ## Distributed moments
 
 The low-level distributed statistics implementation performs real collectives

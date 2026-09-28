@@ -7,6 +7,8 @@ from typing import Mapping, Sequence
 
 from experiments.lib.residual_protocol import (
     NO_COMPRESSION_METHOD,
+    PROBE_METHODS,
+    RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD,
     RESIDUAL_MAGNITUDE_UNIFORM_METHOD,
     RESIDUAL_MAGNITUDE_WEIBULL_MOM_METHOD,
     TAYLOR_EXACT_GLOBAL_METHOD,
@@ -176,7 +178,42 @@ METHOD_CONTRACTS = {
             "contributions (no cross-batch cancellation), uniform allocation."
         ),
     ),
+    "first_order_exact_global": MethodContract(
+        name="first_order_exact_global",
+        owner="dacp_probe",
+        fidelity="native",
+        internal_method=RESIDUAL_FIRST_ORDER_EXACT_GLOBAL_METHOD,
+        description=(
+            "Residual first-order damage |g*delta| from the true-label gradient "
+            "with exact global top-k selection."
+        ),
+    ),
 }
+
+_PROBE_DESCRIPTIONS = {
+    "sample": (
+        "{rounds} sampled Gauss-Newton probe round(s) (y ~ p, de-duplicated per "
+        "position, Rademacher signs)"
+    ),
+    "topk": "{rounds} deterministic top-probability Gauss-Newton probe round(s)",
+    "headtail": (
+        "{head} deterministic head round(s) plus one renormalised tail sample "
+        "(unbiased for the full Gauss-Newton matrix)"
+    ),
+}
+for _method_id, (_estimator, _rounds) in PROBE_METHODS.items():
+    METHOD_CONTRACTS[_method_id] = MethodContract(
+        name=_method_id,
+        owner="dacp_probe",
+        fidelity="native",
+        internal_method=_method_id,
+        description=(
+            "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with "
+            + _PROBE_DESCRIPTIONS[_estimator].format(rounds=_rounds, head=_rounds - 1)
+            + "; exact global top-k selection."
+        ),
+    )
+del _method_id, _estimator, _rounds
 
 
 def resolve_method_contracts(names: Sequence[str]) -> list[MethodContract]:
