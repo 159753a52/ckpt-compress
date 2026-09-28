@@ -1,0 +1,163 @@
+{"time": "2026-09-28T17:50:57", "event": "start", "gpu": {"CUDA_VISIBLE_DEVICES": "5,6,7", "devices": [{"logical": "cuda:0", "physical_index": 5, "name": "NVIDIA H200", "total_gib": 139.8, "uuid": ""}, {"logical": "cuda:1", "physical_index": 6, "name": "NVIDIA H200", "total_gib": 139.8, "uuid": ""}, {"logical": "cuda:2", "physical_index": 7, "name": "NVIDIA H200", "total_gib": 139.8, "uuid": ""}], "nvidia_smi": "0, GPU-993b412c-9c13-1def-d159-9fc5003a4528, 132825 MiB\n1, GPU-38a76cc1-a436-d223-722d-cabbda5183bb, 132237 MiB\n2, GPU-7da89a28-83f5-ae98-3109-03c2e6240478, 132219 MiB\n3, GPU-62dffd65-479e-85e3-2cde-b92697cc1fb8, 131305 MiB\n4, GPU-cf2ee2dc-d13d-a57c-55ef-1fd2b17da365, 130461 MiB\n5, GPU-bce16efd-5d8c-3c92-58e8-2d14c199f8f6, 4 MiB\n6, GPU-c30204fb-51c8-b275-29ac-a797435093a6, 4 MiB\n7, GPU-6b48f6d6-1984-ab7b-bc99-7dcefd7110e9, 9401 MiB\n"}, "provenance": {"code_commit": "e8c8dc463ae09a5e21f5f7c1cbed6ac889b1ccfc", "source_sha256": {"experiments/scripts/run_probe_coverage_32b.py": "d1ac283531f855b7a1c41fda83ea7843e224329a371351fff0e1c5194eaa8209", "experiments/lib/probe_coverage.py": "8d2b51b3c02aa4b3a6fcb68af99dd0f6ea844e93881a09ac8a0cebb0a3fb9305", "experiments/lib/qwen_pipeline.py": "6418683f1b8553c99db546129a367d01b0b4c52ca8a2a627789a3739e0b94ad6", "experiments/lib/streaming_selection.py": "492ab89784491e1b2d42434ec323f0715461ff8583d1edae4882bb4e66814789", "experiments/lib/residual_weibull.py": "167eb78e6574f0e2ce8cc92d07360f71725061d6be3a19e3e02e21c3ff2b3625", "experiments/lib/distributed_stats.py": "ecd82ac274f2b65c42be9fa79ff4bce74ea72fe158c26cb05dc19701305920a3", "experiments/lib/residual_budget.py": "d744fcd4862f40a98f713df70a2e0100653fad77b8ac8397309f9a40788854c0"}, "config_sha256": "c5730b07c58188d40a8c6f25d5a021a5ef951e9cc7034d1a556b350cd4c6a84f", "python": "3.8.20 (default, Oct  3 2024, 15:24:27) \n[GCC 11.2.0]", "torch": "2.4.0+cu121", "platform": "Linux-5.15.0-25-generic-x86_64-with-glibc2.17", "hostname": "h200-1"}}
+{"time": "2026-09-28T17:50:57", "event": "data", "train": {"path": "/home/gridtest/models/wikitext_train.txt", "sha256": "9e9fa1ad55b1c2c95b08e37dd8e653f638fac2c6de904b79e813611eefbc985f", "tokens": 2549175, "chunks": 2489}, "val": {"path": "/home/gridtest/models/wikitext_valid.txt", "sha256": "f0737ed31fc1329026e95cb8b98e19c2a182c39c240ab909dc31abf2f8af58e8", "tokens": 270675, "chunks": 264}, "splits": {"train_steps_chunks": [0, 200], "recovery_chunks": [200, 350], "score_chunks": [1000, 1004], "gate_chunks": [1100, 1108], "val_chunks": [0, 32]}}
+Loading checkpoint shards:   0%|          | 0/8 [00:00<?, ?it/s]Loading checkpoint shards:  12%|█▎        | 1/8 [00:00<00:00,  7.97it/s]Loading checkpoint shards:  25%|██▌       | 2/8 [00:00<00:00,  8.81it/s]Loading checkpoint shards:  38%|███▊      | 3/8 [00:00<00:00,  9.12it/s]Loading checkpoint shards:  50%|█████     | 4/8 [00:00<00:00,  9.24it/s]Loading checkpoint shards:  62%|██████▎   | 5/8 [00:00<00:00,  9.28it/s]Loading checkpoint shards:  75%|███████▌  | 6/8 [00:00<00:00,  9.36it/s]Loading checkpoint shards:  88%|████████▊ | 7/8 [00:00<00:00,  9.41it/s]Loading checkpoint shards: 100%|██████████| 8/8 [00:00<00:00,  9.38it/s]{"time": "2026-09-28T17:51:09", "event": "model", "load_s": 11.2, "path": "/data/models/DeepSeek-R1-Distill-Qwen-32B", "index_sha256": "6bd0c2b1bdb158258e07fcfee6e6347edae0540a68c84182e8ef12388158a4e0", "trainable_params": 31206740992, "eligible_params": 31205621760, "eligible_tensors": 448, "all_params": 32763876352}
+
+Token indices sequence length is longer than the specified maximum sequence length for this model (4219014 > 16384). Running this sequence through the model will result in indexing errors
+{"time": "2026-09-28T17:51:27", "event": "trajectory_start", "dataset": "alpaca", "steps": 600, "every": 200, "lr": 1e-05, "data": {"chunks": 4120, "train_chunks": 4076, "val": [4088, 4120], "gate": [4080, 4088], "score": [4076, 4080]}}
+{"time": "2026-09-28T17:52:54", "event": "train", "loss": 1.610201358795166, "grad_norm": 2.1427774941688082, "step": 20, "pace_s": 2.822}
+{"time": "2026-09-28T17:53:52", "event": "train", "loss": 1.3787814378738403, "grad_norm": 2.1297687500507663, "step": 40, "pace_s": 2.866}
+{"time": "2026-09-28T17:54:48", "event": "train", "loss": 1.1559010744094849, "grad_norm": 1.916568925952618, "step": 60, "pace_s": 2.842}
+{"time": "2026-09-28T17:55:44", "event": "train", "loss": 1.2254891395568848, "grad_norm": 1.8619123489022977, "step": 80, "pace_s": 2.838}
+{"time": "2026-09-28T17:56:41", "event": "train", "loss": 1.1594034433364868, "grad_norm": 1.891491151732308, "step": 100, "pace_s": 2.835}
+{"time": "2026-09-28T17:57:37", "event": "train", "loss": 1.0863242149353027, "grad_norm": 1.837738126747423, "step": 120, "pace_s": 2.834}
+{"time": "2026-09-28T17:58:34", "event": "train", "loss": 1.442778468132019, "grad_norm": 1.9956199142679636, "step": 140, "pace_s": 2.831}
+{"time": "2026-09-28T17:59:31", "event": "train", "loss": 1.0715821981430054, "grad_norm": 1.530400406806209, "step": 160, "pace_s": 2.836}
+{"time": "2026-09-28T18:00:28", "event": "train", "loss": 1.425087571144104, "grad_norm": 2.102617139579457, "step": 180, "pace_s": 2.836}
+{"time": "2026-09-28T18:01:24", "event": "train", "loss": 1.3533302545547485, "grad_norm": 1.944064751189435, "step": 200, "pace_s": 2.833}
+{"time": "2026-09-28T18:03:30", "event": "residual", "eligible_coords": 31205621760, "zero_residual_coords": 5130088273, "zero_residual_fraction": 0.1643962845046033, "residual_l2": 41.25356749059688, "bf16_inexact_residual_coords": 132938495}
+{"time": "2026-09-28T18:03:38", "event": "gradient", "score_loss": 1.253711614674021, "fwd_bwd_s": 1.949, "offload_s": 0.003, "peak_gib": {"cuda:0": 69.288, "cuda:1": 67.527, "cuda:2": 64.597}}
+{"time": "2026-09-28T18:06:01", "event": "sweep_eval", "tag": "excp_style", "val": {"0.5": 1.35446, "0.8": 1.35121, "0.9": 1.38306, "0.95": 1.41741, "0.98": 1.49104, "0.99": 1.52864}}
+{"time": "2026-09-28T18:06:54", "event": "sweep_eval", "tag": "first_order", "val": {"0.5": 1.35048, "0.8": 1.34034, "0.9": 1.34606, "0.95": 1.36526, "0.98": 1.40352, "0.99": 1.43495}}
+{"time": "2026-09-28T18:07:44", "event": "sweep_eval", "tag": "inshrinkerator_style", "val": {"0.5": 1.34092, "0.8": 1.35657, "0.9": 1.38976, "0.95": 1.42769, "0.98": 1.47598, "0.99": 1.50589}}
+{"time": "2026-09-28T18:07:49", "event": "hvp_block", "layer": 0, "seconds": 4.7}
+{"time": "2026-09-28T18:08:23", "event": "hvp_block", "layer": 8, "seconds": 4.213}
+{"time": "2026-09-28T18:08:54", "event": "hvp_block", "layer": 16, "seconds": 3.913}
+{"time": "2026-09-28T18:09:22", "event": "hvp_block", "layer": 24, "seconds": 3.548}
+{"time": "2026-09-28T18:09:48", "event": "hvp_block", "layer": 32, "seconds": 3.853}
+{"time": "2026-09-28T18:10:14", "event": "hvp_block", "layer": 40, "seconds": 3.277}
+{"time": "2026-09-28T18:10:36", "event": "hvp_block", "layer": 48, "seconds": 2.257}
+{"time": "2026-09-28T18:10:55", "event": "hvp_block", "layer": 56, "seconds": 2.09}
+{"time": "2026-09-28T18:11:08", "event": "hvp", "cache_forward_s": 0.403, "hvp_s": 204.06, "layer_limit": null, "peak_gib": {"cuda:0": 88.668, "cuda:1": 86.888, "cuda:2": 82.783}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T18:14:15", "event": "sweep_eval", "tag": "hvp_global", "val": {"0.5": 1.35046, "0.8": 1.33998, "0.9": 1.34558, "0.95": 1.36433, "0.98": 1.40153, "0.99": 1.43263}}
+{"time": "2026-09-28T18:15:05", "event": "sweep_eval", "tag": "dacp", "val": {"0.5": 1.35005, "0.8": 1.34009, "0.9": 1.34583, "0.95": 1.36414, "0.98": 1.40109, "0.99": 1.43209}}
+{"time": "2026-09-28T18:15:55", "event": "hvp_block", "layer": 0, "seconds": 5.079}
+{"time": "2026-09-28T18:16:35", "event": "hvp_block", "layer": 8, "seconds": 4.811}
+{"time": "2026-09-28T18:17:11", "event": "hvp_block", "layer": 16, "seconds": 4.316}
+{"time": "2026-09-28T18:17:40", "event": "hvp_block", "layer": 24, "seconds": 3.479}
+{"time": "2026-09-28T18:18:05", "event": "hvp_block", "layer": 32, "seconds": 2.855}
+{"time": "2026-09-28T18:18:28", "event": "hvp_block", "layer": 40, "seconds": 2.692}
+{"time": "2026-09-28T18:18:50", "event": "hvp_block", "layer": 48, "seconds": 2.965}
+{"time": "2026-09-28T18:19:09", "event": "hvp_block", "layer": 56, "seconds": 2.115}
+{"time": "2026-09-28T18:19:21", "event": "hvp", "cache_forward_s": 0.351, "hvp_s": 211.664, "layer_limit": null, "peak_gib": {"cuda:0": 108.648, "cuda:1": 106.868, "cuda:2": 102.134}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T18:20:13", "event": "taylor", "regime": "step200_vs_step0", "sparsity": 0.9, "first_order": -0.01974136558349926, "second_order": 0.0018064416694762997, "taylor2": -0.01793492391402296, "additive_attribution": -0.014732596121930897, "seconds": 307.31}
+{"time": "2026-09-28T18:21:08", "event": "hvp_block", "layer": 0, "seconds": 4.966}
+{"time": "2026-09-28T18:21:44", "event": "hvp_block", "layer": 8, "seconds": 4.089}
+{"time": "2026-09-28T18:22:16", "event": "hvp_block", "layer": 16, "seconds": 4.103}
+{"time": "2026-09-28T18:22:44", "event": "hvp_block", "layer": 24, "seconds": 3.339}
+{"time": "2026-09-28T18:23:09", "event": "hvp_block", "layer": 32, "seconds": 2.94}
+{"time": "2026-09-28T18:23:31", "event": "hvp_block", "layer": 40, "seconds": 2.809}
+{"time": "2026-09-28T18:23:50", "event": "hvp_block", "layer": 48, "seconds": 2.127}
+{"time": "2026-09-28T18:24:05", "event": "hvp_block", "layer": 56, "seconds": 1.632}
+{"time": "2026-09-28T18:24:15", "event": "hvp", "cache_forward_s": 0.383, "hvp_s": 191.808, "layer_limit": null, "peak_gib": {"cuda:0": 108.648, "cuda:1": 106.868, "cuda:2": 102.134}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T18:24:52", "event": "taylor", "regime": "step200_vs_step0", "sparsity": 0.98, "first_order": -0.045553818643867316, "second_order": 0.004688870828179148, "taylor2": -0.04086494781568817, "additive_attribution": -0.03688540337611812, "seconds": 279.19}
+{"time": "2026-09-28T18:27:47", "event": "sweep_eval", "tag": "probe_sample_m1", "val": {"0.5": 1.35032, "0.8": 1.34045, "0.9": 1.34618, "0.95": 1.36532, "0.98": 1.40344, "0.99": 1.43505}}
+{"time": "2026-09-28T18:29:54", "event": "sweep_eval", "tag": "probe_topk_m1", "val": {"0.5": 1.35062, "0.8": 1.34028, "0.9": 1.3461, "0.95": 1.36569, "0.98": 1.40453, "0.99": 1.43672}}
+{"time": "2026-09-28T18:31:46", "event": "sweep_eval", "tag": "probe_headtail_m2", "val": {"0.5": 1.35048, "0.8": 1.34019, "0.9": 1.34652, "0.95": 1.36653, "0.98": 1.40581, "0.99": 1.43789}}
+{"time": "2026-09-28T18:33:44", "event": "sweep_eval", "tag": "probe_topk_m4", "val": {"0.5": 1.35052, "0.8": 1.34031, "0.9": 1.34646, "0.95": 1.36622, "0.98": 1.40525, "0.99": 1.43715}}
+{"time": "2026-09-28T18:33:47", "event": "regime_done", "tag": "step200_vs_step0", "seconds": 1849.7}
+{"time": "2026-09-28T18:37:06", "event": "train", "loss": 1.548108696937561, "grad_norm": 1.9429044595683, "step": 220, "pace_s": 12.31}
+{"time": "2026-09-28T18:38:12", "event": "train", "loss": 1.3962019681930542, "grad_norm": 1.9216971841864119, "step": 240, "pace_s": 11.56}
+{"time": "2026-09-28T18:39:18", "event": "train", "loss": 1.349767804145813, "grad_norm": 1.8059579067558356, "step": 260, "pace_s": 10.925}
+{"time": "2026-09-28T18:40:17", "event": "train", "loss": 1.1418536901474, "grad_norm": 1.7295984984187067, "step": 280, "pace_s": 10.355}
+{"time": "2026-09-28T18:41:09", "event": "train", "loss": 1.272884726524353, "grad_norm": 1.8721917437012565, "step": 300, "pace_s": 9.84}
+{"time": "2026-09-28T18:42:06", "event": "train", "loss": 1.3089269399642944, "grad_norm": 1.8168048639509795, "step": 320, "pace_s": 9.403}
+{"time": "2026-09-28T18:43:02", "event": "train", "loss": 1.253861665725708, "grad_norm": 1.7473020169093756, "step": 340, "pace_s": 9.015}
+{"time": "2026-09-28T18:43:59", "event": "train", "loss": 1.0291987657546997, "grad_norm": 1.5686171745516222, "step": 360, "pace_s": 8.672}
+{"time": "2026-09-28T18:44:57", "event": "train", "loss": 0.9103922843933105, "grad_norm": 1.4617551173286176, "step": 380, "pace_s": 8.368}
+{"time": "2026-09-28T18:45:53", "event": "train", "loss": 1.3345171213150024, "grad_norm": 1.806891168800233, "step": 400, "pace_s": 8.089}
+{"time": "2026-09-28T18:48:07", "event": "residual", "eligible_coords": 31205621760, "zero_residual_coords": 5502059551, "zero_residual_fraction": 0.17631629304860227, "residual_l2": 39.016806710809334, "bf16_inexact_residual_coords": 129322111}
+{"time": "2026-09-28T18:48:15", "event": "gradient", "score_loss": 1.2498359120836007, "fwd_bwd_s": 2.167, "offload_s": 0.003, "peak_gib": {"cuda:0": 69.293, "cuda:1": 67.507, "cuda:2": 64.573}}
+{"time": "2026-09-28T18:50:26", "event": "sweep_eval", "tag": "excp_style", "val": {"0.5": 1.35226, "0.8": 1.33726, "0.9": 1.33437, "0.95": 1.33901, "0.98": 1.34617, "0.99": 1.35064}}
+{"time": "2026-09-28T18:51:15", "event": "sweep_eval", "tag": "first_order", "val": {"0.5": 1.34963, "0.8": 1.33751, "0.9": 1.33476, "0.95": 1.33563, "0.98": 1.33928, "0.99": 1.3425}}
+{"time": "2026-09-28T18:52:10", "event": "sweep_eval", "tag": "inshrinkerator_style", "val": {"0.5": 1.33861, "0.8": 1.33463, "0.9": 1.33755, "0.95": 1.34176, "0.98": 1.34621, "0.99": 1.34886}}
+{"time": "2026-09-28T18:52:15", "event": "hvp_block", "layer": 0, "seconds": 4.947}
+{"time": "2026-09-28T18:52:52", "event": "hvp_block", "layer": 8, "seconds": 4.478}
+{"time": "2026-09-28T18:53:25", "event": "hvp_block", "layer": 16, "seconds": 3.802}
+{"time": "2026-09-28T18:53:55", "event": "hvp_block", "layer": 24, "seconds": 3.401}
+{"time": "2026-09-28T18:54:23", "event": "hvp_block", "layer": 32, "seconds": 3.091}
+{"time": "2026-09-28T18:54:46", "event": "hvp_block", "layer": 40, "seconds": 2.907}
+{"time": "2026-09-28T18:55:06", "event": "hvp_block", "layer": 48, "seconds": 2.288}
+{"time": "2026-09-28T18:55:22", "event": "hvp_block", "layer": 56, "seconds": 1.754}
+{"time": "2026-09-28T18:55:32", "event": "hvp", "cache_forward_s": 0.375, "hvp_s": 202.06, "layer_limit": null, "peak_gib": {"cuda:0": 88.673, "cuda:1": 86.868, "cuda:2": 82.758}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T18:58:28", "event": "sweep_eval", "tag": "hvp_global", "val": {"0.5": 1.34988, "0.8": 1.33744, "0.9": 1.33471, "0.95": 1.33562, "0.98": 1.33926, "0.99": 1.34255}}
+{"time": "2026-09-28T18:59:20", "event": "sweep_eval", "tag": "dacp", "val": {"0.5": 1.34934, "0.8": 1.33694, "0.9": 1.33448, "0.95": 1.33537, "0.98": 1.33939, "0.99": 1.34251}}
+{"time": "2026-09-28T19:00:12", "event": "hvp_block", "layer": 0, "seconds": 4.856}
+{"time": "2026-09-28T19:00:49", "event": "hvp_block", "layer": 8, "seconds": 4.466}
+{"time": "2026-09-28T19:01:22", "event": "hvp_block", "layer": 16, "seconds": 3.611}
+{"time": "2026-09-28T19:01:53", "event": "hvp_block", "layer": 24, "seconds": 3.667}
+{"time": "2026-09-28T19:02:19", "event": "hvp_block", "layer": 32, "seconds": 3.562}
+{"time": "2026-09-28T19:02:41", "event": "hvp_block", "layer": 40, "seconds": 2.387}
+{"time": "2026-09-28T19:03:00", "event": "hvp_block", "layer": 48, "seconds": 1.857}
+{"time": "2026-09-28T19:03:16", "event": "hvp_block", "layer": 56, "seconds": 1.869}
+{"time": "2026-09-28T19:03:26", "event": "hvp", "cache_forward_s": 0.355, "hvp_s": 200.025, "layer_limit": null, "peak_gib": {"cuda:0": 108.653, "cuda:1": 106.848, "cuda:2": 102.109}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T19:04:00", "event": "taylor", "regime": "step400_vs_step200", "sparsity": 0.9, "first_order": -0.016790856547473254, "second_order": 0.0009063423975241847, "taylor2": -0.01588451414994907, "additive_attribution": -0.014414546895210378, "seconds": 279.9}
+{"time": "2026-09-28T19:04:48", "event": "hvp_block", "layer": 0, "seconds": 4.587}
+{"time": "2026-09-28T19:05:21", "event": "hvp_block", "layer": 8, "seconds": 3.99}
+{"time": "2026-09-28T19:05:50", "event": "hvp_block", "layer": 16, "seconds": 3.445}
+{"time": "2026-09-28T19:06:15", "event": "hvp_block", "layer": 24, "seconds": 3.005}
+{"time": "2026-09-28T19:06:38", "event": "hvp_block", "layer": 32, "seconds": 2.578}
+{"time": "2026-09-28T19:06:57", "event": "hvp_block", "layer": 40, "seconds": 2.159}
+{"time": "2026-09-28T19:07:12", "event": "hvp_block", "layer": 48, "seconds": 1.757}
+{"time": "2026-09-28T19:07:25", "event": "hvp_block", "layer": 56, "seconds": 1.57}
+{"time": "2026-09-28T19:07:35", "event": "hvp", "cache_forward_s": 0.357, "hvp_s": 172.126, "layer_limit": null, "peak_gib": {"cuda:0": 108.653, "cuda:1": 106.848, "cuda:2": 102.109}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T19:08:05", "event": "taylor", "regime": "step400_vs_step200", "sparsity": 0.98, "first_order": -0.04127545464453419, "second_order": 0.00239945310462808, "taylor2": -0.03887600153990611, "additive_attribution": -0.037184532009121085, "seconds": 245.61}
+{"time": "2026-09-28T19:10:13", "event": "sweep_eval", "tag": "probe_sample_m1", "val": {"0.5": 1.34966, "0.8": 1.33769, "0.9": 1.33469, "0.95": 1.33597, "0.98": 1.33957, "0.99": 1.3426}}
+{"time": "2026-09-28T19:12:06", "event": "sweep_eval", "tag": "probe_topk_m1", "val": {"0.5": 1.34967, "0.8": 1.33744, "0.9": 1.33451, "0.95": 1.33544, "0.98": 1.33926, "0.99": 1.34239}}
+{"time": "2026-09-28T19:13:53", "event": "sweep_eval", "tag": "probe_headtail_m2", "val": {"0.5": 1.34975, "0.8": 1.33757, "0.9": 1.33448, "0.95": 1.33565, "0.98": 1.33932, "0.99": 1.34228}}
+{"time": "2026-09-28T19:15:45", "event": "sweep_eval", "tag": "probe_topk_m4", "val": {"0.5": 1.34973, "0.8": 1.3375, "0.9": 1.33455, "0.95": 1.33535, "0.98": 1.33932, "0.99": 1.34249}}
+{"time": "2026-09-28T19:15:48", "event": "regime_done", "tag": "step400_vs_step200", "seconds": 1704.5}
+{"time": "2026-09-28T19:18:44", "event": "train", "loss": 1.1202903985977173, "grad_norm": 1.5792244902690524, "step": 420, "pace_s": 12.396}
+{"time": "2026-09-28T19:19:34", "event": "train", "loss": 1.458266258239746, "grad_norm": 1.9296814240911815, "step": 440, "pace_s": 11.946}
+{"time": "2026-09-28T19:20:24", "event": "train", "loss": 1.551066517829895, "grad_norm": 1.9097214061379488, "step": 460, "pace_s": 11.536}
+{"time": "2026-09-28T19:21:14", "event": "train", "loss": 1.097110390663147, "grad_norm": 1.8131907334195836, "step": 480, "pace_s": 11.159}
+{"time": "2026-09-28T19:22:04", "event": "train", "loss": 1.393453598022461, "grad_norm": 1.7062300064758, "step": 500, "pace_s": 10.813}
+{"time": "2026-09-28T19:22:54", "event": "train", "loss": 1.4221185445785522, "grad_norm": 1.8969808050845058, "step": 520, "pace_s": 10.493}
+{"time": "2026-09-28T19:23:44", "event": "train", "loss": 1.445827841758728, "grad_norm": 1.9422796078417157, "step": 540, "pace_s": 10.197}
+{"time": "2026-09-28T19:24:34", "event": "train", "loss": 1.3447262048721313, "grad_norm": 1.829490778481689, "step": 560, "pace_s": 9.923}
+{"time": "2026-09-28T19:25:31", "event": "train", "loss": 1.3907139301300049, "grad_norm": 1.9222160676403555, "step": 580, "pace_s": 9.679}
+{"time": "2026-09-28T19:26:28", "event": "train", "loss": 1.388613224029541, "grad_norm": 1.8035309141665106, "step": 600, "pace_s": 9.451}
+{"time": "2026-09-28T19:28:41", "event": "residual", "eligible_coords": 31205621760, "zero_residual_coords": 5451829637, "zero_residual_fraction": 0.17470664994050097, "residual_l2": 39.415868255224815, "bf16_inexact_residual_coords": 130888237}
+{"time": "2026-09-28T19:28:49", "event": "gradient", "score_loss": 1.2421856951969925, "fwd_bwd_s": 2.414, "offload_s": 0.004, "peak_gib": {"cuda:0": 69.296, "cuda:1": 67.517, "cuda:2": 64.577}}
+{"time": "2026-09-28T19:31:04", "event": "sweep_eval", "tag": "excp_style", "val": {"0.5": 1.35044, "0.8": 1.33662, "0.9": 1.33499, "0.95": 1.33965, "0.98": 1.34638, "0.99": 1.35025}}
+{"time": "2026-09-28T19:31:59", "event": "sweep_eval", "tag": "first_order", "val": {"0.5": 1.34785, "0.8": 1.33751, "0.9": 1.33551, "0.95": 1.33678, "0.98": 1.33997, "0.99": 1.34285}}
+{"time": "2026-09-28T19:32:57", "event": "sweep_eval", "tag": "inshrinkerator_style", "val": {"0.5": 1.33873, "0.8": 1.3358, "0.9": 1.33862, "0.95": 1.34215, "0.98": 1.34627, "0.99": 1.34854}}
+{"time": "2026-09-28T19:33:02", "event": "hvp_block", "layer": 0, "seconds": 4.922}
+{"time": "2026-09-28T19:33:38", "event": "hvp_block", "layer": 8, "seconds": 4.358}
+{"time": "2026-09-28T19:34:12", "event": "hvp_block", "layer": 16, "seconds": 3.979}
+{"time": "2026-09-28T19:34:41", "event": "hvp_block", "layer": 24, "seconds": 3.38}
+{"time": "2026-09-28T19:35:07", "event": "hvp_block", "layer": 32, "seconds": 2.907}
+{"time": "2026-09-28T19:35:30", "event": "hvp_block", "layer": 40, "seconds": 2.768}
+{"time": "2026-09-28T19:35:50", "event": "hvp_block", "layer": 48, "seconds": 2.334}
+{"time": "2026-09-28T19:36:05", "event": "hvp_block", "layer": 56, "seconds": 1.545}
+{"time": "2026-09-28T19:36:14", "event": "hvp", "cache_forward_s": 0.375, "hvp_s": 197.431, "layer_limit": null, "peak_gib": {"cuda:0": 88.675, "cuda:1": 86.878, "cuda:2": 82.763}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T19:39:45", "event": "sweep_eval", "tag": "hvp_global", "val": {"0.5": 1.3479, "0.8": 1.33753, "0.9": 1.33551, "0.95": 1.33664, "0.98": 1.34004, "0.99": 1.34284}}
+{"time": "2026-09-28T19:40:42", "event": "sweep_eval", "tag": "dacp", "val": {"0.5": 1.34771, "0.8": 1.33703, "0.9": 1.33534, "0.95": 1.3365, "0.98": 1.33993, "0.99": 1.34278}}
+{"time": "2026-09-28T19:41:40", "event": "hvp_block", "layer": 0, "seconds": 4.596}
+{"time": "2026-09-28T19:42:14", "event": "hvp_block", "layer": 8, "seconds": 3.887}
+{"time": "2026-09-28T19:42:46", "event": "hvp_block", "layer": 16, "seconds": 4.114}
+{"time": "2026-09-28T19:43:17", "event": "hvp_block", "layer": 24, "seconds": 3.515}
+{"time": "2026-09-28T19:43:43", "event": "hvp_block", "layer": 32, "seconds": 3.113}
+{"time": "2026-09-28T19:44:07", "event": "hvp_block", "layer": 40, "seconds": 2.77}
+{"time": "2026-09-28T19:44:27", "event": "hvp_block", "layer": 48, "seconds": 2.269}
+{"time": "2026-09-28T19:44:43", "event": "hvp_block", "layer": 56, "seconds": 1.812}
+{"time": "2026-09-28T19:44:52", "event": "hvp", "cache_forward_s": 0.358, "hvp_s": 196.587, "layer_limit": null, "peak_gib": {"cuda:0": 108.656, "cuda:1": 106.858, "cuda:2": 102.113}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T19:45:43", "event": "taylor", "regime": "step600_vs_step400", "sparsity": 0.9, "first_order": -0.014328244433400528, "second_order": 0.0008243241925853795, "taylor2": -0.013503920240815148, "additive_attribution": -0.012290313417651078, "seconds": 300.97}
+{"time": "2026-09-28T19:46:38", "event": "hvp_block", "layer": 0, "seconds": 4.991}
+{"time": "2026-09-28T19:47:14", "event": "hvp_block", "layer": 8, "seconds": 4.228}
+{"time": "2026-09-28T19:47:47", "event": "hvp_block", "layer": 16, "seconds": 4.033}
+{"time": "2026-09-28T19:48:14", "event": "hvp_block", "layer": 24, "seconds": 3.435}
+{"time": "2026-09-28T19:48:39", "event": "hvp_block", "layer": 32, "seconds": 3.294}
+{"time": "2026-09-28T19:49:04", "event": "hvp_block", "layer": 40, "seconds": 2.742}
+{"time": "2026-09-28T19:49:25", "event": "hvp_block", "layer": 48, "seconds": 2.278}
+{"time": "2026-09-28T19:49:41", "event": "hvp_block", "layer": 56, "seconds": 1.782}
+{"time": "2026-09-28T19:49:51", "event": "hvp", "cache_forward_s": 0.373, "hvp_s": 198.727, "layer_limit": null, "peak_gib": {"cuda:0": 108.656, "cuda:1": 106.858, "cuda:2": 102.113}, "passes": "64 blocks x 4 sequences"}
+{"time": "2026-09-28T19:50:41", "event": "taylor", "regime": "step600_vs_step400", "sparsity": 0.98, "first_order": -0.03602787823948006, "second_order": 0.0020859089736564584, "taylor2": -0.0339419692658236, "additive_attribution": -0.03255832352576249, "seconds": 298.31}
+{"time": "2026-09-28T19:52:58", "event": "sweep_eval", "tag": "probe_sample_m1", "val": {"0.5": 1.34798, "0.8": 1.33735, "0.9": 1.33543, "0.95": 1.33659, "0.98": 1.3399, "0.99": 1.34257}}
+{"time": "2026-09-28T19:55:02", "event": "sweep_eval", "tag": "probe_topk_m1", "val": {"0.5": 1.3481, "0.8": 1.33756, "0.9": 1.33573, "0.95": 1.33671, "0.98": 1.34007, "0.99": 1.34276}}
+{"time": "2026-09-28T19:57:00", "event": "sweep_eval", "tag": "probe_headtail_m2", "val": {"0.5": 1.34798, "0.8": 1.33761, "0.9": 1.3353, "0.95": 1.33661, "0.98": 1.34012, "0.99": 1.34258}}
+{"time": "2026-09-28T19:59:09", "event": "sweep_eval", "tag": "probe_topk_m4", "val": {"0.5": 1.348, "0.8": 1.33751, "0.9": 1.33525, "0.95": 1.33659, "0.98": 1.34004, "0.99": 1.34288}}
+{"time": "2026-09-28T19:59:12", "event": "regime_done", "tag": "step600_vs_step400", "seconds": 1873.6}
+{"time": "2026-09-28T20:00:13", "event": "residual", "eligible_coords": 31205621760, "zero_residual_coords": 2866175333, "zero_residual_fraction": 0.09184804440185589, "residual_l2": 69.05302002720532, "bf16_inexact_residual_coords": 227806654}
+{"time": "2026-09-28T20:00:20", "event": "gradient", "score_loss": 1.2421856951969925, "fwd_bwd_s": 1.846, "offload_s": 0.005, "peak_gib": {"cuda:0": 69.853, "cuda:1": 67.824, "cuda:2": 64.848}}
+{"time": "2026-09-28T20:02:34", "event": "sweep_eval", "tag": "excp_style", "val": {"0.5": 1.34661, "0.8": 1.34122, "0.9": 1.37241, "0.95": 1.41827, "0.98": 1.49242, "0.99": 1.53638}}
+{"time": "2026-09-28T20:03:26", "event": "sweep_eval", "tag": "first_order", "val": {"0.5": 1.34243, "0.8": 1.32746, "0.9": 1.33138, "0.95": 1.34961, "0.98": 1.3882, "0.99": 1.42104}}

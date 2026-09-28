@@ -1,0 +1,138 @@
+{
+ "reference": "base",
+ "schedule": [
+  0.5,
+  0.8,
+  0.9,
+  0.95,
+  0.98,
+  0.99,
+  0.995
+ ],
+ "stages": [
+  {
+   "sparsity": 0.5,
+   "val": 1.7275695204152157,
+   "gate": 2.0473997949505134,
+   "score_loss_at_partial_point": 1.7974085057352762,
+   "gradient_s": 2.104,
+   "select_s": 11.446,
+   "stage_s": 20.87
+  },
+  {
+   "sparsity": 0.8,
+   "val": 1.7180575821057094,
+   "gate": 2.038165647146872,
+   "score_loss_at_partial_point": 1.7980653943670577,
+   "gradient_s": 2.014,
+   "select_s": 22.256,
+   "stage_s": 71.64
+  },
+  {
+   "sparsity": 0.9,
+   "val": 1.7282205322504276,
+   "gate": 2.049216172562317,
+   "score_loss_at_partial_point": 1.8046625310724431,
+   "gradient_s": 2.059,
+   "select_s": 32.023,
+   "stage_s": 83.83
+  },
+  {
+   "sparsity": 0.95,
+   "val": 1.7520932582583013,
+   "gate": 2.0714126243852333,
+   "score_loss_at_partial_point": 1.8068602143378085,
+   "gradient_s": 2.078,
+   "select_s": 33.185,
+   "stage_s": 78.14
+  },
+  {
+   "sparsity": 0.98,
+   "val": 1.7863975368287206,
+   "gate": 2.1067976816425342,
+   "score_loss_at_partial_point": 1.8123529309284885,
+   "gradient_s": 2.106,
+   "select_s": 33.433,
+   "stage_s": 68.6
+  },
+  {
+   "sparsity": 0.99,
+   "val": 1.809480504905723,
+   "gate": 2.1315927514815494,
+   "score_loss_at_partial_point": 1.8312403286423968,
+   "gradient_s": 2.122,
+   "select_s": 35.033,
+   "stage_s": 69.78
+  },
+  {
+   "sparsity": 0.995,
+   "val": 1.8290667193609482,
+   "gate": 2.1533730545118526,
+   "score_loss_at_partial_point": 1.846180905577957,
+   "gradient_s": 2.222,
+   "select_s": 38.107,
+   "stage_s": 70.65
+  }
+ ],
+ "residual": {
+  "eligible_coords": 31205621760,
+  "zero_residual_coords": 5040583927,
+  "zero_residual_fraction": 0.1615280722738594,
+  "residual_l2": 41.9663751889632,
+  "bf16_inexact_residual_coords": 143831310
+ },
+ "uncompressed": {
+  "val": 1.7382353393912664,
+  "gate": 2.0581391186308653
+ },
+ "total_s": 465.7,
+ "peak_gib": {
+  "cuda:0": 69.376,
+  "cuda:1": 67.55,
+  "cuda:2": 64.61
+ },
+ "provenance": {
+  "code_commit": "a72a9fad55f9e26af4d425101960e7554378a260",
+  "source_sha256": {
+   "experiments/scripts/run_probe_coverage_32b.py": "d1ac283531f855b7a1c41fda83ea7843e224329a371351fff0e1c5194eaa8209",
+   "experiments/lib/probe_coverage.py": "8d2b51b3c02aa4b3a6fcb68af99dd0f6ea844e93881a09ac8a0cebb0a3fb9305",
+   "experiments/lib/qwen_pipeline.py": "6418683f1b8553c99db546129a367d01b0b4c52ca8a2a627789a3739e0b94ad6",
+   "experiments/lib/streaming_selection.py": "492ab89784491e1b2d42434ec323f0715461ff8583d1edae4882bb4e66814789",
+   "experiments/lib/residual_weibull.py": "167eb78e6574f0e2ce8cc92d07360f71725061d6be3a19e3e02e21c3ff2b3625",
+   "experiments/lib/distributed_stats.py": "ecd82ac274f2b65c42be9fa79ff4bce74ea72fe158c26cb05dc19701305920a3",
+   "experiments/lib/residual_budget.py": "d744fcd4862f40a98f713df70a2e0100653fad77b8ac8397309f9a40788854c0"
+  },
+  "config_sha256": "ed951801449b4d488b6eb65f311d6c475ba5563dfc7f6f84d288cd42c8d1db96",
+  "python": "3.8.20 (default, Oct  3 2024, 15:24:27) \n[GCC 11.2.0]",
+  "torch": "2.4.0+cu121",
+  "platform": "Linux-5.15.0-25-generic-x86_64-with-glibc2.17",
+  "hostname": "h200-1"
+ },
+ "gpu": {
+  "CUDA_VISIBLE_DEVICES": "5,6,7",
+  "devices": [
+   {
+    "logical": "cuda:0",
+    "physical_index": 5,
+    "name": "NVIDIA H200",
+    "total_gib": 139.8,
+    "uuid": ""
+   },
+   {
+    "logical": "cuda:1",
+    "physical_index": 6,
+    "name": "NVIDIA H200",
+    "total_gib": 139.8,
+    "uuid": ""
+   },
+   {
+    "logical": "cuda:2",
+    "physical_index": 7,
+    "name": "NVIDIA H200",
+    "total_gib": 139.8,
+    "uuid": ""
+   }
+  ],
+  "nvidia_smi": "0, GPU-993b412c-9c13-1def-d159-9fc5003a4528, 132825 MiB\n1, GPU-38a76cc1-a436-d223-722d-cabbda5183bb, 132237 MiB\n2, GPU-7da89a28-83f5-ae98-3109-03c2e6240478, 132219 MiB\n3, GPU-62dffd65-479e-85e3-2cde-b92697cc1fb8, 131305 MiB\n4, GPU-cf2ee2dc-d13d-a57c-55ef-1fd2b17da365, 130461 MiB\n5, GPU-bce16efd-5d8c-3c92-58e8-2d14c199f8f6, 4 MiB\n6, GPU-c30204fb-51c8-b275-29ac-a797435093a6, 4 MiB\n7, GPU-6b48f6d6-1984-ab7b-bc99-7dcefd7110e9, 5535 MiB\n"
+ }
+}

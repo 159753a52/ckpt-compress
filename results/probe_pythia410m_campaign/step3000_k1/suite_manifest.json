@@ -1,0 +1,212 @@
+{
+  "completed_jobs": {
+    "pythia_410m_alpaca_step3000_p1pccccccccccccdp-1_k1": {
+      "path": "pythia_410m_alpaca_step3000_p1pccccccccccccdp-1_k1.json",
+      "sha256": "2ee3ce2f2906095c7448597158f993325a62df0e108ddaefa75d433124e961bf"
+    },
+    "pythia_410m_alpaca_step3000_p1pf5c28f5c28f5cp-1_k1": {
+      "path": "pythia_410m_alpaca_step3000_p1pf5c28f5c28f5cp-1_k1.json",
+      "sha256": "bfbdce951b0c9223ad14403a332746f69ef499cb0a48d1342a37f84fd15eed79"
+    }
+  },
+  "data_identities": {
+    "pythia_410m_alpaca_step3000": {
+      "checkpoint_sha256": "570fbea88f7550f993ef4e7f273f87d8fa2cfecb2956db25109e8568402a7eec",
+      "checkpoint_step": 3000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+      },
+      "training_pool": {
+        "count": 140,
+        "sha256": "ce6719149f8566a31e4f25b7dba101fce835ec972b65e4cc6aa3efb9e9cdca26"
+      }
+    }
+  },
+  "finished_at": "2026-09-28T11:03:54.468434+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/home/gridtest/dacp_probe_code/3f40f94/checkpoints/pythia_410m_alpaca_step3000/checkpoint_step_3000.pt",
+        "checkpoint_step": 3000,
+        "data_dir": "/home/gridtest/dacp_probe_code/3f40f94/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 1e-06,
+        "max_layer_ratio": 0.995,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca_step3000",
+        "prune_ratio": 0.9,
+        "prune_ratios": [
+          0.5,
+          0.7,
+          0.9,
+          0.95,
+          0.98,
+          0.99
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1,
+          3,
+          5
+        ],
+        "recovery_protocol": {
+          "learning_rate": 1e-06,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42,
+          43
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 140
+      },
+      {
+        "batch_size": 2,
+        "checkpoint": "/home/gridtest/dacp_probe_code/3f40f94/checkpoints/pythia_410m_alpaca_step3000/checkpoint_step_3000.pt",
+        "checkpoint_step": 3000,
+        "data_dir": "/home/gridtest/dacp_probe_code/3f40f94/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 1e-06,
+        "max_layer_ratio": 0.995,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca_step3000",
+        "prune_ratio": 0.98,
+        "prune_ratios": [
+          0.5,
+          0.7,
+          0.9,
+          0.95,
+          0.98,
+          0.99
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1,
+          3,
+          5
+        ],
+        "recovery_protocol": {
+          "learning_rate": 1e-06,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42,
+          43
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 140
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      },
+      {
+        "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline.",
+        "fidelity": "style",
+        "internal_method": "first_order_exact_global",
+        "name": "inshrinkerator_style",
+        "owner": "inshrinkerator"
+      },
+      {
+        "description": "Residual first-order damage |g*delta| from the true-label gradient with exact global top-k selection.",
+        "fidelity": "native",
+        "internal_method": "residual_first_order_exact_global",
+        "name": "first_order_exact_global",
+        "owner": "dacp_probe"
+      },
+      {
+        "description": "Taylor HVP scoring with exact global top-k allocation oracle.",
+        "fidelity": "native",
+        "internal_method": "taylor_exact_global",
+        "name": "taylor_exact_global",
+        "owner": "dacp_ablation"
+      },
+      {
+        "description": "Taylor damage scoring with Weibull moment allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_weibull_mom",
+        "name": "dacp",
+        "owner": "dacp"
+      },
+      {
+        "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 deterministic top-probability Gauss-Newton probe round(s); exact global top-k selection.",
+        "fidelity": "native",
+        "internal_method": "probe_topk_m1_exact_global",
+        "name": "probe_topk_m1_exact_global",
+        "owner": "dacp_probe"
+      },
+      {
+        "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 sampled Gauss-Newton probe round(s) (y ~ p, de-duplicated per position, Rademacher signs); exact global top-k selection.",
+        "fidelity": "native",
+        "internal_method": "probe_sample_m1_exact_global",
+        "name": "probe_sample_m1_exact_global",
+        "owner": "dacp_probe"
+      },
+      {
+        "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 deterministic head round(s) plus one renormalised tail sample (unbiased for the full Gauss-Newton matrix); exact global top-k selection.",
+        "fidelity": "native",
+        "internal_method": "probe_headtail_m2_exact_global",
+        "name": "probe_headtail_m2_exact_global",
+        "owner": "dacp_probe"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "pythia_410m_alpaca_step3000_p1pccccccccccccdp-1_k1",
+    "pythia_410m_alpaca_step3000_p1pf5c28f5c28f5cp-1_k1"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "3f40f9457a494df089935db770f3ebcedd2cd608",
+    "git_dirty": false,
+    "manifest": "/home/gridtest/dacp_probe_code/3f40f94/experiments/configs/probe_pythia410m_campaign.yaml",
+    "manifest_sha256": "bf18bc261ff9cc6e429b4b89ee282858f23f375ed58d27606b0989b9d9fe1e91",
+    "source_file_count": 277,
+    "source_state_sha256": "2cd46c63d32ded06a763ed3cfb673b0421afb498b382001e9cadb960b36d12b1"
+  },
+  "schema_version": 5,
+  "started_at": "2026-09-28T10:40:38.721355+00:00",
+  "status": "complete"
+}
