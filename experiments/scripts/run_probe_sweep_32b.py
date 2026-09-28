@@ -180,6 +180,7 @@ def run_regime(ctx: Context, regime: str, ref: Dict[str, torch.Tensor], theta, o
         eval_masks(s, summ, res["evals"], name)
     res["hvp"] = s.compute_hvp()
     summ = s.select("hvp", s.hvp_score, weibull=True)
+    res["weibull"] = summ["weibull"]
     glob = {k: v for k, v in summ["masks"].items() if "_global_" in k}
     weib = {k: v for k, v in summ["masks"].items() if "_weibull_" in k}
     eval_masks(s, {"masks": glob, "select_s": summ["select_s"]}, res["evals"], "hvp_global")
@@ -237,6 +238,9 @@ def main() -> None:
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text())
     cfg["sparsities"] = SPARSITIES
+    # A layer cap of 0.99 cannot reach 99.5% global sparsity; the sweep uses
+    # 0.999 and still records feasibility under the original 0.95 cap.
+    cfg["weibull_cap"] = 0.999
     work = Path(args.work_dir)
     ctx = Context(cfg, work)
     base = ctx.snapshot(ctx.pipe.eligible_names)  # model is still at base weights here
