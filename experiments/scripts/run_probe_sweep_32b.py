@@ -43,6 +43,9 @@ from experiments.scripts.run_probe_coverage_32b import (  # noqa: E402
 
 SPARSITIES = [0.5, 0.8, 0.9, 0.95, 0.98, 0.99, 0.995]
 TAYLOR_SPARSITIES = [0.5, 0.9, 0.98, 0.995]
+SAMPLE_MS = (1, 4)
+TOPK_MS = (1, 2, 4, 8)
+HEADTAIL_MS = (2, 4)
 
 
 def eval_masks(s: Scorer, summ: dict, out: dict, tag: str) -> None:
@@ -197,12 +200,12 @@ def run_regime(ctx: Context, regime: str, ref: Dict[str, torch.Tensor], theta, o
     res["gradient_offload_s"] = s.offload_gradient()
 
     # sampled with coverage tracking
-    run = ProbeRun(s, 0, 4, "coverage")
+    run = ProbeRun(s, 0, max(SAMPLE_MS), "coverage")
     res["costs"]["sample"] = []
-    for m in range(1, 5):
+    for m in range(1, max(SAMPLE_MS) + 1):
         r = run.round()
         res["costs"]["sample"].append({k: r[k] for k in ("round_s", "mean_mass", "p05_mass", "cumulative_repeat_rate")})
-        if m in (1, 4):
+        if m in SAMPLE_MS:
             summ = s.select(f"sample_m{m}", run.score, weibull=False)
             eval_masks(s, summ, res["evals"], f"probe_sample_m{m}")
     run.free()
@@ -211,14 +214,14 @@ def run_regime(ctx: Context, regime: str, ref: Dict[str, torch.Tensor], theta, o
     tk = TopkHeadTail(s, 0)
     res["costs"]["topk"] = []
     res["costs"]["tail"] = {}
-    for h in range(8):
-        if h + 1 in (2, 4):
+    for h in range(max(max(TOPK_MS), max(HEADTAIL_MS) - 1)):
+        if h + 1 in HEADTAIL_MS:
             rec, summ = tk.tail_select(f"headtail_m{h + 1}")
             res["costs"]["tail"][h + 1] = rec
             eval_masks(s, summ, res["evals"], f"probe_headtail_m{h + 1}")
         rec = tk.head_round()
         res["costs"]["topk"].append(rec)
-        if tk.h in (1, 2, 4, 8):
+        if tk.h in TOPK_MS:
             summ = s.select(f"topk_m{tk.h}", tk.head_score, weibull=False)
             eval_masks(s, summ, res["evals"], f"probe_topk_m{tk.h}")
     tk.u = []
