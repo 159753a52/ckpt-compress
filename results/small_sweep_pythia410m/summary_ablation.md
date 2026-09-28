@@ -165,6 +165,19 @@ Scoring set = first B of the seed's 16 training-pool batches (`partition_repeate
 | iterative_first_order_B8 | 3 | 131.5 ± 5.9 | 324.0 ± 11.9 | 484.1 ± 4.1 |
 | iterative_first_order_B16 | 3 | 125.6 ± 8.4 | **292.5 ± 10.5** | **460.0 ± 3.9** |
 
+### Best-settings combination (geometric K = 16)
+
+| method | seeds | 0.9 | 0.95 | 0.98 | 0.99 | 0.995 |
+|---|---|---|---|---|---|---|
+| first_order (sweep) | 3 | 130.6 ± 2.5 | 311.5 ± 6.1 | 519.9 ± 6.0 | 624.6 ± 5.0 | 694.9 ± 2.5 |
+| first_order_ucb (sweep) | 3 | 80.6 ± 2.3 | 256.7 ± 6.8 | 482.6 ± 9.1 | 598.0 ± 8.1 | 671.5 ± 4.9 |
+| iterative_first_order (sweep) | 3 | 131.5 ± 6.0 | 234.4 ± 11.9 | 324.1 ± 11.6 | 399.6 ± 6.7 | 484.2 ± 4.3 |
+| iterative_K16 (B = 8) | 3 | 122.3 ± 11.7 | 191.3 ± 10.8 | 297.8 ± 8.5 | 387.2 ± 5.1 | 476.9 ± 3.4 |
+| iterative_ucb_K8 (B = 8) | 3 | 58.4 ± 4.7 | 147.1 ± 8.6 | 272.3 ± 7.5 | 377.7 ± 6.8 | 485.4 ± 6.9 |
+| iterative_first_order_K16_B16 | 3 | 113.4 ± 8.9 | 170.9 ± 8.9 | 270.9 ± 7.8 | 360.2 ± 2.3 | 454.9 ± 2.0 |
+| iterative_ucb_K16_B16 | 3 | **45.1 ± 3.9** | **115.5 ± 4.9** | **228.3 ± 6.8** | **335.6 ± 5.5** | **451.4 ± 5.3** |
+| iterative_ucb_K16_B8 | 3 | 52.8 ± 4.3 | 133.7 ± 7.3 | 257.7 ± 6.6 | 365.7 ± 6.9 | 475.8 ± 4.6 |
+
 ## R3
 
 inter-checkpoint residual: step-3000 checkpoint minus step-1000 checkpoint; the two checkpoints are two independent fine-tuning runs from the same base with the same hyper-parameters (the 3000-step run is not a continuation of the 1000-step run). Uncompressed eval loss 1.67681.
