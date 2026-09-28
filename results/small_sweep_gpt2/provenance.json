@@ -1,0 +1,62 @@
+{
+  "hf_repo": "openai-community/gpt2",
+  "hf_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "snapshot_sha256": {
+    "config.json": "0daed7749b4f02b8f76240d5444551d7b08712dab4d0adb8239c56ba823bb7b4",
+    "generation_config.json": "ed0b32ac72c0f5f44a719abb2d7786ea5146c871f83717b7f2018065954de02b",
+    "merges.txt": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+    "model.safetensors": "248dfc3911869ec493c76e65bf2fcf7f615828b0254c12b473182f0f81d3a707",
+    "tokenizer.json": "8414cab924d8b9b33013f0d221c5862f365ee9be39c5c2bfae8a5a9e970478a6",
+    "tokenizer_config.json": "5e04eb606e3a1583530a42e36c2a6b6615c86f34fe77e44d9ddeb43ff940931f",
+    "vocab.json": "196139668be63f3b5d6574427317ae82f612a97c5d1cdaf36ed2256dbf636783"
+  },
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/gpt2",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "d41aee385124bfbebe4afb9114ad8e4c8b8dcfe4",
+    "data": "Alpaca 52K local JSON (52002 samples), train/val split 51002/1000 with seed 0",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "val_ppl_before": 21.48,
+    "val_loss_before": 3.0671,
+    "val_ppl_step1000": 7.87,
+    "val_loss_step1000": 2.0627,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/gpt2_alpaca/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "74fc6d99fbfe1ff56562c0456ca421d0bdf2a0c4409ed295ad17d54c93361404",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "G2_R1_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "45da33d5d1e3d6bc229623cf0b253cbe6b61951c7d9af2d5b6b242db10d3aa15"
+    },
+    "uncompressed": {
+      "eval_s": 1.77,
+      "ppl": 7.7834078003355485,
+      "tokens": 14297,
+      "val": 2.0519942628959598
+    },
+    "full_restore_to_base": {
+      "eval_s": 0.89,
+      "ppl": 19.46511194439245,
+      "tokens": 14297,
+      "val": 2.9686237321063724
+    },
+    "residual": {
+      "eligible_coords": 84934656,
+      "eligible_tensors": 48,
+      "layers": 12,
+      "residual_l2": 4.461821618211211,
+      "zero_residual_fraction": 6.887647840711806e-06
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "hf_repo": "EleutherAI/pythia-160m",
+  "hf_revision": "50f5173d932e8e61f858120bcb800b97af589f46",
+  "snapshot_sha256": {
+    "config.json": "76eb275107220e450d31258f792a2efcbee109d8b62ae0088260057dec06362f",
+    "model.safetensors": "29d2e457a664e41c12c735f20a36dc0956a665f614a54ce5db21a32e75965270",
+    "special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+    "tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+    "tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+  },
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/pythia-160m",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "d41aee385124bfbebe4afb9114ad8e4c8b8dcfe4",
+    "data": "Alpaca 52K local JSON (52002 samples), train/val split 51002/1000 with seed 0",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "val_ppl_before": 18.42,
+    "val_loss_before": 2.9136,
+    "val_ppl_step1000": 8.25,
+    "val_loss_step1000": 2.1102,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/pythia_160m_alpaca/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "a29788f29d811f84a1dcdfde0f2281130d65d707065159c69d5d6030ccd1d40b",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "P160_R1_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+    },
+    "uncompressed": {
+      "eval_s": 1.21,
+      "ppl": 8.0833498170303,
+      "tokens": 14353,
+      "val": 2.0898063679335466
+    },
+    "full_restore_to_base": {
+      "eval_s": 1.01,
+      "ppl": 22.181417175929028,
+      "tokens": 14353,
+      "val": 3.0992548741970727
+    },
+    "residual": {
+      "eligible_coords": 84934656,
+      "eligible_tensors": 48,
+      "layers": 12,
+      "residual_l2": 3.3081267858503107,
+      "zero_residual_fraction": 2.1781450436439043e-06
+    }
+  }
+}
