@@ -149,9 +149,10 @@ SCORERS: Dict[str, Callable] = {"first_order": score_first_order, "ucb": score_u
 
 
 def run_iterative(s: Sweep, batches, schedule: Sequence[float], scorer: Callable, seed: int,
-                  eval_at: Optional[Sequence[float]] = None) -> tuple[dict, list]:
+                  eval_at: Optional[Sequence[float]] = None, return_keep: bool = False):
     """Monotone staged pruning; evaluates after the stages whose sparsity is in eval_at
-    (all stages if None).  Returns evals keyed by str(sparsity) and per-stage records."""
+    (all stages if None).  Returns evals keyed by str(sparsity) and per-stage records
+    (plus the final keep masks if return_keep)."""
     evals, stages = {}, []
     keep_prev: Optional[TensorDict] = None
     eval_keys = None if eval_at is None else {round(p, 12) for p in eval_at}
@@ -189,8 +190,11 @@ def run_iterative(s: Sweep, batches, schedule: Sequence[float], scorer: Callable
             rec["val"] = ev["val"]
         stages.append(rec)
         keep_prev = keep
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if return_keep:
+        return evals, stages, keep_prev
     del keep_prev
-    torch.cuda.empty_cache()
     return evals, stages
 
 

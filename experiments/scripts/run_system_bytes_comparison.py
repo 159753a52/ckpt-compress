@@ -23,6 +23,16 @@ Methods and fidelity (none of these is a full reproduction):
   chosen by the repository's dacp / probe_topk_m1_exact_global scoring at the
   same number of pruned eligible entries as excp_pipeline at that alpha.
   Moments then follow the same ExCP joint rule and the same quantizer.
+* iterative_first_order_excpq / iterative_ucb_excpq / first_order_excpq -- same
+  as dacp_excpq but the eligible entries are chosen by exact global iterative
+  re-linearized pruning (run_residual_ablation_small.run_iterative; stages over
+  0.5,0.8,0.9,0.95,0.98,0.99,0.995 below the target, or geometric with a _K<k>
+  suffix) or one-shot |g d| (first_order).
+* --extra-sparsities: our selections at eligible sparsities beyond ExCP's cap
+  (the ExCP factor is capped at 2.5, so ExCP itself cannot reach them); the
+  non-eligible tensors and the moment rule follow ExCP at --extra-alpha, and the
+  records are labelled operating_point.eligible_sparsity / fidelity
+  "ours_beyond_excp_sparsity_cap_...".
 * inshrinkerator_like -- per-tensor partition of the full weights and of both
   moments with the repository Inshrinkerator partition() (protect the top
   protect_fraction by magnitude or |w * grad| sensitivity in bf16, prune the
@@ -47,6 +57,7 @@ import io
 import json
 import lzma
 import math
+import re
 import sys
 import time
 import zlib
@@ -261,6 +272,31 @@ def total_sizes(sizes: dict) -> dict:
     return {k: sum(part[k] for part in sizes.values()) for k in keys}
 
 
+LOCAL_OURS = re.compile(r"(iterative_first_order|iterative_ucb|first_order)(?:_K(\d+))?")
+
+
+def local_selection(name: str, sweep, batches, target: float, seed: int) -> tuple[dict, dict]:
+    """Keep masks on the eligible matrices from run_residual_ablation_small.run_iterative.
+
+    iterative_first_order / iterative_ucb: stages over the sweep sparsity list below the
+    target, then the target (``_K<k>``: geometric schedule P_j = 1 - (1-P)^(j/k)); gradients
+    recomputed at the partially restored point; first_order: one stage (one-shot |g d| with
+    the averaged full gradient of the scoring batches).
+    """
+    import run_residual_ablation_small as abl
+
+    kind, k = LOCAL_OURS.fullmatch(name).groups()
+    scorer = abl.score_ucb if kind == "iterative_ucb" else abl.score_first_order
+    if kind == "first_order":
+        schedule = [target]
+    elif k:
+        schedule = abl.geometric_schedule(target, int(k))
+    else:
+        schedule = abl.list_schedule(target)
+    _, stages, keep = abl.run_iterative(sweep, batches, schedule, scorer, seed, eval_at=[], return_keep=True)
+    return {n: keep[n].cpu() for n in sweep.names}, {"schedule": schedule, "stages": stages}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
@@ -276,6 +312,13 @@ def main() -> None:
     parser.add_argument("--insh-prune", type=float, default=0.2)
     parser.add_argument("--ours", default="dacp,probe_topk_m1_exact_global")
     parser.add_argument("--no-lzma", action="store_true")
+    parser.add_argument("--skip-excp-record", action="store_true",
+                        help="compute ExCP masks (for the eligible sparsity) but do not encode/emit excp_pipeline")
+    parser.add_argument("--extra-sparsities", default="",
+                        help="eligible sparsities beyond ExCP's cap for --extra-ours (non-eligible tensors "
+                             "and the moment rule follow ExCP at --extra-alpha)")
+    parser.add_argument("--extra-alpha", type=float, default=1e-2)
+    parser.add_argument("--extra-ours", default="")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     lzma_on = not args.no_lzma
@@ -391,44 +434,67 @@ def main() -> None:
 
     seeds = [int(s) for s in args.seeds.split(",")]
     alphas = [float(a) for a in args.alphas.split(",") if a]
+    ours = [o for o in args.ours.split(",") if o]
+    extra_ours = [o for o in args.extra_ours.split(",") if o]
+    extra_sparsities = [float(x) for x in args.extra_sparsities.split(",") if x]
+    sweep = None
+    if any(LOCAL_OURS.fullmatch(o) for o in ours + extra_ours):
+        from run_residual_sweep_small import Sweep
+
+        sweep = Sweep(model, workload.model_family, layers, blocks,
+                      {n: current[n] for n in eligible}, {n: base_params[n].float() for n in eligible},
+                      context.eval_batches, device)
+
+    def select(our: str, scoring_batches, target: float, seed: int) -> tuple[dict, dict]:
+        t_score = time.perf_counter()
+        if LOCAL_OURS.fullmatch(our):
+            masks, info = local_selection(our, sweep, scoring_batches, target, seed)
+            meta = {"internal_method": our, "allocation_kind": "exact_global_iterative"
+                    if our.startswith("iterative") else "exact_global", **info}
+        else:
+            delta = {n: residual[n].to(device) for n in eligible}
+            masks, compression = _score_and_mask(
+                SimpleNamespace(internal_method=contracts[our].internal_method),
+                model,
+                scoring_batches,
+                layers,
+                blocks,
+                delta,
+                target,
+                workload.max_layer_ratio,
+                workload.task_type,
+                workload.model_family,
+                device,
+                False,
+                seed=seed,
+            )
+            del delta
+            meta = {"internal_method": contracts[our].internal_method,
+                    "allocation_kind": compression.get("allocation_kind")}
+        meta["scoring_seconds"] = time.perf_counter() - t_score
+        return {n: masks[n].cpu() for n in eligible}, meta
+
+    points = [(a, None) for a in alphas] + [(args.extra_alpha, sp) for sp in extra_sparsities]
     for seed in seeds:
         plan = partition_repeated_seed_batches(
             context.training_pool, workload.total_steps, 1, workload.hvp_batches, seed
         )
         scoring_batches = plan.scoring_batches[0]
-        our_masks_cache: dict[tuple[str, float], dict] = {}
-        for alpha in alphas:
+        for alpha, override in points:
             t0 = time.perf_counter()
             excp_masks = excp_weight_masks(residual, exp_avg_sq, alpha, device)
             pruned_eligible = sum(int((~excp_masks[n]).sum()) for n in eligible)
             eligible_sparsity = pruned_eligible / eligible_count
-            variants = [("excp_pipeline", excp_masks, None)]
-            for our in [o for o in args.ours.split(",") if o]:
-                delta = {n: residual[n].to(device) for n in eligible}
-                t_score = time.perf_counter()
-                masks, compression = _score_and_mask(
-                    SimpleNamespace(internal_method=contracts[our].internal_method),
-                    model,
-                    scoring_batches,
-                    layers,
-                    blocks,
-                    delta,
-                    eligible_sparsity,
-                    workload.max_layer_ratio,
-                    workload.task_type,
-                    workload.model_family,
-                    device,
-                    False,
-                    seed=seed,
-                )
-                del delta
+            variants = []
+            if override is None and not args.skip_excp_record:
+                variants.append(("excp_pipeline", excp_masks, None))
+            target = eligible_sparsity if override is None else override
+            for our in (ours if override is None else extra_ours):
+                eligible_masks, meta = select(our, scoring_batches, target, seed)
                 merged = dict(excp_masks)
-                merged.update({n: masks[n].cpu() for n in eligible})
-                meta = {
-                    "internal_method": contracts[our].internal_method,
-                    "allocation_kind": compression.get("allocation_kind"),
-                    "scoring_seconds": time.perf_counter() - t_score,
-                }
+                merged.update(eligible_masks)
+                if override is not None:
+                    meta["beyond_excp_cap"] = True
                 variants.append((f"{our}_excpq", merged, meta))
             for name, masks, meta in variants:
                 t1 = time.perf_counter()
@@ -443,10 +509,14 @@ def main() -> None:
                             "reimplementation_of_upstream_excp_script"
                             if name == "excp_pipeline"
                             else "ours_with_excp_moment_rule_and_quantizer"
+                            if override is None
+                            else "ours_beyond_excp_sparsity_cap_with_excp_moment_rule_and_quantizer"
                         ),
                         "seed": seed,
-                        "operating_point": {"alpha": alpha, "beta": args.beta, "bits": EXCP_BITS},
+                        "operating_point": {"alpha": alpha, "beta": args.beta, "bits": EXCP_BITS,
+                                            **({} if override is None else {"eligible_sparsity": override})},
                         "excp_eligible_sparsity": eligible_sparsity,
+                        "eligible_sparsity": target if name != "excp_pipeline" else eligible_sparsity,
                         "eligible_kept": sum(int(masks[n].sum()) for n in eligible),
                         "all_kept_mask": sum(int(masks[n].sum()) for n in param_names),
                         **counts,

@@ -27,6 +27,8 @@ def _ms(values: list[float], digits: int = 4) -> str:
 
 def _op_key(record: dict) -> str:
     op = record["operating_point"]
+    if "eligible_sparsity" in op:
+        return f"alpha={op['alpha']:g},eligible_sp={op['eligible_sparsity']:g} (beyond ExCP cap)"
     if "alpha" in op:
         return f"alpha={op['alpha']:g}"
     return f"bins={op['n_bins']},prune={op['prune_fraction']:g},protect={op['protect_fraction']:g}"
@@ -77,10 +79,11 @@ def main() -> None:
             f"{statistics.fmean(r['bytes'][p]['zlib6'] for r in records) / 1e6:.1f}"
             for p in ("weights", "exp_avg", "exp_avg_sq")
         )
-        if records[0].get("excp_eligible_sparsity") is None:
+        key = "eligible_sparsity" if "eligible_sparsity" in records[0] else "excp_eligible_sparsity"
+        if records[0].get(key) is None:
             sparsity = "-"
         else:
-            sparsity = f"{statistics.fmean(r['excp_eligible_sparsity'] for r in records):.4f}"
+            sparsity = f"{statistics.fmean(r[key] for r in records):.4f}"
         lines.append(
             f"| {method} | {op} | {len(records)} | {sparsity} | "
             f"{_ms([r['restored']['perplexity'] for r in records])} | "
