@@ -390,7 +390,7 @@ def main() -> None:
         )
 
     seeds = [int(s) for s in args.seeds.split(",")]
-    alphas = [float(a) for a in args.alphas.split(",")]
+    alphas = [float(a) for a in args.alphas.split(",") if a]
     for seed in seeds:
         plan = partition_repeated_seed_batches(
             context.training_pool, workload.total_steps, 1, workload.hvp_batches, seed
