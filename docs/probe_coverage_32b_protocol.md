@@ -111,4 +111,26 @@ isolates the value of the curvature term.
 
 ## Deviations
 
-(none yet)
+- `prepare` ran from commit 3394680, deployed with CRLF line endings (git
+  archive on Windows); `score`, `branches` and `chains` ran from 2f80912,
+  whose deployed files were verified byte-identical to the git blobs.  The
+  prepare code path is unchanged between the two commits apart from line
+  endings.
+- A 32B smoke test (2 HVP blocks, 2 probe rounds, separate work directory,
+  results discarded) showed that 0.18% of residual entries are not exactly
+  undoable in bf16 and that pinning host memory took minutes; 2f80912 fixed
+  both before any confirmatory run.  No tolerance, split, seed or rule changed.
+- The multi-cycle probe method uses seeds `100·cycle` (fixed in code before
+  the run), not the cycle-1 seeds 0–2.
+- The P = 98% multi-cycle runs were stopped after `dacp_0.98` cycle 2 to free
+  the GPUs for the diagnostic and sweep; no 98% chain result is reported.
+- Added after the fixed protocol (exploratory, not confirmatory): the exact
+  coverage diagnostic (`run_coverage_diagnostic_32b.py`) and the
+  immediate-restoration sweep (`run_probe_sweep_32b.py`; sparsities 0.5–0.995,
+  references step 100 and base weights, Weibull cap 0.999 because 0.99 cannot
+  reach 99.5%).  The first sweep launch (6f102b5) stopped at that cap; results
+  come from c482bce.
+- Small-model breadth runs (Pythia-410M/Alpaca) used a Python 3.10 environment
+  assembled on the host (`experiments/scripts/remote/build_py310_env.sh`),
+  because the repository requires Python ≥ 3.10; the checkpoint was produced by
+  `finetune_pythia_410m.py` with its defaults on GPU 7.
