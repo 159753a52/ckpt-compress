@@ -267,6 +267,22 @@ def task_batches(s: Sweep, batches16, seed, dv, log) -> dict:
     return {"evals": evals, "iterative_stages": meta, "sparsities": BATCH_TARGETS}
 
 
+def task_best(s: Sweep, batches16, seed, dv, log) -> dict:
+    """Combine the best settings of the other tasks: geometric K = 16 schedule, B in {8, 16}."""
+    evals, meta = {}, {}
+    for key, B in (("first_order", 16), ("ucb", 8), ("ucb", 16)):
+        tag = f"iterative_{'first_order' if key == 'first_order' else 'ucb'}_K16_B{B}"
+        evals[tag], meta[tag] = {}, {}
+        for target in SCHED_TARGETS:
+            sched = geometric_schedule(target, 16)
+            ev, stages = run_iterative(s, batches16[:B], sched, SCORERS[key], seed, eval_at=[target])
+            ev[str(target)]["scoring_batches"] = B
+            evals[tag][str(target)] = ev[str(target)]
+            meta[tag][str(target)] = {"schedule": sched, "stages": stages}
+        log(f"{tag}: " + ", ".join(f"{p}:{dv(v):.1f}" for p, v in evals[tag].items()))
+    return {"evals": evals, "iterative_stages": meta, "sparsities": SCHED_TARGETS}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--regime", choices=sorted(REGIMES), required=True)
@@ -284,7 +300,7 @@ def main() -> None:
     from experiments.lib.residual_training import partition_repeated_seed_batches
 
     tasks = [t for t in args.tasks.split(",") if t]
-    if set(tasks) - {"sched", "combo", "batches"}:
+    if set(tasks) - {"sched", "combo", "batches", "best"}:
         raise ValueError(f"unknown tasks {tasks}")
     scorers = [c for c in args.combo_scorers.split(",") if c]
     if set(scorers) - set(SCORERS):
@@ -323,10 +339,12 @@ def main() -> None:
                 out = task_sched(s, batches, seed, dv, log)
             elif task == "combo":
                 out = task_combo(s, batches, seed, dv, log, scorers, args.combo_k)
+            elif task == "best":
+                out = task_best(s, batches16, seed, dv, log)
             else:
                 out = task_batches(s, batches16, seed, dv, log)
             s.apply(None)
-            used = batches16 if task == "batches" else batches
+            used = batches16 if task in ("batches", "best") else batches
             res = {
                 "task": task, "seed": seed, "regime": args.regime, "regime_description": spec["description"],
                 "uncompressed": unc, "full_restore": ctx["full_restore"], "residual": ctx["residual"],
@@ -334,7 +352,7 @@ def main() -> None:
                 "methods": list(out["evals"]),
                 "scoring_batches": {"count": len(used), "sha256": batch_hash(used),
                                     "first8_sha256": batch_hash(batches),
-                                    "selected_pool_indices": list(plan16.selected_pool_indices if task == "batches"
+                                    "selected_pool_indices": list(plan16.selected_pool_indices if task in ("batches", "best")
                                                                   else plan8.selected_pool_indices)},
                 "model": "pythia-410m", "model_family": ctx["family"], "dataset": "alpaca",
                 "batch_size": 2, "seq_length": 128,
