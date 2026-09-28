@@ -379,7 +379,9 @@ def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers, data_di
     from dacp.utils.paths import resolve_model_source
 
     tokenizer_sources = {
+        "pythia-160m": ("pythia-160m", "EleutherAI/pythia-160m"),
         "pythia-410m": ("pythia-410m", "EleutherAI/pythia-410m"),
+        "gpt2": ("gpt2", "openai-community/gpt2"),
         "pythia-1b": ("pythia-1b", "EleutherAI/pythia-1b"),
     }
     if model_name not in tokenizer_sources:

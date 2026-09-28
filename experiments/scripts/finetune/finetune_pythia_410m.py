@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from datasets import Dataset, load_dataset
 from torch.utils.data import DataLoader, random_split
-from transformers import AutoTokenizer, GPTNeoXForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from dacp.utils.paths import resolve_data_file, resolve_model_source
 from experiments.lib.data import _alpaca_split_sizes, tokenize_alpaca_batch
@@ -195,7 +195,9 @@ def main():
 
     # 加载模型
     print("\n加载 Pythia-410M 预训练模型...")
-    model = GPTNeoXForCausalLM.from_pretrained(LOCAL_MODEL_PATH, torch_dtype=torch.float32)
+    # AutoModelForCausalLM resolves GPTNeoXForCausalLM for Pythia snapshots; other causal-LM
+    # snapshots (e.g. GPT-2) can be fine-tuned with the same recipe via PYTHIA_MODEL_PATH.
+    model = AutoModelForCausalLM.from_pretrained(LOCAL_MODEL_PATH, torch_dtype=torch.float32)
     model = model.to(args.device)
     print(f"模型已加载到 {args.device}")
 

@@ -62,6 +62,7 @@ from run_residual_sweep_small import (  # noqa: E402
     _jsonable,
     global_keep_masks,
     load_regime,
+    regime_model,
     now,
 )
 
@@ -354,7 +355,7 @@ def main() -> None:
                                     "first8_sha256": batch_hash(batches),
                                     "selected_pool_indices": list(plan16.selected_pool_indices if task in ("batches", "best")
                                                                   else plan8.selected_pool_indices)},
-                "model": "pythia-410m", "model_family": ctx["family"], "dataset": "alpaca",
+                "model": regime_model(args.regime), "model_family": ctx["family"], "dataset": "alpaca",
                 "batch_size": 2, "seq_length": 128,
                 "eval_batches": {"count": len(eval_batches), "sha256": batch_hash(eval_batches)},
                 "training_pool": {"count": len(pool), "sha256": batch_hash(pool)},

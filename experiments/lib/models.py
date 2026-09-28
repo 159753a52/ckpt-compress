@@ -26,7 +26,9 @@ _FAMILY_MAP = {
     "bert-large": "bert",
     "resnet18": "resnet",
     "resnet50": "resnet",
+    "pythia-160m": "pythia",
     "pythia-410m": "pythia",
+    "gpt2": "gpt2",
     "pythia-1b": "pythia",
     "gpt2-large": "gpt2",
     "vit-l-32": "vit",
@@ -85,6 +87,10 @@ def _create_model(
         return _create_resnet(model_name, pretrained)
     if model_name == "pythia-410m":
         return _create_pythia(pretrained)
+    if model_name == "pythia-160m":
+        return _create_pythia_variant("pythia-160m", pretrained)
+    if model_name == "gpt2":
+        return _create_gpt2_hf(pretrained)
     if model_name == "gpt2-large":
         return _create_gpt2_large(pretrained)
     if model_name == "pythia-1b":
@@ -178,6 +184,20 @@ def _create_gpt2_large(pretrained: bool) -> nn.Module:
     return GPT2LMHeadModel(config)
 
 
+def _create_gpt2_hf(pretrained: bool) -> nn.Module:
+    """Create plain Hugging Face GPT-2 (124M), preferring a local snapshot ``gpt2``."""
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    source = resolve_model_source("gpt2", "openai-community/gpt2")
+    if pretrained:
+        return GPT2LMHeadModel.from_pretrained(source)
+    if Path(source).is_dir():
+        config = GPT2Config.from_pretrained(source, local_files_only=True)
+    else:
+        config = GPT2Config()
+    return GPT2LMHeadModel(config)
+
+
 def _create_pythia_1b(pretrained: bool) -> nn.Module:
     """Create Pythia-1B from a local config or the reviewed offline fallback."""
     return _create_pythia_variant("pythia-1b", pretrained)
@@ -198,6 +218,7 @@ class _PythiaSpec:
 
 
 _PYTHIA_SPECS = {
+    "pythia-160m": _PythiaSpec("EleutherAI/pythia-160m", 768, 12, 12, 3072),
     "pythia-410m": _PythiaSpec("EleutherAI/pythia-410m", 1024, 24, 16, 4096),
     "pythia-1b": _PythiaSpec("EleutherAI/pythia-1b", 2048, 16, 8, 8192),
 }

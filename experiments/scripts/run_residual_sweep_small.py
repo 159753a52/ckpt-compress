@@ -72,7 +72,17 @@ REGIMES = {
                "the two checkpoints are two independent fine-tuning runs from the same base "
                "with the same hyper-parameters (the 3000-step run is not a continuation of "
                "the 1000-step run)")},
+    # breadth regimes on other models ("model" defaults to pythia-410m for the entries above)
+    "P160_R1": {"model": "pythia-160m", "checkpoint": "pythia_160m_alpaca/checkpoint_step_1000.pt",
+                "reference": "base",
+                "description": "Pythia-160M step-1000 checkpoint minus pretrained base weights"},
+    "G2_R1": {"model": "gpt2", "checkpoint": "gpt2_alpaca/checkpoint_step_1000.pt", "reference": "base",
+              "description": "GPT-2 (124M) step-1000 checkpoint minus pretrained base weights"},
 }
+BASE_SOURCES = {"pythia-410m": "EleutherAI/pythia-410m", "pythia-160m": "EleutherAI/pythia-160m",
+                "gpt2": "openai-community/gpt2"}
+def regime_model(regime: str) -> str:
+    return REGIMES[regime].get("model", "pythia-410m")
 
 
 def now() -> float:
@@ -473,7 +483,7 @@ def main() -> None:
         res.update({
             "regime": args.regime,
             "regime_description": spec["description"],
-            "model": "pythia-410m",
+            "model": regime_model(args.regime),
             "model_family": family,
             "dataset": "alpaca",
             "batch_size": 2,
@@ -513,14 +523,15 @@ def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str
     configure_hf_offline()
 
     set_seed(0)
-    train_loader, val_loader, task_type = get_data_loaders("pythia-410m", "alpaca", 2, 128, data_dir=str(data_root))
+    model_name = regime_model(regime)
+    train_loader, val_loader, task_type = get_data_loaders(model_name, "alpaca", 2, 128, data_dir=str(data_root))
     pool = cache_batches(train_loader, 140, task_type)
     eval_batches = cache_batches(val_loader, 100, task_type)
     del train_loader, val_loader
     if len(pool) != 140 or len(eval_batches) != 100:
         raise RuntimeError("data loaders returned too few batches")
 
-    model, family = load_model("pythia-410m", pretrained=False, device="cpu", dataset_name="alpaca")
+    model, family = load_model(model_name, pretrained=False, device="cpu", dataset_name="alpaca")
     layers = eligible_layers(model, family)
     blocks = transformer_layers(model, family)
     names = [n for layer in layers for n in layer]
@@ -532,11 +543,11 @@ def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str
     prov = {"checkpoint": str(ckpt_path), "checkpoint_step": ckpt.step, "checkpoint_sha256": sha256_file(ckpt_path)}
     del ckpt
     if spec["reference"] == "base":
-        base, _ = load_model("pythia-410m", pretrained=True, device="cpu", dataset_name="alpaca")
+        base, _ = load_model(model_name, pretrained=True, device="cpu", dataset_name="alpaca")
         bsd = base.state_dict()
         ref = {n: bsd[n].detach().float().clone() for n in names}
         from dacp.utils.paths import resolve_model_source
-        prov["reference"] = {"kind": "pretrained_base", "source": str(resolve_model_source("pythia-410m", "EleutherAI/pythia-410m"))}
+        prov["reference"] = {"kind": "pretrained_base", "source": str(resolve_model_source(model_name, BASE_SOURCES[model_name]))}
         del base, bsd
     else:
         rpath = checkpoint_root / spec["reference"]
