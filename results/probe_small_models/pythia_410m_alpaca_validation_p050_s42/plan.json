@@ -1,0 +1,126 @@
+{
+  "jobs": [
+    {
+      "name": "pythia_410m_alpaca",
+      "model": "pythia-410m",
+      "model_family": "pythia",
+      "dataset": "alpaca",
+      "task_type": "lm",
+      "checkpoint": "/home/gridtest/dacp_probe_code/9f2d62f/checkpoints/pythia_410m_alpaca/checkpoint_step_1000.pt",
+      "checkpoint_step": 1000,
+      "data_dir": "/home/gridtest/dacp_probe_code/9f2d62f/data",
+      "metric": "perplexity",
+      "seeds": [
+        42
+      ],
+      "prune_ratios": [
+        0.5,
+        0.9
+      ],
+      "max_layer_ratio": 0.95,
+      "recovery_counts": [
+        1
+      ],
+      "batch_size": 2,
+      "seq_length": 128,
+      "total_steps": 100,
+      "hvp_batches": 8,
+      "eval_batches": 100,
+      "train_pool_batches": 108,
+      "learning_rate": 5e-05,
+      "prune_ratio": 0.5,
+      "recovery_count": 1,
+      "recovery_protocol": {
+        "optimizer_state": "restored_from_checkpoint",
+        "learning_rate_source": "manifest",
+        "learning_rate": 5e-05,
+        "scheduler": {
+          "name": "cosine_annealing",
+          "state": "fresh",
+          "scope": "matched_recovery_horizon",
+          "t_max": 100,
+          "eta_min": 0.0
+        }
+      }
+    }
+  ],
+  "methods": [
+    {
+      "name": "no_compression",
+      "owner": "control",
+      "fidelity": "native",
+      "internal_method": "no_compression",
+      "description": "Training trajectory without lossy checkpoint restoration."
+    },
+    {
+      "name": "excp_style",
+      "owner": "excp",
+      "fidelity": "style",
+      "internal_method": "residual_magnitude_exact_global",
+      "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization."
+    },
+    {
+      "name": "inshrinkerator_style",
+      "owner": "inshrinkerator",
+      "fidelity": "style",
+      "internal_method": "first_order_exact_global",
+      "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline."
+    },
+    {
+      "name": "first_order_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "residual_first_order_exact_global",
+      "description": "Residual first-order damage |g*delta| from the true-label gradient with exact global top-k selection."
+    },
+    {
+      "name": "taylor_exact_global",
+      "owner": "dacp_ablation",
+      "fidelity": "native",
+      "internal_method": "taylor_exact_global",
+      "description": "Taylor HVP scoring with exact global top-k allocation oracle."
+    },
+    {
+      "name": "dacp",
+      "owner": "dacp",
+      "fidelity": "native",
+      "internal_method": "taylor_weibull_mom",
+      "description": "Taylor damage scoring with Weibull moment allocation."
+    },
+    {
+      "name": "probe_topk_m1_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "probe_topk_m1_exact_global",
+      "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 deterministic top-probability Gauss-Newton probe round(s); exact global top-k selection."
+    },
+    {
+      "name": "probe_topk_m4_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "probe_topk_m4_exact_global",
+      "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 4 deterministic top-probability Gauss-Newton probe round(s); exact global top-k selection."
+    },
+    {
+      "name": "probe_sample_m1_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "probe_sample_m1_exact_global",
+      "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 sampled Gauss-Newton probe round(s) (y ~ p, de-duplicated per position, Rademacher signs); exact global top-k selection."
+    },
+    {
+      "name": "probe_sample_m4_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "probe_sample_m4_exact_global",
+      "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 4 sampled Gauss-Newton probe round(s) (y ~ p, de-duplicated per position, Rademacher signs); exact global top-k selection."
+    },
+    {
+      "name": "probe_headtail_m2_exact_global",
+      "owner": "dacp_probe",
+      "fidelity": "native",
+      "internal_method": "probe_headtail_m2_exact_global",
+      "description": "Residual damage |-g*delta + 0.5*delta*(F_hat delta)| with 1 deterministic head round(s) plus one renormalised tail sample (unbiased for the full Gauss-Newton matrix); exact global top-k selection."
+    }
+  ]
+}
