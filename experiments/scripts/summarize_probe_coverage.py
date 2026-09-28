@@ -326,9 +326,11 @@ def main() -> None:
 
     if chains:
         nc_chain = chains.get("no_compression")
-        fig, axes = plt.subplots(1, len(sparsities), figsize=(4.2 * len(sparsities), 3.2))
+        chain_sps = [sp for sp in sparsities if any(ch["sparsity"] == sp and cid != "no_compression" for cid, ch in chains.items())]
+        fig, axes = plt.subplots(1, len(chain_sps), figsize=(4.2 * len(chain_sps), 3.2), squeeze=False)
+        axes = axes[0]
         summary["chains"] = {}
-        for ax, sp in zip(axes, sparsities):
+        for ax, sp in zip(axes, chain_sps):
             for cid, ch in chains.items():
                 if cid == "no_compression" or ch["sparsity"] != sp:
                     continue
