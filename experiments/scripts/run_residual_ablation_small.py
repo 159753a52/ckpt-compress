@@ -91,13 +91,13 @@ def list_schedule(target: float) -> List[float]:
 
 def grad_moments(s: Sweep, batches, with_std: bool):
     """Per-coordinate mean (and M2) of c_b = -g_b * d over the batches at the current point."""
-    d = [s.delta[n].to(s.device) for n in s.names]
-    mean = [torch.zeros_like(x) for x in d]
-    m2 = [torch.zeros_like(x) for x in d] if with_std else None
+    d = s.delta_for_scoring()
+    mean = [torch.zeros_like(x, device=s.device) for x in d]
+    m2 = [torch.zeros_like(x, device=s.device) for x in d] if with_std else None
 
     def visit(b: int, grads: List[torch.Tensor]) -> None:
         for i, g in enumerate(grads):
-            c = -g * d[i]
+            c = -g * s.dev(d[i])
             diff = c - mean[i]
             mean[i].add_(diff, alpha=1.0 / (b + 1))
             if m2 is not None:

@@ -187,7 +187,17 @@ class Sweep:
         self.cur_dev = {n: place(cur[n]) for n in self.names}
         self.ref_dev = {n: place(ref[n]) for n in self.names}
         self.delta = {n: (cur[n].float() - ref[n].float()) for n in self.names}  # CPU, as in runner
+        if offload:
+            self.delta = {n: d.pin_memory() for n, d in self.delta.items()}
         self.cur_cpu = {n: cur[n].float() for n in self.names}
+
+    def delta_for_scoring(self) -> List[torch.Tensor]:
+        """Residual tensors for the gradient-moment scorers: on the device, or pinned CPU
+        tensors streamed per use (``dev``) when states are offloaded."""
+        return [self.delta[n] if self.offload else self.delta[n].to(self.device) for n in self.names]
+
+    def dev(self, x: torch.Tensor) -> torch.Tensor:
+        return x.to(self.device, non_blocking=True)
 
     # model state
     @torch.no_grad()
@@ -259,13 +269,13 @@ def ucb_scores(s: Sweep, batches) -> Tuple[TensorDict, dict]:
     B = len(batches)
     if B < 2:
         raise ValueError("first_order_ucb needs at least two scoring batches")
-    d = [s.delta[n].to(s.device) for n in s.names]
-    mean = [torch.zeros_like(x) for x in d]
-    m2 = [torch.zeros_like(x) for x in d]
+    d = s.delta_for_scoring()
+    mean = [torch.zeros_like(x, device=s.device) for x in d]
+    m2 = [torch.zeros_like(x, device=s.device) for x in d]
 
     def visit(b: int, grads: List[torch.Tensor]) -> None:
         for i, g in enumerate(grads):
-            c = -g * d[i]
+            c = -g * s.dev(d[i])
             diff = c - mean[i]
             mean[i].add_(diff, alpha=1.0 / (b + 1))
             m2[i].add_(diff * (c - mean[i]))
@@ -288,12 +298,12 @@ def ucb_scores(s: Sweep, batches) -> Tuple[TensorDict, dict]:
 
 def iterative_first_order(s: Sweep, batches, schedule: Sequence[float]) -> Tuple[dict, list]:
     out, stages = {}, []
-    d = [s.delta[n].to(s.device) for n in s.names]
+    d = s.delta_for_scoring()
     keep_prev: TensorDict | None = None
     for sp in schedule:
         t0 = now()
         s.apply(keep_prev)
-        g = [torch.zeros_like(x) for x in d]
+        g = [torch.zeros_like(x, device=s.device) for x in d]
 
         def visit(b: int, grads: List[torch.Tensor]) -> None:
             for i, gr in enumerate(grads):
@@ -304,7 +314,7 @@ def iterative_first_order(s: Sweep, batches, schedule: Sequence[float]) -> Tuple
         grad_s = now() - t0
         scores = {}
         for i, n in enumerate(s.names):
-            sc = (g[i] * d[i]).abs() + TINY
+            sc = (g[i] * s.dev(d[i])).abs() + TINY
             if keep_prev is not None:
                 sc = torch.where(keep_prev[n], sc, torch.zeros_like(sc))
             scores[n] = sc
