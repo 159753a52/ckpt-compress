@@ -34,8 +34,11 @@ first B of the 16 batches of ``partition_repeated_seed_batches(pool, 100, 1, 16,
 
 Recovery training mirrors the fine-tuning recipe (finetune_pythia_410m.py:
 AdamW, weight decay 0.01, batch 4 x seq 512 from the Alpaca train split, token-mean
-loss via its ``train_step_accum``) at a constant learning rate (default 2e-5, the
-fine-tune's peak; the saved schedule has decayed to 0 at step 1000).  AMP is off
+loss via its ``train_step_accum``) at a constant learning rate.  The saved cosine
+schedule has decayed to 0 at step 1000; restarting at the fine-tune's peak 2e-5
+raises the held-out loss of the uncompressed chain by about 0.15 nats within 500
+steps, so the default is 2e-6 (0.1x peak), at which the uncompressed chain keeps
+improving slowly and compressed chains recover within a cycle.  AMP is off
 (no saved GradScaler state; fp32 avoids skipped steps that would differ across
 methods).  The recovery chunks are the train loader batches (generator seed 0)
 that follow the samples of the 140-batch scoring pool, so they are disjoint from
@@ -260,7 +263,7 @@ def main() -> None:
     ap.add_argument("--sparsity", type=float, default=0.95)
     ap.add_argument("--cycles", type=int, default=10)
     ap.add_argument("--recovery", type=int, default=50, help="recovery steps per cycle")
-    ap.add_argument("--lr", type=float, default=2e-5)
+    ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--train-batch-size", type=int, default=4)
     ap.add_argument("--train-seq-length", type=int, default=512)
     ap.add_argument("--micro-batch-size", type=int, default=2)
