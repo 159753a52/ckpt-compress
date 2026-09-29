@@ -501,6 +501,7 @@ def build_transformer_blocks(
     layer_patterns = {
         "gpt2": r"(?:transformer\.)?h\.(\d+)\.",
         "pythia": r"gpt_neox\.layers\.(\d+)\.",
+        "qwen2": r"^model\.layers\.(\d+)\.",
         "vit": r"(?:vit\.)?encoder\.layer\.(\d+)\.",
         "bert": r"(?:bert\.)?encoder\.layer\.(\d+)\.",
     }

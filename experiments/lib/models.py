@@ -29,6 +29,7 @@ _FAMILY_MAP = {
     "pythia-160m": "pythia",
     "pythia-410m": "pythia",
     "gpt2": "gpt2",
+    "qwen2.5-0.5b": "qwen2",
     "pythia-1b": "pythia",
     "gpt2-large": "gpt2",
     "vit-l-32": "vit",
@@ -91,6 +92,8 @@ def _create_model(
         return _create_pythia_variant("pythia-160m", pretrained)
     if model_name == "gpt2":
         return _create_gpt2_hf(pretrained)
+    if model_name == "qwen2.5-0.5b":
+        return _create_qwen25_05b(pretrained)
     if model_name == "gpt2-large":
         return _create_gpt2_large(pretrained)
     if model_name == "pythia-1b":
@@ -196,6 +199,18 @@ def _create_gpt2_hf(pretrained: bool) -> nn.Module:
     else:
         config = GPT2Config()
     return GPT2LMHeadModel(config)
+
+
+def _create_qwen25_05b(pretrained: bool) -> nn.Module:
+    """Create Qwen2.5-0.5B in float32, preferring a local snapshot ``qwen2.5-0.5b``."""
+    from transformers import Qwen2Config, Qwen2ForCausalLM
+
+    source = resolve_model_source("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B")
+    if pretrained:
+        return Qwen2ForCausalLM.from_pretrained(source, torch_dtype=torch.float32)
+    config = Qwen2Config.from_pretrained(source)
+    config.torch_dtype = torch.float32
+    return Qwen2ForCausalLM(config).float()
 
 
 def _create_pythia_1b(pretrained: bool) -> nn.Module:

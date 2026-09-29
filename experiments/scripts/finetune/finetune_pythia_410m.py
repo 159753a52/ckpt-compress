@@ -118,6 +118,41 @@ def prepare_alpaca_loaders(tokenizer, batch_size, seq_length, num_workers=0):
     return train_loader, val_loader
 
 
+def _split_batch(batch, micro_batch_size):
+    n = batch["input_ids"].shape[0]
+    return [{k: v[i:i + micro_batch_size] for k, v in batch.items()} for i in range(0, n, micro_batch_size)]
+
+
+def train_step_accum(model, optimizer, scaler, batch, device, micro_batch_size, use_amp=True):
+    """One optimizer step over ``batch`` split into micro-batches (gradient accumulation).
+
+    Each micro-batch loss is the mean over its supervised tokens, weighted by its share of
+    the batch's supervised tokens, so the accumulated gradient equals that of the
+    token-mean loss of the full batch (as in :func:`train_step`)."""
+    model.train()
+    optimizer.zero_grad()
+    parts = _split_batch(batch, micro_batch_size)
+    total = sum(int((p["labels"][:, 1:] != -100).sum()) for p in parts)
+    loss_value = 0.0
+    for part in parts:
+        part = move_batch_to_device(part, device)
+        weight = int((part["labels"][:, 1:] != -100).sum()) / max(total, 1)
+        with torch.cuda.amp.autocast(enabled=use_amp):
+            loss, _ = causal_lm_loss(model, part)
+        scaled = loss * weight
+        if use_amp:
+            scaler.scale(scaled).backward()
+        else:
+            scaled.backward()
+        loss_value += float(scaled.detach())
+    if use_amp:
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        optimizer.step()
+    return loss_value
+
+
 def train_step(model, optimizer, scaler, batch, device, use_amp=True):
     """训练一步，返回 loss 值。"""
     model.train()
@@ -173,6 +208,15 @@ def parse_args(argv=None):
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument("--dataset", choices=("alpaca", "wikitext2"), default="alpaca",
+                        help="wikitext2: fixed-length chunks of <data root>/wikitext2/wikitext_*.txt "
+                             "(experiments.lib.data.wikitext_chunk_splits, fine-tuning split)")
+    parser.add_argument("--micro_batch_size", type=int, default=0,
+                        help="gradient accumulation: split each batch into micro-batches of this size "
+                             "(0 = no accumulation)")
+    parser.add_argument("--adamw_foreach", action=argparse.BooleanOptionalAction, default=None,
+                        help="AdamW foreach implementation (default: PyTorch default); "
+                             "--no-adamw_foreach avoids full-size optimizer temporaries")
 
     args = parser.parse_args(argv)
     args.use_amp = bool(args.use_amp and str(args.device).startswith("cuda"))
@@ -210,15 +254,27 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # 创建优化器和调度器
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
+                                  foreach=args.adamw_foreach)
     warmup_steps = max(1, args.total_steps // 10)
     scheduler = get_cosine_schedule_with_warmup(optimizer, warmup_steps, args.total_steps)
     scaler = torch.cuda.amp.GradScaler() if args.use_amp else None
     print(f"LR schedule: warmup {warmup_steps} steps + cosine decay")
 
     # 加载数据
-    print("\n加载 Alpaca 52K 数据集...")
-    train_loader, val_loader = prepare_alpaca_loaders(tokenizer, args.batch_size, args.seq_length)
+    if args.dataset == "wikitext2":
+        from dacp.utils.paths import data_root
+        from experiments.lib.data import _ChunkDataset, wikitext_chunk_splits
+
+        root = data_root() / "wikitext2"
+        splits = wikitext_chunk_splits(tokenizer, root / "wikitext_train.txt", root / "wikitext_valid.txt",
+                                       args.seq_length)
+        print(f"WikiText-2 chunks: {splits['meta']}")
+        train_loader = DataLoader(_ChunkDataset(splits["finetune"]), batch_size=args.batch_size, shuffle=True)
+        val_loader = DataLoader(_ChunkDataset(splits["valid"]), batch_size=args.batch_size, shuffle=False)
+    else:
+        print("\n加载 Alpaca 52K 数据集...")
+        train_loader, val_loader = prepare_alpaca_loaders(tokenizer, args.batch_size, args.seq_length)
     print(f"训练批次数: {len(train_loader)}, 验证批次数: {len(val_loader)}")
 
     # 初始 eval
@@ -240,7 +296,11 @@ def main():
             data_iter = iter(train_loader)
             batch = next(data_iter)
 
-        loss = train_step(model, optimizer, scaler, batch, args.device, args.use_amp)
+        if args.micro_batch_size and args.micro_batch_size < args.batch_size:
+            loss = train_step_accum(model, optimizer, scaler, batch, args.device,
+                                    args.micro_batch_size, args.use_amp)
+        else:
+            loss = train_step(model, optimizer, scaler, batch, args.device, args.use_amp)
         scheduler.step()
         running_loss += loss
 

@@ -367,6 +367,115 @@ def _get_cifar_loaders(dataset_name, batch_size, num_workers, data_dir):
     return loader_fn(batch_size=batch_size, data_dir=data_dir, num_workers=num_workers)
 
 
+CAUSAL_LM_TOKENIZER_SOURCES = {
+    "pythia-160m": ("pythia-160m", "EleutherAI/pythia-160m"),
+    "pythia-410m": ("pythia-410m", "EleutherAI/pythia-410m"),
+    "gpt2": ("gpt2", "openai-community/gpt2"),
+    "qwen2.5-0.5b": ("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B"),
+    "pythia-1b": ("pythia-1b", "EleutherAI/pythia-1b"),
+}
+
+# Fraction of WikiText training-file tokens (the tail) held out from fine-tuning and used
+# only as the residual-scoring pool.
+WIKITEXT_SCORING_HOLDOUT_FRACTION = 0.05
+
+
+def _tokenize_text_file(tokenizer, path: Path) -> List[int]:
+    """Tokenize a raw text file line by line (newlines kept) and concatenate the ids."""
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.read().splitlines(keepends=True)
+    ids: List[int] = []
+    for start in range(0, len(lines), 2048):
+        enc = tokenizer(lines[start:start + 2048], add_special_tokens=False)["input_ids"]
+        for row in enc:
+            ids.extend(row)
+    return ids
+
+
+def _chunk_ids(ids: Sequence[int], seq_length: int) -> torch.Tensor:
+    n = len(ids) // seq_length
+    if n < 1:
+        raise ValueError("text slice shorter than one sequence")
+    return torch.tensor(ids[: n * seq_length], dtype=torch.long).view(n, seq_length)
+
+
+def wikitext_chunk_splits(
+    tokenizer,
+    train_path: Path,
+    valid_path: Path,
+    seq_length: int,
+    holdout_fraction: float = WIKITEXT_SCORING_HOLDOUT_FRACTION,
+) -> Dict[str, object]:
+    """Fixed-length contiguous token sequences from local WikiText-2 files.
+
+    The training file is tokenized (line by line, newlines kept, no special tokens) and
+    concatenated; the first ``1 - holdout_fraction`` of its tokens form the fine-tuning
+    split and the remaining tail forms the scoring split (disjoint from fine-tuning data);
+    the validation file forms the evaluation split.  Each split is cut into
+    non-overlapping ``seq_length`` blocks (remainder dropped); every token is supervised.
+    """
+    if not 0.0 < holdout_fraction < 1.0:
+        raise ValueError("holdout_fraction must be in (0, 1)")
+    train_ids = _tokenize_text_file(tokenizer, Path(train_path))
+    valid_ids = _tokenize_text_file(tokenizer, Path(valid_path))
+    cut = int(len(train_ids) * (1.0 - holdout_fraction))
+    return {
+        "finetune": _chunk_ids(train_ids[:cut], seq_length),
+        "scoring": _chunk_ids(train_ids[cut:], seq_length),
+        "valid": _chunk_ids(valid_ids, seq_length),
+        "meta": {"train_tokens": len(train_ids), "valid_tokens": len(valid_ids),
+                 "finetune_tokens": cut, "scoring_tokens": len(train_ids) - cut,
+                 "holdout_fraction": holdout_fraction, "seq_length": seq_length},
+    }
+
+
+class _ChunkDataset(torch.utils.data.Dataset):
+    def __init__(self, chunks: torch.Tensor):
+        self.chunks = chunks
+
+    def __len__(self) -> int:
+        return self.chunks.shape[0]
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        ids = self.chunks[idx]
+        return {"input_ids": ids, "attention_mask": torch.ones_like(ids), "labels": ids.clone()}
+
+
+def wikitext_chunk_loaders(
+    model_name: str,
+    batch_size: int,
+    seq_length: int,
+    data_dir: str,
+    train_split: str = "finetune",
+    shuffle_seed: int = 0,
+) -> Tuple[DataLoader, DataLoader, Dict[str, object]]:
+    """(train, validation) loaders over :func:`wikitext_chunk_splits` for a causal LM.
+
+    ``train_split`` selects ``finetune`` (fine-tuning) or ``scoring`` (held-out tail);
+    the train loader is shuffled with ``torch.Generator().manual_seed(shuffle_seed)``,
+    the validation loader keeps file order.  Files: ``<data_dir>/wikitext2/wikitext_{train,valid}.txt``.
+    """
+    from transformers import AutoTokenizer
+
+    from dacp.utils.paths import resolve_model_source
+
+    if model_name not in CAUSAL_LM_TOKENIZER_SOURCES:
+        raise ValueError(f"WikiText chunks support only {sorted(CAUSAL_LM_TOKENIZER_SOURCES)}")
+    if train_split not in ("finetune", "scoring"):
+        raise ValueError(f"unknown train_split {train_split!r}")
+    local_name, remote_name = CAUSAL_LM_TOKENIZER_SOURCES[model_name]
+    tokenizer = AutoTokenizer.from_pretrained(resolve_model_source(local_name, remote_name))
+    root = Path(data_dir) / "wikitext2"
+    splits = wikitext_chunk_splits(tokenizer, root / "wikitext_train.txt", root / "wikitext_valid.txt", seq_length)
+    train_loader = DataLoader(_ChunkDataset(splits[train_split]), batch_size=batch_size, shuffle=True,
+                              generator=torch.Generator().manual_seed(shuffle_seed))
+    val_loader = DataLoader(_ChunkDataset(splits["valid"]), batch_size=batch_size, shuffle=False)
+    meta = dict(splits["meta"])
+    meta.update({"train_split": train_split, "train_sequences": len(train_loader.dataset),
+                 "valid_sequences": len(val_loader.dataset)})
+    return train_loader, val_loader, meta
+
+
 def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers, data_dir):
     """加载 Alpaca 52K 指令微调数据集。"""
     import os
@@ -378,12 +487,7 @@ def _get_alpaca_loaders(model_name, batch_size, seq_length, num_workers, data_di
 
     from dacp.utils.paths import resolve_model_source
 
-    tokenizer_sources = {
-        "pythia-160m": ("pythia-160m", "EleutherAI/pythia-160m"),
-        "pythia-410m": ("pythia-410m", "EleutherAI/pythia-410m"),
-        "gpt2": ("gpt2", "openai-community/gpt2"),
-        "pythia-1b": ("pythia-1b", "EleutherAI/pythia-1b"),
-    }
+    tokenizer_sources = CAUSAL_LM_TOKENIZER_SOURCES
     if model_name not in tokenizer_sources:
         raise ValueError(f"Alpaca supports only {sorted(tokenizer_sources)}, got {model_name!r}")
     local_name, remote_name = tokenizer_sources[model_name]

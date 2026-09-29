@@ -11,6 +11,9 @@ recovery training).  Output JSON follows the 32B sweep schema
 Regimes (``--regime``):
   R1  checkpoint step 1000, reference = pretrained base weights
   R2  checkpoint step 3000, reference = pretrained base weights
+  Q05_R1, P160_R1, G2_R1, P1B_R1  other models, step-1000 Alpaca checkpoint vs base
+  R1W, G2W  Pythia-410M / GPT-2 fine-tuned on WikiText-2 chunks, checkpoint vs base
+      (scoring pool from a held-out training-file tail, evaluation on the validation file)
   R3  checkpoint step 3000, reference = step-1000 checkpoint weights.  The two
       checkpoints come from two independent fine-tuning runs of the same base
       with the same hyper-parameters, so R3 is an inter-checkpoint residual,
@@ -78,11 +81,29 @@ REGIMES = {
                 "description": "Pythia-160M step-1000 checkpoint minus pretrained base weights"},
     "G2_R1": {"model": "gpt2", "checkpoint": "gpt2_alpaca/checkpoint_step_1000.pt", "reference": "base",
               "description": "GPT-2 (124M) step-1000 checkpoint minus pretrained base weights"},
+    "Q05_R1": {"model": "qwen2.5-0.5b", "checkpoint": "qwen2.5_0.5b_alpaca/checkpoint_step_1000.pt",
+               "reference": "base",
+               "description": "Qwen2.5-0.5B step-1000 Alpaca checkpoint minus pretrained base weights"},
+    "P1B_R1": {"model": "pythia-1b", "checkpoint": "pythia_1b_alpaca/checkpoint_step_1000.pt",
+               "reference": "base", "offload_states": True,
+               "description": "Pythia-1B step-1000 Alpaca checkpoint minus pretrained base weights"},
+    # second dataset: fine-tuned on WikiText-2 chunks (see experiments.lib.data.wikitext_chunk_splits)
+    "R1W": {"model": "pythia-410m", "dataset": "wikitext2",
+            "checkpoint": "pythia_410m_wikitext2/checkpoint_step_1000.pt", "reference": "base",
+            "description": "Pythia-410M step-1000 WikiText-2 checkpoint minus pretrained base weights"},
+    "G2W": {"model": "gpt2", "dataset": "wikitext2", "checkpoint": "gpt2_wikitext2/checkpoint_step_1000.pt",
+            "reference": "base",
+            "description": "GPT-2 (124M) step-1000 WikiText-2 checkpoint minus pretrained base weights"},
 }
 BASE_SOURCES = {"pythia-410m": "EleutherAI/pythia-410m", "pythia-160m": "EleutherAI/pythia-160m",
-                "gpt2": "openai-community/gpt2"}
+                "gpt2": "openai-community/gpt2", "qwen2.5-0.5b": "Qwen/Qwen2.5-0.5B",
+                "pythia-1b": "EleutherAI/pythia-1b"}
 def regime_model(regime: str) -> str:
     return REGIMES[regime].get("model", "pythia-410m")
+
+
+def regime_dataset(regime: str) -> str:
+    return REGIMES[regime].get("dataset", "alpaca")
 
 
 def now() -> float:
@@ -150,7 +171,7 @@ def global_keep_masks(
 
 class Sweep:
     def __init__(self, model, family, layers, blocks, cur: TensorDict, ref: TensorDict,
-                 eval_batches, device: str):
+                 eval_batches, device: str, offload: bool = False):
         from experiments.lib.residual_runtime import evaluate_lm
 
         self.evaluate_lm = evaluate_lm
@@ -159,8 +180,12 @@ class Sweep:
         self.params = dict(model.named_parameters())
         self.device = device
         self.eval_batches = eval_batches
-        self.cur_dev = {n: cur[n].to(device) for n in self.names}
-        self.ref_dev = {n: ref[n].to(device) for n in self.names}
+        # offload: keep checkpoint/reference copies in pinned CPU memory and stream them per
+        # tensor in apply() (identical values; lower device memory for larger models)
+        self.offload = offload
+        place = (lambda t: t.float().pin_memory()) if offload else (lambda t: t.to(device))
+        self.cur_dev = {n: place(cur[n]) for n in self.names}
+        self.ref_dev = {n: place(ref[n]) for n in self.names}
         self.delta = {n: (cur[n].float() - ref[n].float()) for n in self.names}  # CPU, as in runner
         self.cur_cpu = {n: cur[n].float() for n in self.names}
 
@@ -170,6 +195,9 @@ class Sweep:
         for n in self.names:
             if keep is None:
                 self.params[n].copy_(self.cur_dev[n])
+            elif self.offload:
+                torch.where(keep[n].to(self.device), self.cur_dev[n].to(self.device, non_blocking=True),
+                            self.ref_dev[n].to(self.device, non_blocking=True), out=self.params[n].data)
             else:
                 torch.where(keep[n].to(self.device), self.cur_dev[n], self.ref_dev[n],
                             out=self.params[n].data)
@@ -486,7 +514,7 @@ def main() -> None:
             "regime_description": spec["description"],
             "model": regime_model(args.regime),
             "model_family": family,
-            "dataset": "alpaca",
+            "dataset": regime_dataset(args.regime),
             "batch_size": 2,
             "seq_length": 128,
             "eval_batches": {"count": len(eval_batches), "sha256": batch_hash(eval_batches)},
@@ -525,7 +553,17 @@ def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str
 
     set_seed(0)
     model_name = regime_model(regime)
-    train_loader, val_loader, task_type = get_data_loaders(model_name, "alpaca", 2, 128, data_dir=str(data_root))
+    data_meta = None
+    if regime_dataset(regime) == "wikitext2":
+        # scoring pool from the held-out tail of the training file (never seen in fine-tuning),
+        # evaluation from the validation file in file order
+        from experiments.lib.data import wikitext_chunk_loaders
+
+        train_loader, val_loader, data_meta = wikitext_chunk_loaders(model_name, 2, 128, str(data_root),
+                                                                     train_split="scoring")
+        task_type = "lm"
+    else:
+        train_loader, val_loader, task_type = get_data_loaders(model_name, "alpaca", 2, 128, data_dir=str(data_root))
     pool = cache_batches(train_loader, 140, task_type)
     eval_batches = cache_batches(val_loader, 100, task_type)
     del train_loader, val_loader
@@ -542,6 +580,12 @@ def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str
     model.load_state_dict(ckpt.model_state, strict=True)
     cur = {n: ckpt.model_state[n].detach().float().clone() for n in names}
     prov = {"checkpoint": str(ckpt_path), "checkpoint_step": ckpt.step, "checkpoint_sha256": sha256_file(ckpt_path)}
+    if data_meta is not None:
+        prov["data"] = {"dataset": "wikitext2", "pool_split": "scoring (held-out training-file tail)",
+                        "eval_split": "validation file", **data_meta}
+    offload = bool(spec.get("offload_states", False))
+    if offload:
+        prov["offload_states"] = True
     del ckpt
     if spec["reference"] == "base":
         base, _ = load_model(model_name, pretrained=True, device="cpu", dataset_name="alpaca")
@@ -558,7 +602,7 @@ def load_regime(regime: str, checkpoint_root: Path, data_root: Path, device: str
                              "checkpoint_sha256": sha256_file(rpath)}
         del rck
     model.to(device)
-    s = Sweep(model, family, layers, blocks, cur, ref, eval_batches, device)
+    s = Sweep(model, family, layers, blocks, cur, ref, eval_batches, device, offload=offload)
     del cur, ref
     residual = s.residual_stats()
     s.apply(None)
