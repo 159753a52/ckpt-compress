@@ -155,11 +155,11 @@ def global_keep_masks(
         else:
             t = _kth_key(keys, k)
             remove = keys < t
-            need = k - int(remove.sum().item())
+            need = k - int(torch.count_nonzero(remove).item())
             if need:
                 tied = torch.nonzero(keys == t, as_tuple=False).flatten()[:need]
                 remove[tied] = True
-            if int(remove.sum().item()) != k:
+            if int(torch.count_nonzero(remove).item()) != k:
                 raise RuntimeError("global mask missed its prune budget")
         keep = {n: (~part).view(shape) for n, part, shape in zip(names, remove.split(sizes), shapes)}
         yield sp, keep, now() - t0
