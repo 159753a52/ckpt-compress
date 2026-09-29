@@ -318,10 +318,10 @@ def load_32b():
 
 
 def iter_ucb_label(r: dict) -> str:
-    parts = [f"$B{{=}}{r['b']}$" if "b" in r else None, f"$K{{=}}{r['k']}$" if "k" in r else None]
-    extra = ", ".join(x for x in parts if x)
-    score = f" [{r['score']}]" if "score" in r else ""
-    return f"Iterative + uncertainty{score}" + (f" ({extra})" if extra else "")
+    cfg = f"$B{{=}}{r.get('b')}$, $K{{=}}{r.get('k')}$"
+    if r.get("score") == "mean":
+        return f"Re-linearized $|gd|$ ({cfg})"
+    return f"Re-linearized + uncertainty ({cfg})"
 
 
 def q32_rows(d, out: Path) -> None:
@@ -344,7 +344,7 @@ def q32_rows(d, out: Path) -> None:
 
     rows.append(("Uncertainty-protected, $B{=}32$", [rv("ucb", sp) for sp in sps]))
     rows.append(("Mean $|gd|$, $B{=}32$", [rv("mean", sp) for sp in sps]))
-    rows.append(("Iterative $|gd|$ ($B{=}4$)", [stage_delta(d["iter"], float(sp)) for sp in sps]))
+    rows.append(("Re-linearized $|gd|$ ($B{=}4$, list)", [stage_delta(d["iter"], float(sp)) for sp in sps]))
     for r in d["iter_ucb"]:
         used.add(r["_path"])
         rows.append((iter_ucb_label(r), [stage_delta(r, float(sp)) for sp in sps]))
