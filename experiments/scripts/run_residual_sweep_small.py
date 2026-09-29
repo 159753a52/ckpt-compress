@@ -443,6 +443,7 @@ def main() -> None:
     ap.add_argument("--data-root", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--prefix", default="", help="output file name prefix, e.g. tol- -> tol-R1_seed42.json")
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--check-mask", action="store_true")
     args = ap.parse_args()
@@ -473,7 +474,7 @@ def main() -> None:
     setup_s = ctx["setup_seconds"]
 
     for seed in seeds:
-        path = args.out_dir / f"{args.regime}_seed{seed}{args.tag}.json"
+        path = args.out_dir / f"{args.prefix}{args.regime}_seed{seed}{args.tag}.json"
         if path.exists():
             print(f"skip existing {path}", flush=True)
             continue

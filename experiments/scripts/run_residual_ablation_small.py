@@ -268,20 +268,25 @@ def task_batches(s: Sweep, batches16, seed, dv, log) -> dict:
     return {"evals": evals, "iterative_stages": meta, "sparsities": BATCH_TARGETS}
 
 
-def task_best(s: Sweep, batches16, seed, dv, log) -> dict:
-    """Combine the best settings of the other tasks: geometric K = 16 schedule, B in {8, 16}."""
+BEST_CONFIGS = (("first_order", 16), ("ucb", 8), ("ucb", 16))
+
+
+def task_best(s: Sweep, batches16, seed, dv, log, targets: Sequence[float] = SCHED_TARGETS,
+              configs: Sequence = BEST_CONFIGS) -> dict:
+    """Combine the best settings of the other tasks: geometric K = 16 schedule to each target,
+    (scorer, B) in ``configs`` (default first_order B16, ucb B8, ucb B16)."""
     evals, meta = {}, {}
-    for key, B in (("first_order", 16), ("ucb", 8), ("ucb", 16)):
+    for key, B in configs:
         tag = f"iterative_{'first_order' if key == 'first_order' else 'ucb'}_K16_B{B}"
         evals[tag], meta[tag] = {}, {}
-        for target in SCHED_TARGETS:
+        for target in targets:
             sched = geometric_schedule(target, 16)
             ev, stages = run_iterative(s, batches16[:B], sched, SCORERS[key], seed, eval_at=[target])
             ev[str(target)]["scoring_batches"] = B
             evals[tag][str(target)] = ev[str(target)]
             meta[tag][str(target)] = {"schedule": sched, "stages": stages}
         log(f"{tag}: " + ", ".join(f"{p}:{dv(v):.1f}" for p, v in evals[tag].items()))
-    return {"evals": evals, "iterative_stages": meta, "sparsities": SCHED_TARGETS}
+    return {"evals": evals, "iterative_stages": meta, "sparsities": list(targets)}
 
 
 def main() -> None:
@@ -295,6 +300,10 @@ def main() -> None:
     ap.add_argument("--data-root", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--targets", default="", help="task best: target sparsities (default 0.9,...,0.995)")
+    ap.add_argument("--best-configs", default="",
+                    help="task best: scorer:B pairs, e.g. ucb:16,first_order:16 (default first_order:16,ucb:8,ucb:16)")
+    ap.add_argument("--prefix", default="abl-", help="output file name prefix (<prefix><task>_<regime>_seed<seed>.json)")
     args = ap.parse_args()
 
     from experiments.lib.residual_runtime import batch_hash, set_seed, write_json
@@ -307,6 +316,12 @@ def main() -> None:
     if set(scorers) - set(SCORERS):
         raise ValueError(f"unknown combo scorers {scorers}")
     seeds = [int(x) for x in args.seeds.split(",")]
+    targets = [float(x) for x in args.targets.split(",") if x] or SCHED_TARGETS
+    best_configs = BEST_CONFIGS
+    if args.best_configs:
+        best_configs = [(c.split(":")[0], int(c.split(":")[1])) for c in args.best_configs.split(",") if c]
+        if {k for k, _ in best_configs} - {"first_order", "ucb"} or any(not 2 <= b <= 16 for _, b in best_configs):
+            raise ValueError(f"bad --best-configs {args.best_configs}")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     ctx = load_regime(args.regime, args.checkpoint_root, args.data_root, args.device)
     s, pool, eval_batches = ctx["sweep"], ctx["pool"], ctx["eval_batches"]
@@ -318,7 +333,7 @@ def main() -> None:
 
     for seed in seeds:
         for task in tasks:
-            path = args.out_dir / f"abl-{task}_{args.regime}_seed{seed}.json"
+            path = args.out_dir / f"{args.prefix}{task}_{args.regime}_seed{seed}.json"
             if path.exists():
                 print(f"skip existing {path}", flush=True)
                 continue
@@ -341,7 +356,7 @@ def main() -> None:
             elif task == "combo":
                 out = task_combo(s, batches, seed, dv, log, scorers, args.combo_k)
             elif task == "best":
-                out = task_best(s, batches16, seed, dv, log)
+                out = task_best(s, batches16, seed, dv, log, targets, best_configs)
             else:
                 out = task_batches(s, batches16, seed, dv, log)
             s.apply(None)
