@@ -119,7 +119,7 @@ def _keys(scores: Mapping[str, torch.Tensor], names: Sequence[str], device: str)
     flat = torch.cat([scores[n].reshape(-1).to(device, torch.float32) for n in names])
     if not bool(torch.isfinite(flat).all()) or bool((flat < 0).any()):
         raise ValueError("scores must be finite and non-negative")
-    flat = flat + 0.0  # map -0.0 to +0.0
+    flat.add_(0.0)  # map -0.0 to +0.0 (in place: flat is a fresh cat result)
     return flat.view(torch.int32)
 
 
