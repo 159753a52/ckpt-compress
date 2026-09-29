@@ -1,0 +1,87 @@
+{
+  "hf_repo": "openai-community/gpt2",
+  "hf_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "snapshot_sha256": {
+    "config.json": "0daed7749b4f02b8f76240d5444551d7b08712dab4d0adb8239c56ba823bb7b4",
+    "generation_config.json": "ed0b32ac72c0f5f44a719abb2d7786ea5146c871f83717b7f2018065954de02b",
+    "merges.txt": "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5",
+    "model.safetensors": "248dfc3911869ec493c76e65bf2fcf7f615828b0254c12b473182f0f81d3a707",
+    "tokenizer.json": "8414cab924d8b9b33013f0d221c5862f365ee9be39c5c2bfae8a5a9e970478a6",
+    "tokenizer_config.json": "5e04eb606e3a1583530a42e36c2a6b6615c86f34fe77e44d9ddeb43ff940931f",
+    "vocab.json": "196139668be63f3b5d6574427317ae82f612a97c5d1cdaf36ed2256dbf636783"
+  },
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/gpt2",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "b6494e885ee31abe87e0a117e82741cda68f16d6",
+    "extra_args": [
+      "--dataset=wikitext2"
+    ],
+    "data": "WikiText-2 (tokenized v1 release with <unk>, local files wikitext_train.txt sha256 9e9fa1ad55b1c2c95b08e37dd8e653f638fac2c6de904b79e813611eefbc985f, wikitext_valid.txt sha256 f0737ed31fc1329026e95cb8b98e19c2a182c39c240ab909dc31abf2f8af58e8); each file tokenized line by line (newlines kept, no special tokens) and concatenated; fine-tuning on non-overlapping 512-token chunks of the first 95% of training-file tokens (shuffled, unseeded loader as in the Alpaca recipe); fine-tuning validation on 512-token chunks of the validation file; the last 5% of training-file tokens are never used in fine-tuning and form the residual-scoring pool (128-token chunks) of the sweeps, whose evaluation uses the first 100 batches (2 x 128) of the validation file in file order",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "val_ppl_before": 29.1,
+    "val_loss_before": 3.3708,
+    "val_ppl_step1000": 15.81,
+    "val_loss_step1000": 2.7609,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/gpt2_wikitext2/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "83ef41feec64b1bdb205d18b1668a817069cd3117288b93ef7a9ccd43a120359",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "G2W_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "30e1bf71c4c0864682e78e3c7d1198957256c3b3657d8dd288e354f62bfcba12"
+    },
+    "training_pool": {
+      "count": 140,
+      "sha256": "17551e744549c3745a20e648cf660ef262630f865c0012c6ebc7b17e696c46b2"
+    },
+    "uncompressed": {
+      "eval_s": 0.95,
+      "ppl": 18.416186814848864,
+      "tokens": 25400,
+      "val": 2.913229996087983
+    },
+    "full_restore_to_base": {
+      "eval_s": 0.77,
+      "ppl": 38.06582777761499,
+      "tokens": 25400,
+      "val": 3.6393169709453432
+    },
+    "residual": {
+      "eligible_coords": 84934656,
+      "eligible_tensors": 48,
+      "layers": 12,
+      "residual_l2": 5.793148653802469,
+      "zero_residual_fraction": 6.087032365210262e-06
+    },
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/home/gridtest/dacp_probe/assets/models/gpt2"
+    },
+    "data": {
+      "dataset": "wikitext2",
+      "eval_split": "validation file",
+      "finetune_tokens": 2325962,
+      "holdout_fraction": 0.05,
+      "pool_split": "scoring (held-out training-file tail)",
+      "scoring_tokens": 122420,
+      "seq_length": 128,
+      "train_sequences": 956,
+      "train_split": "scoring",
+      "train_tokens": 2448382,
+      "valid_sequences": 2020,
+      "valid_tokens": 258659
+    }
+  }
+}
