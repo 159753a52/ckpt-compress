@@ -7,11 +7,14 @@ Sources (results/): tolerance/tol-*_<reg>_seed*.json, tolerance_low/ (optional),
 small_sweep_*/ sweep files for extra points; 32B from
 probe_coverage_32b/run1/{tolerance_grid_base.json, sweep/base.json,
 iterative_ucb/iu_base_ucb_B8_K8.json}.
+With ``--extra``: the additional models and the WikiText-2 regimes (EXTRA below; grids in
+tolerance_extra/), written to tolerance_rows_extra.tex; the default output is unchanged.
 """
 import hashlib
 import json
 import math
 import statistics
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -24,6 +27,9 @@ METHODS = [("excp_style", "ExCP-style $|d|$"), ("inshrinkerator_style", "Inshrin
            ("iterative_ucb_K16_B16", "Re-linearized + uncertainty")]
 SMALL = [("Pythia-160M", "P160_R1", "small_sweep_pythia160m"), ("GPT-2 124M", "G2_R1", "small_sweep_gpt2"),
          ("Pythia-410M", "R1", "small_sweep_pythia410m")]
+EXTRA = [("Qwen2.5-0.5B", "Q05_R1", "small_sweep_qwen05"), ("Pythia-1B", "P1B_R1", "small_sweep_pythia1b"),
+         ("Pythia-410M WikiText-2", "R1W", "small_sweep_pythia410m_wikitext"),
+         ("GPT-2 WikiText-2", "G2W", "small_sweep_gpt2_wikitext")]
 used = set()
 
 
@@ -41,7 +47,7 @@ def frontier(points, tol):
 def small_points(reg, sweep_dir):
     per = defaultdict(lambda: defaultdict(list))
     files = []
-    for d in (RES / "tolerance", RES / "tolerance_low"):
+    for d in (RES / "tolerance", RES / "tolerance_low", RES / "tolerance_extra"):
         files += sorted(d.glob(f"tol-*{reg}_seed*.json")) if d.exists() else []
     files += sorted((RES / sweep_dir).glob(f"{reg}_seed*.json")) + sorted((RES / sweep_dir).glob(f"abl-best_{reg}_seed*.json"))
     for p in files:
@@ -101,7 +107,11 @@ def cell(pts, tol):
 
 
 def main() -> None:
-    models = [(m, small_points(reg, d)) for m, reg, d in SMALL] + [("DeepSeek-R1-Distill-32B", q32_points())]
+    extra = "--extra" in sys.argv[1:]
+    if extra:
+        models = [(m, small_points(reg, d)) for m, reg, d in EXTRA]
+    else:
+        models = [(m, small_points(reg, d)) for m, reg, d in SMALL] + [("DeepSeek-R1-Distill-32B", q32_points())]
     lines, summary = [], {}
     for tag, label in METHODS:
         cells = []
@@ -117,7 +127,7 @@ def main() -> None:
         rows.append(label + " & " + " & ".join(txt) + " \\\\")
         if label == "DACP":
             rows.append("\\midrule")
-    out = OUT / "tolerance_rows.tex"
+    out = OUT / ("tolerance_rows_extra.tex" if extra else "tolerance_rows.tex")
     out.write_text("\n".join(rows) + "\n", encoding="utf-8")
     prov = {"inputs": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(used)},
             "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

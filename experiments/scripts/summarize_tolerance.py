@@ -35,7 +35,11 @@ TOLS = [0.005, 0.01, 0.02]
 SWEEP_TAGS = ["excp_style", "inshrinkerator_style", "first_order", "dacp", "first_order_ucb"]
 BEST_TAGS = ["iterative_first_order_K16_B16", "iterative_ucb_K16_B16"]
 REGIME_LABEL = {"R1": "Pythia-410M R1 (step 1000 vs base)", "P160_R1": "Pythia-160M R1 (step 1000 vs base)",
-                "G2_R1": "GPT-2 124M R1 (step 1000 vs base)"}
+                "G2_R1": "GPT-2 124M R1 (step 1000 vs base)",
+                "Q05_R1": "Qwen2.5-0.5B R1 (Alpaca step 1000 vs base)",
+                "P1B_R1": "Pythia-1B R1 (Alpaca step 1000 vs base)",
+                "R1W": "Pythia-410M WikiText-2 (step 1000 vs base)",
+                "G2W": "GPT-2 124M WikiText-2 (step 1000 vs base)"}
 
 
 def mean_std(xs):

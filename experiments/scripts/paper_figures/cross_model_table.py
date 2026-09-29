@@ -5,19 +5,27 @@ Sources (results/): small_sweep_{pythia160m,gpt2,pythia410m}/ sweep files
 32B from probe_coverage_32b/run1/{sweep/base.json, scoring_rounds/*.json,
 iterative/iterative_base.json, iterative_ucb/iu_base_ucb_*.json (optional)}.
 Cells: mean over seeds of (val - uncompressed.val) * 1e3; '--' when absent.
+With ``--extra``: columns P = 0.9/0.98/0.995 for the additional models and the WikiText-2
+regimes (EXTRA below), written to cross_model_rows_extra.tex; the default output is unchanged.
 """
 import hashlib
 import json
 import statistics
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 RES = REPO / "results"
 OUT = REPO.parents[1] / "paper" / "figs" / "gen"
 SPS = ["0.98", "0.995"]
+SPS_EXTRA = ["0.9", "0.98", "0.995"]
 SMALL = [("Pythia-160M", "small_sweep_pythia160m", "P160_R1"),
          ("GPT-2 124M", "small_sweep_gpt2", "G2_R1"),
          ("Pythia-410M", "small_sweep_pythia410m", "R1")]
+# --extra: additional models / second dataset -> cross_model_rows_extra.tex (no 32B column)
+EXTRA = [("Qwen2.5-0.5B", "small_sweep_qwen05", "Q05_R1"), ("Pythia-1B", "small_sweep_pythia1b", "P1B_R1"),
+         ("Pythia-410M WikiText-2", "small_sweep_pythia410m_wikitext", "R1W"),
+         ("GPT-2 WikiText-2", "small_sweep_gpt2_wikitext", "G2W")]
 ROWS = [("excp_style", "ExCP-style $|d|$"), ("inshrinkerator_style", "Inshrinkerator-style $|g\\theta|$"),
         ("first_order", "First order $|gd|$"), ("hvp_global", "Block HVP"), ("dacp", "DACP"),
         ("probe_topk_m1", "Probe top-$k$ $m{=}1$"), None,
@@ -66,7 +74,11 @@ def q32_cell(tag, sp):
 
 
 def main() -> None:
-    cols = [(m, d, reg, sp) for m, d, reg in SMALL for sp in SPS] + [("32B", None, None, sp) for sp in SPS]
+    extra = "--extra" in sys.argv[1:]
+    if extra:
+        cols = [(m, d, reg, sp) for m, d, reg in EXTRA for sp in SPS_EXTRA]
+    else:
+        cols = [(m, d, reg, sp) for m, d, reg in SMALL for sp in SPS] + [("32B", None, None, sp) for sp in SPS]
     table = []
     for row in ROWS:
         if row is None:
@@ -90,7 +102,7 @@ def main() -> None:
                 t = f"{v:+.0f}"
                 cells.append(f"$\\mathbf{{{t}}}$" if round(v, 1) == best[j] else f"${t}$")
         lines.append(r[0] + " & " + " & ".join(cells) + " \\\\")
-    out = OUT / "cross_model_rows.tex"
+    out = OUT / ("cross_model_rows_extra.tex" if extra else "cross_model_rows.tex")
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     prov = {"inputs": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(used)},
             "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
