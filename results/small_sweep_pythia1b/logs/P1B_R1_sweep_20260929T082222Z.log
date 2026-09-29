@@ -1,0 +1,18 @@
+CUDA_VISIBLE_DEVICES=7 frac=0.14 code=b6494e885ee31abe87e0a117e82741cda68f16d6 regime P1B_R1 step sweep Tue Sep 29 08:22:22 AM UTC 2026
+  Alpaca: loaded 52002 samples from local JSON
+
+regime P1B_R1: residual {'eligible_coords': 805306368, 'zero_residual_fraction': 1.8589198589324951e-06, 'residual_l2': 9.27965571681728, 'eligible_tensors': 64, 'layers': 16}; uncompressed {'val': 1.6329428439504767, 'ppl': 5.118916747692671, 'tokens': 14353, 'eval_s': 1.84}; full restore {'val': 2.417065875767615, 'ppl': 11.212910927520896, 'tokens': 14353, 'eval_s': 1.53}
+Traceback (most recent call last):
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 632, in <module>
+    main()
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 521, in main
+    res = run_seed(s, seed, pool, sparsities, methods, unc, args.check_mask)
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 406, in run_seed
+    record("excp_style", mag, sc_s)
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 383, in record
+    res["evals"][tag] = s.sweep_global(scores, sparsities)
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 229, in sweep_global
+    for sp, keep, sel_s in global_keep_masks(scores, self.names, sparsities, self.device):
+  File "/home/gridtest/dacp_probe_code/b6494e8/experiments/scripts/run_residual_sweep_small.py", line 158, in global_keep_masks
+    need = k - int(remove.sum().item())
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 6.00 GiB. GPU 0 has a total capacity of 139.80 GiB of which 96.26 GiB is free. Process 3251900 has 29.21 GiB memory in use. Including non-PyTorch memory, this process has 14.29 GiB memory in use. Of the allocated memory 8.36 GiB is allocated by PyTorch, and 5.27 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

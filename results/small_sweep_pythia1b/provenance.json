@@ -1,0 +1,75 @@
+{
+  "hf_repo": "EleutherAI/pythia-1b",
+  "hf_revision": "f73d7dcc545c8bd326d8559c8ef84ffe92fea6b2",
+  "snapshot_sha256": {
+    "config.json": "302d6702a29de1039066e41404877fb8c53b7ddc82e88f9aba277f230086cfe0",
+    "model.safetensors": "7e6dff44849e036a73296368e663bd9420009977f03a8d4d747b234264f37107",
+    "special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+    "tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+    "tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+  },
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/pythia-1b",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "b6494e885ee31abe87e0a117e82741cda68f16d6",
+    "extra_args": [
+      "--micro_batch_size=1",
+      "--no-adamw_foreach"
+    ],
+    "data": "Alpaca 52K local JSON (52002 samples), train/val split 51002/1000 with seed 0",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW (foreach=False)",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "gradient_accumulation": "each batch of 4 split into 4 micro-batches of 1; micro-batch token-mean losses weighted by their supervised-token share (same objective as batch 4)",
+    "allocator": "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True",
+    "val_ppl_before": 11.26,
+    "val_loss_before": 2.4213,
+    "val_ppl_step1000": 5.18,
+    "val_loss_step1000": 1.6448,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/pythia_1b_alpaca/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "25b173c68c3454199d36e97e6cbd25d0dff4da162c7f87d09e4515dd4daa1214",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "P1B_R1_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "03333e2bd23cb3638358ddf9728cb4e08e517ca3b4c8485912e951d74cffcf47"
+    },
+    "training_pool": {
+      "count": 140,
+      "sha256": "ce6719149f8566a31e4f25b7dba101fce835ec972b65e4cc6aa3efb9e9cdca26"
+    },
+    "uncompressed": {
+      "eval_s": 3.21,
+      "ppl": 5.118916747692671,
+      "tokens": 14353,
+      "val": 1.6329428439504767
+    },
+    "full_restore_to_base": {
+      "eval_s": 2.25,
+      "ppl": 11.212910927520896,
+      "tokens": 14353,
+      "val": 2.417065875767615
+    },
+    "residual": {
+      "eligible_coords": 805306368,
+      "eligible_tensors": 64,
+      "layers": 16,
+      "residual_l2": 9.27965571681728,
+      "zero_residual_fraction": 1.8589198589324951e-06
+    },
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/home/gridtest/dacp_probe/assets/models/pythia-1b"
+    },
+    "offload_states": true
+  }
+}

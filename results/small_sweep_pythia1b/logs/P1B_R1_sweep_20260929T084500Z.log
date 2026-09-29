@@ -1,0 +1,98 @@
+CUDA_VISIBLE_DEVICES=7 frac=0.14 code=ebe99e26fa1c5bfb67b66e290e50ebd670aea0b7 regime P1B_R1 step sweep Tue Sep 29 08:45:00 AM UTC 2026
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+  Alpaca: loaded 52002 samples from local JSON
+
+regime P1B_R1: residual {'eligible_coords': 805306368, 'zero_residual_fraction': 1.8589198589324951e-06, 'residual_l2': 9.27965571681728, 'eligible_tensors': 64, 'layers': 16}; uncompressed {'val': 1.6329428439504767, 'ppl': 5.118916747692671, 'tokens': 14353, 'eval_s': 3.21}; full restore {'val': 2.417065875767615, 'ppl': 11.212910927520896, 'tokens': 14353, 'eval_s': 2.25}
+[seed 42] excp_style score 0.8s dval(1e-3) {'0.5': -10.3, '0.8': -9.94, '0.9': 84.7, '0.95': 270.73, '0.98': 520.41, '0.99': 638.45, '0.995': 706.52}
+[seed 42] inshrinkerator_style score 54.8s dval(1e-3) {'0.5': -17.22, '0.8': 130.56, '0.9': 321.87, '0.95': 476.28, '0.98': 603.05, '0.99': 659.75, '0.995': 695.65}
+[seed 42] first_order score 26.4s dval(1e-3) {'0.5': -19.06, '0.8': -7.22, '0.9': 74.34, '0.95': 217.85, '0.98': 402.41, '0.99': 505.99, '0.995': 577.65}
+  HVP layer 01/16: 2.37s
+  HVP layer 02/16: 2.31s
+  HVP layer 03/16: 2.32s
+  HVP layer 04/16: 2.31s
+  HVP layer 05/16: 2.25s
+  HVP layer 06/16: 2.21s
+  HVP layer 07/16: 2.16s
+  HVP layer 08/16: 2.14s
+  HVP layer 09/16: 2.14s
+  HVP layer 10/16: 2.10s
+  HVP layer 11/16: 2.07s
+  HVP layer 12/16: 1.96s
+  HVP layer 13/16: 1.91s
+  HVP layer 14/16: 1.80s
+  HVP layer 15/16: 1.73s
+  HVP layer 16/16: 1.71s
+[seed 42] hvp_global score 35.3s dval(1e-3) {'0.5': -19.1, '0.8': -7.65, '0.9': 73.18, '0.95': 215.36, '0.98': 399.76, '0.99': 502.81, '0.995': 575.03}
+[seed 42] dacp dval(1e-3) {'0.5': -19.1, '0.8': -7.43, '0.9': 73.23, '0.95': 215.04, '0.98': 398.85, '0.99': 502.08, '0.995': 574.44}
+[seed 42] probe_topk_m1 score 4.5s dval(1e-3) {'0.5': -18.9, '0.8': -7.65, '0.9': 73.28, '0.95': 217.6, '0.98': 403.08, '0.99': 504.62, '0.995': 574.81}
+[seed 42] first_order_ucb score 4.4s dval(1e-3) {'0.5': -10.83, '0.8': -18.39, '0.9': 41.0, '0.95': 175.56, '0.98': 364.9, '0.99': 472.74, '0.995': 548.0}
+  iterative 0.5: dval 1.61388
+  iterative 0.8: dval 1.62501
+  iterative 0.9: dval 1.70271
+  iterative 0.95: dval 1.79102
+  iterative 0.98: dval 1.87614
+  iterative 0.99: dval 1.93837
+  iterative 0.995: dval 2.00957
+wrote /home/gridtest/dacp_probe/small_sweep_pythia1b/P1B_R1_seed42.json (516.6 s, peak 19.03 GiB)
+[seed 43] excp_style score 0.7s dval(1e-3) {'0.5': -10.3, '0.8': -9.94, '0.9': 84.7, '0.95': 270.73, '0.98': 520.41, '0.99': 638.45, '0.995': 706.52}
+[seed 43] inshrinkerator_style score 22.8s dval(1e-3) {'0.5': -17.49, '0.8': 130.64, '0.9': 326.72, '0.95': 483.3, '0.98': 609.2, '0.99': 664.58, '0.995': 699.4}
+[seed 43] first_order score 22.8s dval(1e-3) {'0.5': -19.02, '0.8': -7.82, '0.9': 74.52, '0.95': 218.83, '0.98': 404.76, '0.99': 507.51, '0.995': 578.78}
+  HVP layer 01/16: 2.40s
+  HVP layer 02/16: 2.39s
+  HVP layer 03/16: 2.41s
+  HVP layer 04/16: 2.47s
+  HVP layer 05/16: 2.31s
+  HVP layer 06/16: 2.31s
+  HVP layer 07/16: 2.25s
+  HVP layer 08/16: 2.15s
+  HVP layer 09/16: 2.11s
+  HVP layer 10/16: 2.17s
+  HVP layer 11/16: 2.12s
+  HVP layer 12/16: 2.07s
+  HVP layer 13/16: 1.94s
+  HVP layer 14/16: 1.89s
+  HVP layer 15/16: 1.76s
+  HVP layer 16/16: 1.66s
+[seed 43] hvp_global score 36.2s dval(1e-3) {'0.5': -19.11, '0.8': -7.76, '0.9': 74.72, '0.95': 217.62, '0.98': 403.04, '0.99': 506.23, '0.995': 577.96}
+[seed 43] dacp dval(1e-3) {'0.5': -19.12, '0.8': -7.48, '0.9': 74.87, '0.95': 216.78, '0.98': 401.68, '0.99': 504.3, '0.995': 576.33}
+[seed 43] probe_topk_m1 score 5.0s dval(1e-3) {'0.5': -18.97, '0.8': -7.28, '0.9': 76.17, '0.95': 221.7, '0.98': 408.81, '0.99': 510.0, '0.995': 578.53}
+[seed 43] first_order_ucb score 10.3s dval(1e-3) {'0.5': -10.57, '0.8': -18.63, '0.9': 39.49, '0.95': 174.75, '0.98': 367.2, '0.99': 475.82, '0.995': 549.75}
+  iterative 0.5: dval 1.61392
+  iterative 0.8: dval 1.62555
+  iterative 0.9: dval 1.71595
+  iterative 0.95: dval 1.80803
+  iterative 0.98: dval 1.88641
+  iterative 0.99: dval 1.94787
+  iterative 0.995: dval 2.01901
+wrote /home/gridtest/dacp_probe/small_sweep_pythia1b/P1B_R1_seed43.json (435.5 s, peak 19.02 GiB)
+[seed 44] excp_style score 0.7s dval(1e-3) {'0.5': -10.3, '0.8': -9.94, '0.9': 84.7, '0.95': 270.73, '0.98': 520.41, '0.99': 638.45, '0.995': 706.52}
+[seed 44] inshrinkerator_style score 26.5s dval(1e-3) {'0.5': -17.52, '0.8': 132.27, '0.9': 328.55, '0.95': 482.4, '0.98': 606.99, '0.99': 661.4, '0.995': 696.9}
+[seed 44] first_order score 24.7s dval(1e-3) {'0.5': -19.16, '0.8': -8.13, '0.9': 73.76, '0.95': 219.06, '0.98': 405.35, '0.99': 506.83, '0.995': 576.49}
+  HVP layer 01/16: 2.82s
+  HVP layer 02/16: 2.78s
+  HVP layer 03/16: 2.77s
+  HVP layer 04/16: 2.67s
+  HVP layer 05/16: 2.62s
+  HVP layer 06/16: 2.61s
+  HVP layer 07/16: 2.57s
+  HVP layer 08/16: 2.49s
+  HVP layer 09/16: 2.44s
+  HVP layer 10/16: 2.50s
+  HVP layer 11/16: 2.41s
+  HVP layer 12/16: 2.19s
+  HVP layer 13/16: 3.03s
+  HVP layer 14/16: 3.54s
+  HVP layer 15/16: 3.55s
+  HVP layer 16/16: 3.20s
+[seed 44] hvp_global score 46.3s dval(1e-3) {'0.5': -19.11, '0.8': -8.11, '0.9': 73.3, '0.95': 217.78, '0.98': 403.41, '0.99': 504.67, '0.995': 574.2}
+[seed 44] dacp dval(1e-3) {'0.5': -19.13, '0.8': -7.84, '0.9': 73.44, '0.95': 216.97, '0.98': 401.92, '0.99': 503.18, '0.995': 572.95}
+[seed 44] probe_topk_m1 score 5.2s dval(1e-3) {'0.5': -18.98, '0.8': -6.48, '0.9': 79.33, '0.95': 228.41, '0.98': 415.85, '0.99': 517.4, '0.995': 586.89}
+[seed 44] first_order_ucb score 4.9s dval(1e-3) {'0.5': -10.48, '0.8': -19.33, '0.9': 36.75, '0.95': 171.53, '0.98': 365.37, '0.99': 473.58, '0.995': 547.37}
+  iterative 0.5: dval 1.61379
+  iterative 0.8: dval 1.62487
+  iterative 0.9: dval 1.71059
+  iterative 0.95: dval 1.80406
+  iterative 0.98: dval 1.88681
+  iterative 0.99: dval 1.94870
+  iterative 0.995: dval 2.01898
+wrote /home/gridtest/dacp_probe/small_sweep_pythia1b/P1B_R1_seed44.json (497.2 s, peak 19.03 GiB)

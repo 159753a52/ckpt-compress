@@ -1,0 +1,44 @@
+CUDA_VISIBLE_DEVICES=7 frac=0.14 code=87e8a3210a1e06848c08fc9c9b11b4eb05271823 regime P1B_R1 step sweep Tue Sep 29 08:30:45 AM UTC 2026
+  Alpaca: loaded 52002 samples from local JSON
+
+regime P1B_R1: residual {'eligible_coords': 805306368, 'zero_residual_fraction': 1.8589198589324951e-06, 'residual_l2': 9.27965571681728, 'eligible_tensors': 64, 'layers': 16}; uncompressed {'val': 1.6329428439504767, 'ppl': 5.118916747692671, 'tokens': 14353, 'eval_s': 1.73}; full restore {'val': 2.417065875767615, 'ppl': 11.212910927520896, 'tokens': 14353, 'eval_s': 1.55}
+[seed 42] excp_style score 0.7s dval(1e-3) {'0.5': -10.3, '0.8': -9.94, '0.9': 84.7, '0.95': 270.73, '0.98': 520.41, '0.99': 638.45, '0.995': 706.52}
+[seed 42] inshrinkerator_style score 27.5s dval(1e-3) {'0.5': -17.22, '0.8': 130.56, '0.9': 321.87, '0.95': 476.28, '0.98': 603.05, '0.99': 659.75, '0.995': 695.65}
+[seed 42] first_order score 27.4s dval(1e-3) {'0.5': -19.06, '0.8': -7.22, '0.9': 74.34, '0.95': 217.85, '0.98': 402.41, '0.99': 505.99, '0.995': 577.65}
+  HVP layer 01/16: 3.32s
+  HVP layer 02/16: 2.89s
+  HVP layer 03/16: 2.79s
+  HVP layer 04/16: 2.81s
+  HVP layer 05/16: 2.82s
+  HVP layer 06/16: 2.76s
+  HVP layer 07/16: 2.56s
+  HVP layer 08/16: 2.40s
+  HVP layer 09/16: 2.22s
+  HVP layer 10/16: 2.22s
+  HVP layer 11/16: 2.23s
+  HVP layer 12/16: 2.10s
+  HVP layer 13/16: 2.09s
+  HVP layer 14/16: 2.13s
+  HVP layer 15/16: 2.10s
+  HVP layer 16/16: 1.88s
+[seed 42] hvp_global score 41.4s dval(1e-3) {'0.5': -19.1, '0.8': -7.65, '0.9': 73.18, '0.95': 215.36, '0.98': 399.76, '0.99': 502.81, '0.995': 575.03}
+[seed 42] dacp dval(1e-3) {'0.5': -19.1, '0.8': -7.43, '0.9': 73.23, '0.95': 215.04, '0.98': 398.85, '0.99': 502.08, '0.995': 574.44}
+[seed 42] probe_topk_m1 score 4.7s dval(1e-3) {'0.5': -18.9, '0.8': -7.65, '0.9': 73.28, '0.95': 217.6, '0.98': 403.08, '0.99': 504.62, '0.995': 574.81}
+[seed 42] first_order_ucb score 4.4s dval(1e-3) {'0.5': -10.83, '0.8': -18.39, '0.9': 41.0, '0.95': 175.56, '0.98': 364.9, '0.99': 472.74, '0.995': 548.0}
+  iterative 0.5: dval 1.61388
+  iterative 0.8: dval 1.62501
+  iterative 0.9: dval 1.70271
+Traceback (most recent call last):
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 637, in <module>
+    main()
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 526, in main
+    res = run_seed(s, seed, pool, sparsities, methods, unc, args.check_mask)
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 473, in run_seed
+    res["evals"]["iterative_first_order"], res["iterative_stages"] = iterative_first_order(s, batches, sparsities)
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 327, in iterative_first_order
+    (_, keep, sel_s), = list(global_keep_masks(scores, s.names, [sp], s.device))
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 151, in global_keep_masks
+    keys = _keys(scores, names, device)
+  File "/home/gridtest/dacp_probe_code/87e8a32/experiments/scripts/run_residual_sweep_small.py", line 120, in _keys
+    if not bool(torch.isfinite(flat).all()) or bool((flat < 0).any()):
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 768.00 MiB. GPU 0 has a total capacity of 139.80 GiB of which 20.03 GiB is free. Process 3251900 has 100.09 GiB memory in use. Including non-PyTorch memory, this process has 19.65 GiB memory in use. Of the allocated memory 15.15 GiB is allocated by PyTorch, and 3.78 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
