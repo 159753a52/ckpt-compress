@@ -123,6 +123,11 @@ def _keys(scores: Mapping[str, torch.Tensor], names: Sequence[str], device: str)
     return flat.view(torch.int32)
 
 
+def _count_true(mask: torch.Tensor, chunk: int = 1 << 26) -> int:
+    """Number of True entries, summed in chunks (a full-size bool sum upcasts to int64)."""
+    return sum(int(c.sum().item()) for c in mask.split(chunk))
+
+
 def _kth_key(keys: torch.Tensor, k: int) -> int:
     """Value of the k-th smallest key (1-indexed) via two 16-bit histograms."""
     hi = keys >> 16
@@ -155,11 +160,11 @@ def global_keep_masks(
         else:
             t = _kth_key(keys, k)
             remove = keys < t
-            need = k - int(torch.count_nonzero(remove).item())
+            need = k - _count_true(remove)
             if need:
                 tied = torch.nonzero(keys == t, as_tuple=False).flatten()[:need]
                 remove[tied] = True
-            if int(torch.count_nonzero(remove).item()) != k:
+            if _count_true(remove) != k:
                 raise RuntimeError("global mask missed its prune budget")
         keep = {n: (~part).view(shape) for n, part, shape in zip(names, remove.split(sizes), shapes)}
         yield sp, keep, now() - t0
