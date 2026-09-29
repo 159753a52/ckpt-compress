@@ -140,7 +140,9 @@ def ucb_mask(ctx: Context, ref: Dict[str, torch.Tensor], out: Path, schedule: Li
             kept = sum(packed_popcount(p & q.to(p.device)) for p, q in zip(pruned, prev))
             if kept != sum(packed_popcount(q) for q in prev):
                 raise RuntimeError("pruned set is not monotone")
-        del sq_sum, summ
+        # score() binds sq_sum as a default argument: drop it too, otherwise the
+        # fp32 accumulator of this stage stays alive into the next stage.
+        del sq_sum, summ, score
         s.g = []
         torch.cuda.empty_cache()
         stage_peak = peaks()
