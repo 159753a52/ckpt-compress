@@ -322,7 +322,7 @@ def iterative_first_order(s: Sweep, batches, schedule: Sequence[float]) -> Tuple
             sc = (g[i] * s.dev(d[i])).abs() + TINY
             if keep_prev is not None:
                 sc = torch.where(keep_prev[n], sc, torch.zeros_like(sc))
-            scores[n] = sc
+            scores[n] = sc.cpu() if s.offload else sc  # offload: only the flat copy lives on the device
         del g
         (_, keep, sel_s), = list(global_keep_masks(scores, s.names, [sp], s.device))
         del scores
