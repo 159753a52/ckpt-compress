@@ -1,0 +1,71 @@
+{
+  "hf_repo": "Qwen/Qwen2.5-0.5B",
+  "hf_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+  "snapshot_sha256": {
+    "config.json": "479dcf0c5286339e41ad3992cd08ae88a467c4187587936248e2b7c96283484b",
+    "generation_config.json": "8c970692323e3ea0e9b8b0a4dca79388d31226e41f83c9fd6014804280ebf6e8",
+    "merges.txt": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3",
+    "model.safetensors": "88c142557820ccad55bb59756bfcfcf891de9cc6202816bd346445188a0ed342",
+    "tokenizer.json": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+    "tokenizer_config.json": "c91efca15ceff6e9ee9424db58a6f59cd41294e550a86cbd07e3c1fb500b34f9",
+    "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+  },
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/qwen2.5-0.5b",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "b6494e885ee31abe87e0a117e82741cda68f16d6",
+    "extra_args": [],
+    "data": "Alpaca 52K local JSON (52002 samples), train/val split 51002/1000 with seed 0",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "val_ppl_before": 7.35,
+    "val_loss_before": 1.9943,
+    "val_ppl_step1000": 5.11,
+    "val_loss_step1000": 1.6316,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/qwen2.5_0.5b_alpaca/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "af06eb8ab24576aec441c98f283fb2455a6af2d9f464b66b7d0a66c39b684424",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "Q05_R1_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "dc01b0bb03b405bf0c52ac0378d56a4a99aef77d5a33b09d281ba61af13d7f6e"
+    },
+    "training_pool": {
+      "count": 140,
+      "sha256": "a6c623790faf7f6ad4aa922078acbe6fd886dd235a886036a75e71933739471b"
+    },
+    "uncompressed": {
+      "eval_s": 3.05,
+      "ppl": 5.040874660386654,
+      "tokens": 13557,
+      "val": 1.6175796107538174
+    },
+    "full_restore_to_base": {
+      "eval_s": 2.83,
+      "ppl": 7.502275878501515,
+      "tokens": 13557,
+      "val": 2.0152064249773525
+    },
+    "residual": {
+      "eligible_coords": 357826560,
+      "eligible_tensors": 168,
+      "layers": 24,
+      "residual_l2": 5.991073898968671,
+      "zero_residual_fraction": 1.7494509071657508e-06
+    },
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/home/gridtest/dacp_probe/assets/models/qwen2.5-0.5b"
+    }
+  }
+}
