@@ -1,0 +1,78 @@
+{
+  "hf_repo": "EleutherAI/pythia-410m",
+  "note": "same local snapshot /home/gridtest/dacp_probe/assets/models/pythia-410m as the Alpaca R1-R3 runs",
+  "remote_model_dir": "/home/gridtest/dacp_probe/assets/models/pythia-410m",
+  "finetune": {
+    "script": "experiments/scripts/finetune/finetune_pythia_410m.py via experiments/scripts/remote/finetune_small_gpu7.sh",
+    "code_commit": "56815b0d2df58e7f22551bae26cd508dcbc77081",
+    "extra_args": [
+      "--dataset=wikitext2"
+    ],
+    "data": "WikiText-2 (tokenized v1 release with <unk>, local files wikitext_train.txt sha256 9e9fa1ad55b1c2c95b08e37dd8e653f638fac2c6de904b79e813611eefbc985f, wikitext_valid.txt sha256 f0737ed31fc1329026e95cb8b98e19c2a182c39c240ab909dc31abf2f8af58e8); each file tokenized line by line (newlines kept, no special tokens) and concatenated; fine-tuning on non-overlapping 512-token chunks of the first 95% of training-file tokens (shuffled, unseeded loader as in the Alpaca recipe); fine-tuning validation on 512-token chunks of the validation file; the last 5% of training-file tokens are never used in fine-tuning and form the residual-scoring pool (128-token chunks) of the sweeps, whose evaluation uses the first 100 batches (2 x 128) of the validation file in file order",
+    "total_steps": 1000,
+    "batch_size": 4,
+    "seq_length": 512,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "optimizer": "AdamW",
+    "schedule": "linear warmup 100 steps + cosine decay",
+    "amp": true,
+    "val_ppl_before": 19.6,
+    "val_loss_before": 2.9754,
+    "val_ppl_step1000": 11.43,
+    "val_loss_step1000": 2.4359,
+    "val_note": "finetune script evaluates the first 50 validation batches (batch 4 x seq 512)",
+    "checkpoint": "/home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_wikitext2/checkpoint_step_1000.pt",
+    "checkpoint_step": 1000,
+    "checkpoint_sha256": "4b6cd2fc67bd7f54e8a28b8ac06b7c35bd911d72b99cf4bb6104a9b72330bcff",
+    "checkpoint_contents": "model_state_dict, optimizer_state_dict, step, loss"
+  },
+  "reference_eval_from_sweep_json": {
+    "source": "R1W_seed42.json",
+    "eval_batches": {
+      "count": 100,
+      "sha256": "5e18eff56a16b072ba983fb770154841d1edafc8129de1c1ab598e9d178fcc7b"
+    },
+    "training_pool": {
+      "count": 140,
+      "sha256": "312ba63e0b65f6f9e675a86651208253c6b4bb38871ffaa81a999862280c36f6"
+    },
+    "uncompressed": {
+      "eval_s": 1.9,
+      "ppl": 12.946856570065329,
+      "tokens": 25400,
+      "val": 2.560853022778128
+    },
+    "full_restore_to_base": {
+      "eval_s": 1.78,
+      "ppl": 28.42891320580159,
+      "tokens": 25400,
+      "val": 3.3474066979115404
+    },
+    "residual": {
+      "eligible_coords": 301989888,
+      "eligible_tensors": 96,
+      "layers": 24,
+      "residual_l2": 5.572522881201569,
+      "zero_residual_fraction": 2.0298692915174697e-06
+    },
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/home/gridtest/dacp_probe/assets/models/pythia-410m"
+    },
+    "data": {
+      "dataset": "wikitext2",
+      "eval_split": "validation file",
+      "finetune_tokens": 2326489,
+      "holdout_fraction": 0.05,
+      "pool_split": "scoring (held-out training-file tail)",
+      "scoring_tokens": 122447,
+      "seq_length": 128,
+      "train_sequences": 956,
+      "train_split": "scoring",
+      "train_tokens": 2448936,
+      "valid_sequences": 2017,
+      "valid_tokens": 258258
+    }
+  }
+}

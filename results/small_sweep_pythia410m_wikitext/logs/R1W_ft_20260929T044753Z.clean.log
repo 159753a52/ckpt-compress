@@ -1,0 +1,241 @@
+CUDA_VISIBLE_DEVICES=7 frac=0.14 code=56815b0d2df58e7f22551bae26cd508dcbc77081 regime R1W step ft Tue Sep 29 04:47:53 AM UTC 2026
+============================================================
+Pythia-410M Alpaca 微调
+============================================================
+总步数: 1000
+批次大小: 4
+序列长度: 512
+学习率: 2e-05
+混合精度: True
+输出目录: /home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_wikitext2
+============================================================
+
+加载 Pythia-410M 预训练模型...
+模型已加载到 cuda
+模型参数量: 405,334,016
+/home/gridtest/dacp_probe_code/56815b0/experiments/scripts/finetune/finetune_pythia_410m.py:261: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler() if args.use_amp else None
+LR schedule: warmup 100 steps + cosine decay
+WikiText-2 chunks: {'train_tokens': 2448936, 'valid_tokens': 258258, 'finetune_tokens': 2326489, 'scoring_tokens': 122447, 'holdout_fraction': 0.05, 'seq_length': 512}
+训练批次数: 1136, 验证批次数: 126
+
+初始 Val PPL: 19.60, Loss: 2.9754
+
+开始训练...
+============================================================
+
+  with torch.cuda.amp.autocast():
+/home/gridtest/py310/lib/python3.10/site-packages/torch/optim/lr_scheduler.py:216: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  warnings.warn(
+
+Step 10/1000: Loss=3.0802, PPL=21.76, LR=2.00e-06
+
+Step 20/1000: Loss=2.9725, PPL=19.54, LR=4.00e-06
+
+Step 30/1000: Loss=2.8079, PPL=16.58, LR=6.00e-06
+
+Step 40/1000: Loss=2.7011, PPL=14.90, LR=8.00e-06
+
+Step 50/1000: Loss=2.8130, PPL=16.66, LR=1.00e-05
+
+Step 60/1000: Loss=2.7910, PPL=16.30, LR=1.20e-05
+
+Step 70/1000: Loss=2.6763, PPL=14.53, LR=1.40e-05
+
+Step 80/1000: Loss=2.6679, PPL=14.41, LR=1.60e-05
+
+Step 90/1000: Loss=2.7270, PPL=15.29, LR=1.80e-05
+
+Step 100/1000: Loss=2.6554, PPL=14.23, LR=2.00e-05
+
+Step 110/1000: Loss=2.8413, PPL=17.14, LR=2.00e-05
+
+Step 120/1000: Loss=2.7309, PPL=15.35, LR=2.00e-05
+
+Step 130/1000: Loss=2.7221, PPL=15.21, LR=1.99e-05
+
+Step 140/1000: Loss=2.7263, PPL=15.28, LR=1.99e-05
+
+Step 150/1000: Loss=2.6985, PPL=14.86, LR=1.98e-05
+
+Step 160/1000: Loss=2.7347, PPL=15.41, LR=1.98e-05
+
+Step 170/1000: Loss=2.7046, PPL=14.95, LR=1.97e-05
+
+Step 180/1000: Loss=2.7475, PPL=15.60, LR=1.96e-05
+
+Step 190/1000: Loss=2.7080, PPL=15.00, LR=1.95e-05
+
+Step 200/1000: Loss=2.7325, PPL=15.37, LR=1.94e-05
+
+Step 210/1000: Loss=2.7162, PPL=15.12, LR=1.93e-05
+
+Step 220/1000: Loss=2.6937, PPL=14.79, LR=1.91e-05
+
+Step 230/1000: Loss=2.7285, PPL=15.31, LR=1.90e-05
+
+Step 240/1000: Loss=2.6254, PPL=13.81, LR=1.88e-05
+
+Step 250/1000: Loss=2.6776, PPL=14.55, LR=1.87e-05
+
+Step 260/1000: Loss=2.6375, PPL=13.98, LR=1.85e-05
+
+Step 270/1000: Loss=2.6080, PPL=13.57, LR=1.83e-05
+
+Step 280/1000: Loss=2.6992, PPL=14.87, LR=1.81e-05
+
+Step 290/1000: Loss=2.6796, PPL=14.58, LR=1.79e-05
+
+Step 300/1000: Loss=2.6631, PPL=14.34, LR=1.77e-05
+
+Step 310/1000: Loss=2.6580, PPL=14.27, LR=1.74e-05
+
+Step 320/1000: Loss=2.7255, PPL=15.26, LR=1.72e-05
+
+Step 330/1000: Loss=2.7133, PPL=15.08, LR=1.69e-05
+
+Step 340/1000: Loss=2.6851, PPL=14.66, LR=1.67e-05
+
+Step 350/1000: Loss=2.6901, PPL=14.73, LR=1.64e-05
+
+Step 360/1000: Loss=2.6735, PPL=14.49, LR=1.62e-05
+
+Step 370/1000: Loss=2.6491, PPL=14.14, LR=1.59e-05
+
+Step 380/1000: Loss=2.6350, PPL=13.94, LR=1.56e-05
+
+Step 390/1000: Loss=2.5769, PPL=13.16, LR=1.53e-05
+
+Step 400/1000: Loss=2.5680, PPL=13.04, LR=1.50e-05
+
+Step 410/1000: Loss=2.7525, PPL=15.68, LR=1.47e-05
+
+Step 420/1000: Loss=2.6585, PPL=14.28, LR=1.44e-05
+
+Step 430/1000: Loss=2.6920, PPL=14.76, LR=1.41e-05
+
+Step 440/1000: Loss=2.5803, PPL=13.20, LR=1.37e-05
+
+Step 450/1000: Loss=2.6852, PPL=14.66, LR=1.34e-05
+
+Step 460/1000: Loss=2.5803, PPL=13.20, LR=1.31e-05
+
+Step 470/1000: Loss=2.6774, PPL=14.55, LR=1.28e-05
+
+Step 480/1000: Loss=2.6427, PPL=14.05, LR=1.24e-05
+
+Step 490/1000: Loss=2.6173, PPL=13.70, LR=1.21e-05
+
+Step 500/1000: Loss=2.6239, PPL=13.79, LR=1.17e-05
+
+Step 510/1000: Loss=2.6731, PPL=14.48, LR=1.14e-05
+
+Step 520/1000: Loss=2.5802, PPL=13.20, LR=1.10e-05
+
+Step 530/1000: Loss=2.5962, PPL=13.41, LR=1.07e-05
+
+Step 540/1000: Loss=2.6230, PPL=13.78, LR=1.03e-05
+
+Step 550/1000: Loss=2.5200, PPL=12.43, LR=1.00e-05
+
+Step 560/1000: Loss=2.6692, PPL=14.43, LR=9.65e-06
+
+Step 570/1000: Loss=2.6392, PPL=14.00, LR=9.30e-06
+
+Step 580/1000: Loss=2.5818, PPL=13.22, LR=8.95e-06
+
+Step 590/1000: Loss=2.5929, PPL=13.37, LR=8.61e-06
+
+Step 600/1000: Loss=2.5516, PPL=12.83, LR=8.26e-06
+
+Step 610/1000: Loss=2.5900, PPL=13.33, LR=7.92e-06
+
+Step 620/1000: Loss=2.5983, PPL=13.44, LR=7.58e-06
+
+Step 630/1000: Loss=2.4825, PPL=11.97, LR=7.24e-06
+
+Step 640/1000: Loss=2.6220, PPL=13.76, LR=6.91e-06
+
+Step 650/1000: Loss=2.5131, PPL=12.34, LR=6.58e-06
+
+Step 660/1000: Loss=2.5720, PPL=13.09, LR=6.25e-06
+
+Step 670/1000: Loss=2.5013, PPL=12.20, LR=5.93e-06
+
+Step 680/1000: Loss=2.5480, PPL=12.78, LR=5.62e-06
+
+Step 690/1000: Loss=2.5762, PPL=13.15, LR=5.31e-06
+
+Step 700/1000: Loss=2.5010, PPL=12.19, LR=5.00e-06
+
+Step 710/1000: Loss=2.5452, PPL=12.75, LR=4.70e-06
+
+Step 720/1000: Loss=2.6040, PPL=13.52, LR=4.41e-06
+
+Step 730/1000: Loss=2.5829, PPL=13.24, LR=4.12e-06
+
+Step 740/1000: Loss=2.5350, PPL=12.62, LR=3.84e-06
+
+Step 750/1000: Loss=2.6297, PPL=13.87, LR=3.57e-06
+
+Step 760/1000: Loss=2.5378, PPL=12.65, LR=3.31e-06
+
+Step 770/1000: Loss=2.5824, PPL=13.23, LR=3.05e-06
+
+Step 780/1000: Loss=2.4755, PPL=11.89, LR=2.81e-06
+
+Step 790/1000: Loss=2.5464, PPL=12.76, LR=2.57e-06
+
+Step 800/1000: Loss=2.6082, PPL=13.57, LR=2.34e-06
+
+Step 810/1000: Loss=2.5200, PPL=12.43, LR=2.12e-06
+
+Step 820/1000: Loss=2.5616, PPL=12.96, LR=1.91e-06
+
+Step 830/1000: Loss=2.6313, PPL=13.89, LR=1.71e-06
+
+Step 840/1000: Loss=2.5799, PPL=13.20, LR=1.52e-06
+
+Step 850/1000: Loss=2.5574, PPL=12.90, LR=1.34e-06
+
+Step 860/1000: Loss=2.5080, PPL=12.28, LR=1.17e-06
+
+Step 870/1000: Loss=2.5732, PPL=13.11, LR=1.01e-06
+
+Step 880/1000: Loss=2.4586, PPL=11.69, LR=8.65e-07
+
+Step 890/1000: Loss=2.5664, PPL=13.02, LR=7.28e-07
+
+Step 900/1000: Loss=2.6258, PPL=13.82, LR=6.03e-07
+
+Step 910/1000: Loss=2.4635, PPL=11.75, LR=4.89e-07
+
+Step 920/1000: Loss=2.5224, PPL=12.46, LR=3.87e-07
+
+Step 930/1000: Loss=2.5262, PPL=12.51, LR=2.97e-07
+
+Step 940/1000: Loss=2.5205, PPL=12.44, LR=2.19e-07
+
+Step 950/1000: Loss=2.4990, PPL=12.17, LR=1.52e-07
+
+Step 960/1000: Loss=2.6613, PPL=14.32, LR=9.73e-08
+
+Step 970/1000: Loss=2.6339, PPL=13.93, LR=5.48e-08
+
+Step 980/1000: Loss=2.5669, PPL=13.02, LR=2.44e-08
+
+Step 990/1000: Loss=2.5203, PPL=12.43, LR=6.09e-09
+
+Step 1000/1000: Loss=2.6811, PPL=14.60, LR=0.00e+00
+  Val PPL: 11.43, Val Loss: 2.4359
+  保存检查点 (step 1000)...
+  检查点已保存: /home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_wikitext2/checkpoint_step_1000.pt
+
+
+保存最终检查点...
+  检查点已保存: /home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_wikitext2/checkpoint_step_1000.pt
+
+============================================================
+训练完成！
+检查点已保存到: /home/gridtest/dacp_probe/assets/checkpoints/pythia_410m_wikitext2
+============================================================
