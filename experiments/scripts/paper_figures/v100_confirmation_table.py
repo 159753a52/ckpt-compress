@@ -45,7 +45,7 @@ def main():
     assert len({value["evaluation_sha256"] for value in records.values()}) == 1
     for seed in (42, 43, 44):
         assert len({records[(key, seed)]["identity"]["scoring_sha256"] for key, *_ in METHODS}) == 1
-    lines = [r"\begin{table}[t]", r"\centering", r"\small", r"\resizebox{\columnwidth}{!}{%", r"\begin{tabular}{lrrr}", r"\toprule",
+    lines = [r"\begin{table}[!htb]", r"\centering", r"\small", r"\resizebox{\columnwidth}{!}{%", r"\begin{tabular}{lrrr}", r"\toprule",
              r"Selection & $K\times B$ & $\Delta$ loss & Time (s) \\", r"\midrule"]
     for key, label, stages, batches in METHODS:
         row = summary[key]
