@@ -96,6 +96,17 @@ def fmt(x: float) -> str:
     return f"{x:+.1f}"
 
 
+def training_difference(r, nc):
+    """Paired per-update losses, kept separate at each restoration boundary."""
+    for cycle, reference in zip(r["cycles"], nc["cycles"]):
+        logs, ref_logs = cycle["train_log"], reference["train_log"]
+        steps = [point["step"] for point in logs]
+        if steps != [point["step"] for point in ref_logs] or cycle["recovery_chunks"] != reference["recovery_chunks"]:
+            raise ValueError("recovery training updates are not aligned")
+        differences = [(point["loss"] - ref["loss"]) * 1e3 for point, ref in zip(logs, ref_logs)]
+        yield steps, differences
+
+
 def summary_md(nc, recs, sps: List[float]) -> str:
     u = nc["uncompressed"]["val"]["loss"]
     ug = nc["uncompressed"]["gate"]["loss"]
@@ -213,37 +224,40 @@ def main() -> None:
     (out / "base_chains_rows.tex").write_text(tex_rows(nc, recs, sps), encoding="utf-8")
 
     S.setup()
-    fig, axes = plt.subplots(2, len(sps), figsize=(S.DOUBLE_W, 4.2), squeeze=False, sharex=True)
+    fig, axes = plt.subplots(2, len(sps), figsize=(S.DOUBLE_W, 4.7), squeeze=False, sharex=True)
     restore_steps = [c["step"] for c in nc["cycles"]]
     for j, sp in enumerate(sps):
         top, bot = axes[0][j], axes[1][j]
         xs, ys = trajectory(nc)
-        top.plot(xs, ys, **S.line_kw("no_compression", marker=False))
+        top.plot(xs, ys, **S.line_kw("no_compression", marker=False, ls="--"))
         top.plot(xs, ys, ls="", marker="o", ms=2.2, color="k")
         for m in ORDER:
             if (m, sp) not in recs:
                 continue
             xs, ys = trajectory(recs[(m, sp)])
-            top.plot(xs, ys, **S.line_kw(m))
-            xs, ys = trajectory(recs[(m, sp)], nc, delta=True)
-            bot.plot(xs, ys, **S.line_kw(m))
+            top.plot(xs, ys, **S.line_kw(m, ls="--"))
+            for steps, differences in training_difference(recs[(m, sp)], nc):
+                bot.plot(steps, differences, color=S.style_of(m).color, lw=0.45, alpha=0.25)
+                bot.plot(steps, S.moving_average(differences, 10), **S.line_kw(m, marker=False))
         for ax in (top, bot):
             for s in restore_steps:
                 ax.axvline(s, color="0.8", lw=0.5, ls=":", zorder=0)
         zero_line(bot)
-        top.set_title(f"Residual sparsity $P={sp:g}$ ({1 / (1 - sp):.0f}$\\times$), restore at dotted lines")
+        top.set_title(f"$P={sp:g}$ ({1 / (1 - sp):.0f}$\\times$): validation endpoints")
+        bot.set_title("Per-update training difference; trailing 10-step mean")
         bot.set_xlabel("Training step")
         if j == 0:
             top.set_ylabel("Validation loss (nats)")
-            bot.set_ylabel(r"$\Delta$ vs. no compression ($10^{-3}$)")
+            bot.set_ylabel(r"Training $\Delta$ vs. no compression ($10^{-3}$)")
     h, lab = axes[0][0].get_legend_handles_labels()
     keep = [i for i, l in enumerate(lab) if not l.startswith("_")]
     fig.align_ylabels(axes[:, 0])
-    fig.tight_layout(h_pad=0.6, rect=(0, 0.07, 1, 1))
+    fig.tight_layout(h_pad=0.6, rect=(0, 0.09, 1, 1))
     fig.legend([h[i] for i in keep], [lab[i] for i in keep], loc="lower center", ncol=3, fontsize=6.5,
                frameon=False)
     S.save(fig, out, "f1_base_chains_32b", paths,
-           notes={"lines": "linear interpolation between measured evaluation points (markers)",
+           notes={"validation_lines": "dashed linear guides between measured endpoints; no intermediate validation was recorded",
+                  "training_lines": "raw paired per-update differences (faint) and trailing 10-step means; window resets each cycle",
                   "sparsities": sps, "methods": [m for m in ORDER if any(k[0] == m for k in recs)]})
     print(len(recs), "compressed chains; sparsities", sps)
 
