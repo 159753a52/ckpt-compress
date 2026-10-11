@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import subprocess
 import sys
 import time
@@ -182,7 +183,15 @@ def main():
                         "optimizer": opt.state_dict()}, tmp_state)
             tmp_state.replace(resume_path)
             write_json(partial / f"{method}_cycle{cycle}.json", _jsonable(record))
-        record.update(status="completed", elapsed_this_process_s=time.time() - began)
+        states = args.out_dir / "final-states"
+        states.mkdir(exist_ok=True)
+        final_state = states / f"{method}_cycle{args.cycles}.pt"
+        if final_state.exists() and not os.path.samefile(final_state, resume_path):
+            raise RuntimeError(f"Final state already exists without its completed result: {final_state}")
+        if not final_state.exists():
+            os.link(resume_path, final_state)
+        record.update(status="completed", elapsed_this_process_s=time.time() - began,
+                      final_state={"path": str(final_state), "bytes": final_state.stat().st_size})
         write_json(path, _jsonable(record))
         print("RESULT " + str(path), flush=True)
         del opt

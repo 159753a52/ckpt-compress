@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,6 +35,13 @@ def load(root):
         raise ValueError("six completed chains are required")
     nc = records["no_compression"]
     config = nc["protocol"]["config"]
+    kept = {c["restore"]["kept"] for m, r in records.items() if m != "no_compression" for c in r["cycles"]}
+    if len(kept) != 1:
+        raise ValueError("retained coordinate counts differ")
+    for name, expected in nc["protocol"]["sources"].items():
+        raw = subprocess.check_output(["git", "show", nc["code_commit"] + ":" + name], cwd=REPO)
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ValueError("experiment source differs from the frozen protocol")
     for r in records.values():
         if r["protocol"] != nc["protocol"] or r["identity"] != nc["identity"]:
             raise ValueError("protocol or data pairing differs")
@@ -41,6 +50,12 @@ def load(root):
         for c, ref in zip(r["cycles"], nc["cycles"]):
             if [v["step"] for v in c["validation_trace"]] != [v["step"] for v in ref["validation_trace"]]:
                 raise ValueError("validation steps differ")
+            offsets = [v["step"] - c["step"] for v in c["validation_trace"]]
+            expected = list(range(0, config["recovery"] + 1, config["eval_every"]))
+            if expected[-1] != config["recovery"]:
+                expected.append(config["recovery"])
+            if offsets != expected or any(v["val"]["tokens"] != nc["uncompressed"]["val"]["tokens"] for v in c["validation_trace"]):
+                raise ValueError("validation density or token count differs")
             if [v["step"] for v in c["train_log"]] != [v["step"] for v in ref["train_log"]] or len(c["train_log"]) != config["recovery"]:
                 raise ValueError("training steps differ")
     return records, paths
@@ -96,7 +111,10 @@ def main():
     for method in ORDER:
         r = records[method]
         xs, ys = trajectory(r)
-        val.plot(xs, ys, **S.line_kw(method, ms=2.7, lw=1))
+        kw = S.line_kw(method, ms=2.7, lw=1)
+        if method == "no_compression":
+            kw.update(marker="o", ms=2)
+        val.plot(xs, ys, **kw)
         if method == "no_compression":
             continue
         xs, ys = trajectory(r, nc)
@@ -131,7 +149,7 @@ def main():
         ax.axhline(math.log1p(0.01) * 1e3, color="0.4", ls="--", lw=0.6, zorder=0)
     handles, labels = val.get_legend_handles_labels()
     fig.tight_layout(rect=(0, 0.08, 1, 1), h_pad=1)
-    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=6.5, frameon=False)
+    fig.legend(handles, labels, loc="lower center", ncol=3, fontsize=7, frameon=False)
     S.save(fig, args.out, "v100_dense_recovery", paths,
            notes={"validation": "fixed 100-batch evaluation every ten updates; markers measured",
                   "training": "raw paired per-update loss differences and trailing ten-step means; reset per cycle",

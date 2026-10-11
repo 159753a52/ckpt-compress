@@ -17,7 +17,7 @@ FIGS = PAPER / "paper" / "figs" / "gen"
 PROVENANCE = ["cross_model_rows", "cross_model_rows_extra", "tolerance_rows",
               "tolerance_rows_extra", "f1_base_chains_32b", "v100_fixed_budget",
               "e2_pythia_ablation", "f2_small_chains", "staged_system_curve",
-              "a2_taylor_fidelity_32b", "b3_scoring_cost_32b"]
+              "a2_taylor_fidelity_32b", "b3_scoring_cost_32b", "v100_dense_recovery"]
 
 
 def sha256(path):
@@ -60,6 +60,10 @@ def main():
     import tolerance_table
     import v100_confirmation_table
     import base_chains_fig
+    import v100_dense_recovery_fig
+
+    dense, _ = v100_dense_recovery_fig.load(REPO / "results/v100_dense_recovery_20261011")
+    dense_checks = v100_dense_recovery_fig.summarize(dense)
 
     original_argv = sys.argv[:]
     with tempfile.TemporaryDirectory(prefix="dacp-evidence-") as directory:
@@ -90,7 +94,8 @@ def main():
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
               "audit_script_sha256": sha256(Path(__file__)),
               "provenance_files": len(PROVENANCE), "unique_result_files": len(sources),
-              "tables": tables, "source_sha256": sources, "output_sha256": outputs, "failures": failures}
+              "tables": tables, "source_sha256": sources, "output_sha256": outputs,
+              "dense_recovery": dense_checks, "failures": failures}
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({key: report[key] for key in ("passed", "provenance_files", "unique_result_files", "tables", "failures")}))
