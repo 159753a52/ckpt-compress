@@ -1,0 +1,76 @@
+{
+  "baseline": {
+    "eval_s": 2.6,
+    "ppl": 5.391574307422667,
+    "tokens": 14353,
+    "val": 1.6848374215732473
+  },
+  "calibration_reused": {
+    "batches": 64,
+    "loss": 1.7490672148788402,
+    "perplexity": 5.74923737097874,
+    "seconds": 1.5849464279999665,
+    "tokens": 9824
+  },
+  "candidate_path": "/root/dacp-v100-quality-20261011/results/v100_quality_calibration_20261011/staged_K4_B4_p0.7_seed42.json",
+  "candidate_sha256": "442a128227f06d68430b1b1252f1b4b9d9f60e033ccb8811a5fd0bbc61f74916",
+  "code_commit": "42f87e0adc5167205658c58054b7ff32d560509d",
+  "delta_loss": 0.006402548236696948,
+  "evaluation": {
+    "eval_s": 2.48,
+    "ppl": 5.426204865607591,
+    "tokens": 14353,
+    "val": 1.6912399698099443
+  },
+  "identity": {
+    "batches_per_stage": 4,
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "gate_ppl_tolerance": 0.005,
+    "gate_sha256": "ed6cbb469b2558fe9b3e15df212add9a6f9d140c058bae1c8f26e61e52c25fe3",
+    "heldout_sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44",
+    "scoring_policy": "disjoint4x4",
+    "scoring_sha256": "c01b0122b54b42cb46b5748f65f00993516cff569c11485feacbb814546cd607",
+    "script_sha256": "7efe9b865ba61fb8cbdbdb2535f02638dafd879455ab137f22557a718ea85b9c",
+    "seed": 42,
+    "sparsity": 0.7,
+    "stages": 4
+  },
+  "mask": {
+    "bytes": 302021374,
+    "file": "keep-mask.pt",
+    "sha256": "7bca8b6c1fd11fde305c8d6b186d7619e349e1c4bee85a29d700adbc72537d1e"
+  },
+  "purpose": "new validation measurement of cached calibration point",
+  "relative_ppl_change": 0.006423088361640119,
+  "stage_records": [
+    {
+      "score_loss_at_partial_point": 1.6734079420566559,
+      "score_s": 0.74,
+      "select_s": 0.087,
+      "sparsity": 0.25991719550771475,
+      "stage": 1
+    },
+    {
+      "score_loss_at_partial_point": 1.7482360899448395,
+      "score_s": 0.69,
+      "select_s": 0.103,
+      "sparsity": 0.4522774424948338,
+      "stage": 2
+    },
+    {
+      "score_loss_at_partial_point": 1.7369885742664337,
+      "score_s": 0.69,
+      "select_s": 0.147,
+      "sparsity": 0.5946399535578897,
+      "stage": 3
+    },
+    {
+      "score_loss_at_partial_point": 1.9161424934864044,
+      "score_s": 0.69,
+      "select_s": 0.178,
+      "sparsity": 0.7,
+      "stage": 4
+    }
+  ],
+  "status": "completed"
+}
