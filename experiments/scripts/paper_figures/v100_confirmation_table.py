@@ -45,14 +45,14 @@ def main():
     assert len({value["evaluation_sha256"] for value in records.values()}) == 1
     for seed in (42, 43, 44):
         assert len({records[(key, seed)]["identity"]["scoring_sha256"] for key, *_ in METHODS}) == 1
-    lines = [r"\begin{table}[t]", r"\centering", r"\small", r"\begin{tabular}{lrrr}", r"\toprule",
+    lines = [r"\begin{table}[t]", r"\centering", r"\small", r"\resizebox{\columnwidth}{!}{%", r"\begin{tabular}{lrrr}", r"\toprule",
              r"Selection & $K\times B$ & $\Delta$ loss & Time (s) \\", r"\midrule"]
     for key, label, stages, batches in METHODS:
         row = summary[key]
         lines.append(f"{label} & ${stages}\\times{batches}$ & "
                      f"${row['loss_mean_millinats']:.1f}\\pm{row['loss_std_millinats']:.1f}$ & "
                      f"${row['seconds_mean']:.2f}\\pm{row['seconds_std']:.2f}$" + r" \\")
-    lines += [r"\bottomrule", r"\end{tabular}",
+    lines += [r"\bottomrule", r"\end{tabular}", r"}",
               r"\caption{Pythia-410M/Alpaca, 98\% residual sparsity on a V100: mean $\pm$ s.d. over three scoring seeds. All rows use the same 16 scoring batches and 16 backward passes; staged rows partition them into four disjoint groups. Loss changes are in $10^{-3}$ nats. Time includes scoring, partial-state restoration, and selection, excluding final evaluation and setup.}",
               r"\label{tab:v100-fixed-budget}", r"\end{table}"]
     args.out_dir.mkdir(parents=True, exist_ok=True)
