@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 
 METHODS = [("no_compression", "Original"), ("excp_style", "ExCP-style"),
-           ("iterative_ucb_disjoint", "DACP: staged + protected")]
+           ("iterative_ucb_disjoint", "DACP (staged)")]
 TASKS = [("hellaswag", "acc_norm,none"), ("arc_easy", "acc_norm,none"), ("piqa", "acc,none")]
 
 
@@ -45,17 +45,17 @@ def generate(encoded, downstream, out):
     original_ppl = ours["baseline_validation_reused"]["ppl"]
     assert ours["validation_relative_ppl_change"] < .01
     lines = [r"\begin{table*}[!tp]", r"\centering\small",
-             r"\caption{Single-V100 Pythia-410M/Alpaca archive experiment, seed 42. Both selectors use 70\% eligible residual sparsity and the same weight-codec grid, selected using a separate 1\% calibration-perplexity gate. Size includes all parameters and buffers, both Adam moments, steps and parameter groups; the shared pretrained reference is external. Every Adam entry is retained in BF16. $w/m$ gives weight-code bits and moment precision. ExCP-style transfers residual-magnitude selection into this shared codec.}",
+             r"\caption{Single-V100 Pythia-410M/Alpaca archive experiment, seed 42. Both selectors use 70\% eligible residual sparsity and the same weight-codec grid, selected using a separate 1\% calibration-perplexity gate. Size includes all parameters and buffers, both Adam moments, steps and parameter groups; the shared pretrained reference is external. Every Adam entry is retained in BF16. $w/m$ gives weight-code bits and moment precision; one GiB is $2^{30}$ bytes. ExCP-style transfers residual-magnitude selection into this shared codec.}",
              r"\label{tab:v100-encoded-quality}", r"\begin{tabular}{lrrrrr}", r"\toprule",
-             r"Selection & $w/m$ & Size (MiB) & Byte compression & PPL & $\Delta$ PPL (\%) \\", r"\midrule",
-             f"Original & 32/32 & {original_bytes / 2**20:.2f} & $1.00\\times$ & {original_ppl:.4f} & 0.000" + r" \\"]
+             r"Selection & $w/m$ & Size (GiB) & Byte compression & PPL & $\Delta$ PPL (\%) \\", r"\midrule",
+             f"Original & 32/32 & {original_bytes / 2**30:.3f} & $1.00\\times$ & {original_ppl:.4f} & 0.000" + r" \\"]
     for method, label in METHODS[1:]:
         row = chosen[method]
         assert row["passed_gate"] and row["eligible_kept"] == ours["eligible_kept"]
         ppl = row["validation"]["perplexity"]
         assert math.isclose(math.expm1(row["validation"]["loss"] - row["baseline_validation_reused"]["val"]), row["validation_relative_ppl_change"])
         lines.append(f"{label} & {row['quantization']['weight_bits']}/{row['quantization']['moment_bits']} & "
-                     f"{row['archive']['bytes'] / 2**20:.2f} & ${row['archive']['byte_compression']:.2f}\\times$ & "
+                     f"{row['archive']['bytes'] / 2**30:.3f} & ${row['archive']['byte_compression']:.2f}\\times$ & "
                      f"{ppl:.4f} & {100 * row['validation_relative_ppl_change']:+.3f}" + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table*}"]
     out.mkdir(parents=True, exist_ok=True)
