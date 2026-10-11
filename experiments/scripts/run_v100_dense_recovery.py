@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--eval-every", type=int, default=10)
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--methods", default="no_compression,excp_style,inshrinkerator_style,dacp,first_order_ucb,iterative_ucb_disjoint")
+    ap.add_argument("--initial-mask-record", type=Path)
     ap.add_argument("--plan-only", action="store_true")
     args = ap.parse_args()
     methods = args.methods.split(",")
@@ -70,6 +71,13 @@ def main():
                                 for p in sorted((args.data_root / "models/pythia-410m").glob("*")) if p.is_file()}}
     alpaca = args.data_root / "alpaca/alpaca_data.json"
     protocol["input_files"]["alpaca/alpaca_data.json"] = sha256_file(alpaca)
+    mask_record = None
+    if args.initial_mask_record is not None:
+        mask_record = json.loads(args.initial_mask_record.read_text())
+        info = mask_record["identity"]
+        if info["checkpoint_sha256"] != protocol["checkpoint_sha256"] or info["sparsity"] != args.sparsity or info["seed"] != args.seed:
+            raise RuntimeError("initial mask does not match the checkpoint, sparsity or seed")
+        protocol["initial_mask_record_sha256"] = sha256_file(args.initial_mask_record)
     todo = []
     for method in methods:
         path = args.out_dir / f"{method}_p{args.sparsity}_seed{args.seed}.json"
@@ -96,6 +104,8 @@ def main():
     data_meta["chunk_sha256"] = [batch_hash(recovery[i * args.recovery:(i + 1) * args.recovery]) for i in range(args.cycles)]
     identity = {"scoring_sha256": batch_hash(scoring), "evaluation_sha256": batch_hash(context["eval_batches"]),
                 "training_pool_sha256": batch_hash(pool), "recovery": data_meta}
+    if mask_record is not None and (mask_record["identity"]["scoring_sha256"] != identity["scoring_sha256"] or mask_record["identity"]["heldout_sha256"] != identity["evaluation_sha256"]):
+        raise RuntimeError("initial mask scoring/evaluation data differ")
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     write_json(args.out_dir / "run-manifest.json", {"protocol": protocol, "identity": identity,
                "code_commit": commit, "methods": methods, "gpu": torch.cuda.get_device_name(0),
@@ -134,7 +144,16 @@ def main():
             torch.cuda.reset_peak_memory_stats()
             if method != "no_compression":
                 t0 = time.perf_counter()
-                if method == "iterative_ucb_disjoint":
+                reuse_initial = method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None
+                if reuse_initial:
+                    mask_path = args.initial_mask_record.parent / mask_record["mask"]["file"]
+                    if sha256_file(mask_path) != mask_record["mask"]["sha256"]:
+                        raise RuntimeError("initial mask artifact hash differs")
+                    keep = torch.load(mask_path, map_location="cpu", weights_only=True)
+                    rec["score"] = {"stages": mask_record["stage_records"], "backward_budget": 16,
+                                    "unique_scoring_batches": 16, "reused_from": str(args.initial_mask_record),
+                                    "reused_source_sha256": protocol["initial_mask_record_sha256"]}
+                elif method == "iterative_ucb_disjoint":
                     stage = 0
 
                     def scorer(current, unused, keep_prev, seed):
@@ -155,7 +174,13 @@ def main():
                 rec["score_total_s"] = time.perf_counter() - t0
                 rec["restore"] = restore(sweep, keep)
                 del keep
-            rec["immediate"] = evaluate(sweep)
+            if method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None:
+                value = mask_record["evaluation"]
+                rec["immediate"] = {"val": {"loss": value["val"], "ppl": value["ppl"],
+                                             "tokens": value["tokens"], "eval_s": value["eval_s"]}}
+                rec["immediate_reused_from"] = str(args.initial_mask_record)
+            else:
+                rec["immediate"] = evaluate(sweep)
             rec["validation_trace"].append({"step": step, **rec["immediate"]})
             train_seconds = 0.0
             chunk = recovery[(cycle - 1) * args.recovery:cycle * args.recovery]
