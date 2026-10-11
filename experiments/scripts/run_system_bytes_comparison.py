@@ -115,14 +115,20 @@ def assign(values: torch.Tensor, sorted_centers: torch.Tensor) -> torch.Tensor:
     return torch.bucketize(values.float().contiguous(), midpoints.contiguous())
 
 
-def excp_quant(tensor: torch.Tensor, seed: int) -> dict:
-    """ExCP upstream quant(): 4-bit codes of non-zeros, 0 reserved, fp16 codebook."""
+def excp_quant(tensor: torch.Tensor, seed: int, bits: int = EXCP_BITS) -> dict:
+    """Nonzero K-means codes with zero reserved; 4-bit packing or 8-bit indices."""
+    if bits not in (4, 8):
+        raise ValueError("ExCP quantization supports 4 or 8 bits")
     flat = tensor.flatten().float()
     nonzero = flat != 0
     nnz = int(nonzero.sum().item())
-    if nnz <= 2**EXCP_BITS - 1:
+    if nnz <= 2**bits - 1:
         return {"raw": tensor.detach().float().cpu()}
-    centers = kmeans_1d(flat[nonzero], 2**EXCP_BITS - 1, seed)
+    centers = kmeans_1d(flat[nonzero], 2**bits - 1, seed)
+    if bits == 8:
+        codes = torch.zeros(flat.numel(), dtype=torch.uint8, device=flat.device)
+        codes[nonzero] = (assign(flat[nonzero], centers) + 1).to(torch.uint8)
+        return {"codes": codes.cpu(), "codebook": centers.half().cpu(), "numel": flat.numel()}
     codes = torch.zeros(flat.numel() + flat.numel() % 2, dtype=torch.uint8, device=flat.device)
     codes[: flat.numel()][nonzero] = (assign(flat[nonzero], centers) + 1).to(torch.uint8)
     packed = codes[0::2] * 16 + codes[1::2]
@@ -132,8 +138,11 @@ def excp_quant(tensor: torch.Tensor, seed: int) -> dict:
 def excp_dequant(payload: dict, shape: torch.Size, device: str) -> torch.Tensor:
     if "raw" in payload:
         return payload["raw"].to(device).view(shape)
-    packed = payload["packed"].to(device)
-    codes = torch.stack([packed // 16, packed % 16], dim=1).flatten()[: payload["numel"]]
+    if "codes" in payload:
+        codes = payload["codes"].to(device)
+    else:
+        packed = payload["packed"].to(device)
+        codes = torch.stack([packed // 16, packed % 16], dim=1).flatten()[: payload["numel"]]
     table = torch.cat([torch.zeros(1, device=device), payload["codebook"].to(device).float()])
     return table[codes.long()].view(shape)
 
