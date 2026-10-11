@@ -224,7 +224,7 @@ def main() -> None:
     (out / "base_chains_rows.tex").write_text(tex_rows(nc, recs, sps), encoding="utf-8")
 
     S.setup()
-    fig, axes = plt.subplots(2, len(sps), figsize=(S.DOUBLE_W, 4.7), squeeze=False, sharex=True)
+    fig, axes = plt.subplots(2, len(sps), figsize=(S.DOUBLE_W, 4.35), squeeze=False, sharex=True)
     restore_steps = [c["step"] for c in nc["cycles"]]
     for j, sp in enumerate(sps):
         top, bot = axes[0][j], axes[1][j]
@@ -244,7 +244,7 @@ def main() -> None:
                 ax.axvline(s, color="0.8", lw=0.5, ls=":", zorder=0)
         zero_line(bot)
         top.set_title(f"$P={sp:g}$ ({1 / (1 - sp):.0f}$\\times$): validation endpoints")
-        bot.set_title("Per-update training difference; trailing 10-step mean")
+        bot.set_title("Training gap: raw and ten-step mean")
         bot.set_xlabel("Training step")
         if j == 0:
             top.set_ylabel("Validation loss (nats)")
