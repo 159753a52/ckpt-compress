@@ -106,7 +106,7 @@ def main():
     records, paths = load(args.root)
     nc = records["no_compression"]
     S.setup()
-    fig, axes = plt.subplots(2, 2, figsize=(S.DOUBLE_W, 4.9))
+    fig, axes = plt.subplots(2, 2, figsize=(S.DOUBLE_W, 4.35))
     val, gap, train, aligned = axes.flat
     for method in ORDER:
         r = records[method]
