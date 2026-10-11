@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-6)
     ap.add_argument("--methods", default="no_compression,excp_style,inshrinkerator_style,dacp,first_order_ucb,iterative_ucb_disjoint")
     ap.add_argument("--initial-mask-record", type=Path)
+    ap.add_argument("--initial-archive-record", type=Path)
     ap.add_argument("--plan-only", action="store_true")
     args = ap.parse_args()
     methods = args.methods.split(",")
@@ -78,6 +79,18 @@ def main():
         if info["checkpoint_sha256"] != protocol["checkpoint_sha256"] or info["sparsity"] != args.sparsity or info["seed"] != args.seed:
             raise RuntimeError("initial mask does not match the checkpoint, sparsity or seed")
         protocol["initial_mask_record_sha256"] = sha256_file(args.initial_mask_record)
+    archive_record = None
+    if args.initial_archive_record is not None:
+        if methods != ["iterative_ucb_disjoint"] or args.cycles != 1 or mask_record is None:
+            ap.error("archive continuation requires one staged cycle and its cached mask")
+        archive_record = json.loads(args.initial_archive_record.read_text())
+        if archive_record["identity"]["checkpoint_sha256"] != protocol["checkpoint_sha256"] or archive_record["sparsity"] != args.sparsity or not archive_record["passed_gate"]:
+            raise RuntimeError("archive does not match the calibrated operating point")
+        archive_path = args.initial_archive_record.parent / archive_record["archive"]["file"]
+        if sha256_file(archive_path) != archive_record["archive"]["sha256"]:
+            raise RuntimeError("archive hash differs")
+        protocol["initial_archive_record_sha256"] = sha256_file(args.initial_archive_record)
+        protocol["initial_archive_sha256"] = archive_record["archive"]["sha256"]
     todo = []
     for method in methods:
         path = args.out_dir / f"{method}_p{args.sparsity}_seed{args.seed}.json"
@@ -174,7 +187,34 @@ def main():
                 rec["score_total_s"] = time.perf_counter() - t0
                 rec["restore"] = restore(sweep, keep)
                 del keep
-            if method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None:
+            if archive_record is not None:
+                import io
+                import zlib
+                from transformers import GPTNeoXForCausalLM
+                from run_system_bytes_comparison import excp_dequant
+                payload = torch.load(io.BytesIO(zlib.decompress(archive_path.read_bytes())), map_location="cpu", weights_only=True)
+                base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
+                base = dict(base_model.named_parameters())
+                params = dict(sweep.model.named_parameters())
+                decoded = {"param_groups": payload["optimizer_metadata"]["param_groups"], "state": {}}
+                with torch.no_grad():
+                    for index, name in enumerate(payload["parameter_names"]):
+                        shape = base[name].shape
+                        params[name].copy_(base[name].to("cuda:0") + excp_dequant(payload["model"][name], shape, "cuda:0").float())
+                        moments = {key: (payload[key][name].float() if payload["codec"] == "fp16_lossless_moments"
+                                         else excp_dequant(payload[key][name], shape, "cpu")) for key in ("exp_avg", "exp_avg_sq")}
+                        decoded["state"][index] = {**payload["optimizer_metadata"]["state"][index], **moments}
+                sweep.model.load_state_dict({**sweep.model.state_dict(), **payload["buffers"]}, strict=True)
+                opt.load_state_dict(decoded)
+                for group in opt.param_groups:
+                    group["lr"] = args.lr
+                value = archive_record["validation"]
+                rec["immediate"] = {"val": {"loss": value["loss"], "ppl": value["perplexity"],
+                                             "tokens": value["tokens"], "eval_s": value["seconds"]}}
+                rec["immediate_reused_from"] = str(args.initial_archive_record)
+                rec["decoded_archive"] = archive_record["archive"]
+                del payload, decoded, base, base_model
+            elif method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None:
                 value = mask_record["evaluation"]
                 rec["immediate"] = {"val": {"loss": value["val"], "ppl": value["ppl"],
                                              "tokens": value["tokens"], "eval_s": value["eval_s"]}}
