@@ -55,6 +55,9 @@ def main():
     lines += [r"\bottomrule", r"\end{tabular}", r"}",
               r"\caption{Pythia-410M/Alpaca, 98\% residual sparsity on a V100: mean $\pm$ s.d. over three scoring seeds. All rows use the same 16 scoring batches and 16 backward passes; staged rows partition them into four disjoint groups. Loss changes are in $10^{-3}$ nats. Time includes scoring, partial-state restoration, and selection, excluding final evaluation and setup.}",
               r"\label{tab:v100-fixed-budget}", r"\end{table}"]
+    caption = lines.pop(-3)
+    label = lines.pop(-2)
+    lines[1:1] = [caption, label]
     args.out_dir.mkdir(parents=True, exist_ok=True)
     (args.out_dir / "v100_fixed_budget_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert all(line.endswith(r"\\") for line in lines if " & " in line)
