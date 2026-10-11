@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--methods", default="no_compression,iterative_ucb_disjoint,excp_style")
     ap.add_argument("--tasks", default="hellaswag,arc_easy,piqa")
     ap.add_argument("--examples", type=int, default=256)
+    ap.add_argument("--task-data", type=Path)
     args = ap.parse_args()
     import torch
     import lm_eval
@@ -47,7 +48,24 @@ def main():
         ap.error("invalid methods or example count")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     manager = TaskManager()
-    task_dict = get_task_dict(tasks, manager)
+    if args.task_data is None:
+        task_dict = get_task_dict(tasks, manager)
+    else:
+        from lm_eval.tasks._yaml_loader import load_yaml
+        from lm_eval.api.task import ConfigurableTask
+        local_data = json.loads(args.task_data.read_text())
+        definitions = {"hellaswag": "hellaswag/hellaswag.yaml", "arc_easy": "arc/arc_easy.yaml", "piqa": "piqa/piqa.yaml"}
+        task_dict = {}
+        for task in tasks:
+            entry = local_data[task]
+            data_path = args.task_data.parent / entry["file"]
+            if sha256_file(data_path) != entry["sha256"]:
+                raise RuntimeError("local benchmark file hash differs")
+            cfg = load_yaml(Path(lm_eval.__file__).parent / "tasks" / definitions[task])
+            cfg.pop("tag", None)
+            cfg.update(dataset_path="parquet", dataset_name=None, training_split=None,
+                       dataset_kwargs={"data_files": {entry["split"]: str(data_path)}})
+            task_dict[task] = ConfigurableTask(config=cfg)
     subsets = {}
     for task in tasks:
         obj = task_dict[task]
@@ -63,6 +81,8 @@ def main():
                 "checkpoint_sha256": sha256_file(args.checkpoint),
                 "base_files": {p.name: sha256_file(p) for p in sorted(args.model_root.glob("*")) if p.is_file()}}
     protocol = json.loads(json.dumps(protocol, default=handle_non_serializable))
+    if args.task_data is not None:
+        protocol["local_dataset_provenance"] = local_data
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     write_json(args.out_dir / "run-manifest.json", {"protocol": protocol, "code_commit": commit,
                                                    "gpu": torch.cuda.get_device_name(0)})
@@ -116,7 +136,7 @@ def main():
         lm = HFLM(pretrained=model, tokenizer=tokenizer, device="cuda:0", batch_size=8)
         for task in missing:
             began = time.perf_counter()
-            result = lm_eval.simple_evaluate(model=lm, tasks=[task], task_manager=manager, num_fewshot=0,
+            result = lm_eval.simple_evaluate(model=lm, tasks=[task_dict[task]], task_manager=manager, num_fewshot=0,
                                              samples={task: subsets[task]["indices"]}, log_samples=True,
                                              random_seed=42, numpy_random_seed=42, torch_random_seed=42,
                                              fewshot_random_seed=42, bootstrap_iters=0)

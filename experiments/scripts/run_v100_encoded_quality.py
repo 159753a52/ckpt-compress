@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--mask-record", type=Path, required=True)
     ap.add_argument("--calibration-manifest", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--moment-codebook-fp32", action="store_true")
+    ap.add_argument("--reuse-weight-dir", type=Path)
     args = ap.parse_args()
     import torch
     from transformers import GPTNeoXForCausalLM
@@ -52,6 +54,7 @@ def main():
         "magnitude_sparsities": [0.7, 0.5],
         "reference_scope": "pretrained base supplied separately; not in archive bytes",
         "state_scope": "all model parameters and buffers, both Adam moments, steps and param_groups",
+        "moment_codebook_dtype": "float32" if args.moment_codebook_fp32 else "float16",
     }
     source = args.data_root / "models/pythia-410m"
     identity["base_files"] = {p.name: sha256_file(p) for p in sorted(source.glob("*")) if p.is_file()}
@@ -129,8 +132,9 @@ def main():
                             payload["model"][n] = excp_quant(residual, 42 * 100003 + 3 * i, bits)
                             moment = m[n].to("cuda:0")
                             joint = (moment.abs() > 2 * moment.abs().mean()) & (residual != 0)
-                            payload["exp_avg"][n] = excp_quant(moment * joint, 42 * 100003 + 3 * i + 1)
-                            payload["exp_avg_sq"][n] = excp_quant(v[n].to("cuda:0") * joint, 42 * 100003 + 3 * i + 2)
+                            dtype = torch.float32 if args.moment_codebook_fp32 else torch.float16
+                            payload["exp_avg"][n] = excp_quant(moment * joint, 42 * 100003 + 3 * i + 1, codebook_dtype=dtype)
+                            payload["exp_avg_sq"][n] = excp_quant(v[n].to("cuda:0") * joint, 42 * 100003 + 3 * i + 2, codebook_dtype=dtype)
                         del residual
                     stream = io.BytesIO()
                     torch.save(payload, stream)
@@ -162,10 +166,27 @@ def main():
                     model.load_state_dict({**model.state_dict(), **payload["buffers"]}, strict=True)
                     torch.cuda.synchronize()
                     decode_s = time.perf_counter() - began
-                    gate_result = evaluate_lm(model, gate, "cuda:0")
+                    reuse = None
+                    if args.reuse_weight_dir is not None:
+                        old_path = args.reuse_weight_dir / record_path.name
+                        if old_path.exists():
+                            old = json.loads(old_path.read_text())
+                            old_archive = args.reuse_weight_dir / old["archive"]["file"]
+                            if old["identity"]["checkpoint_sha256"] != identity["checkpoint_sha256"] or sha256_file(old_archive) != old["archive"]["sha256"]:
+                                raise RuntimeError("reused weight evaluation input differs")
+                            prior = torch.load(io.BytesIO(zlib.decompress(old_archive.read_bytes())), weights_only=True, map_location="cpu")
+                            if payload["model"].keys() != prior["model"].keys():
+                                raise RuntimeError("reused weight payload names differ")
+                            for n, encoded_weight in payload["model"].items():
+                                if encoded_weight.keys() != prior["model"][n].keys() or any(not (torch.equal(value, prior["model"][n][key]) if torch.is_tensor(value) else value == prior["model"][n][key]) for key, value in encoded_weight.items()):
+                                    raise RuntimeError("reused weight payload differs")
+                            reuse = {"file": str(old_path), "sha256": sha256_file(old_path),
+                                     "verification": "all encoded weight payload values are identical"}
+                            del prior
+                    gate_result = old["gate"] if reuse is not None else evaluate_lm(model, gate, "cuda:0")
                     delta = gate_result["loss"] - calibration["baseline_gate"]["loss"]
                     passed = math.isfinite(delta) and delta <= math.log1p(0.01)
-                    validation = evaluate_lm(model, heldout, "cuda:0") if passed else None
+                    validation = (old["validation"] if reuse is not None else evaluate_lm(model, heldout, "cuda:0")) if passed else None
                     rec = {"status": "completed", "identity": identity, "code_commit": commit,
                            "method": method, "sparsity": sparsity, "codec": mode, "seed": 42,
                            "quantization": {"weight_bits": 4 if mode == "kmeans4_joint" else 8 if mode == "kmeans8_joint" else 16,
@@ -176,6 +197,7 @@ def main():
                            "baseline_validation_reused": mask_info["baseline"],
                            "gate": gate_result, "gate_relative_ppl_change": math.expm1(delta), "passed_gate": passed,
                            "validation": validation,
+                           "weight_quality_reused": reuse,
                            "validation_relative_ppl_change": math.expm1(validation["loss"] - mask_info["baseline"]["val"]) if validation else None,
                            "archive": {"file": archive_path.name, "bytes": archive_path.stat().st_size,
                                        "sha256": sha256_file(archive_path), "torch_serialized_bytes": serialized_bytes,

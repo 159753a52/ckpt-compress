@@ -115,7 +115,7 @@ def assign(values: torch.Tensor, sorted_centers: torch.Tensor) -> torch.Tensor:
     return torch.bucketize(values.float().contiguous(), midpoints.contiguous())
 
 
-def excp_quant(tensor: torch.Tensor, seed: int, bits: int = EXCP_BITS) -> dict:
+def excp_quant(tensor: torch.Tensor, seed: int, bits: int = EXCP_BITS, codebook_dtype=torch.float16) -> dict:
     """Nonzero K-means codes with zero reserved; 4-bit packing or 8-bit indices."""
     if bits not in (4, 8):
         raise ValueError("ExCP quantization supports 4 or 8 bits")
@@ -128,11 +128,11 @@ def excp_quant(tensor: torch.Tensor, seed: int, bits: int = EXCP_BITS) -> dict:
     if bits == 8:
         codes = torch.zeros(flat.numel(), dtype=torch.uint8, device=flat.device)
         codes[nonzero] = (assign(flat[nonzero], centers) + 1).to(torch.uint8)
-        return {"codes": codes.cpu(), "codebook": centers.half().cpu(), "numel": flat.numel()}
+        return {"codes": codes.cpu(), "codebook": centers.to(codebook_dtype).cpu(), "numel": flat.numel()}
     codes = torch.zeros(flat.numel() + flat.numel() % 2, dtype=torch.uint8, device=flat.device)
     codes[: flat.numel()][nonzero] = (assign(flat[nonzero], centers) + 1).to(torch.uint8)
     packed = codes[0::2] * 16 + codes[1::2]
-    return {"packed": packed.cpu(), "codebook": centers.half().cpu(), "numel": flat.numel()}
+    return {"packed": packed.cpu(), "codebook": centers.to(codebook_dtype).cpu(), "numel": flat.numel()}
 
 
 def excp_dequant(payload: dict, shape: torch.Size, device: str) -> torch.Tensor:
