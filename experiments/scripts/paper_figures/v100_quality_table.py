@@ -59,7 +59,7 @@ def generate(encoded, downstream, out):
                      f"{ppl:.4f} & {100 * row['validation_relative_ppl_change']:+.3f}" + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}", r"\end{table*}"]
     out.mkdir(parents=True, exist_ok=True)
-    (out / "v100_encoded_quality_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (out / "v100_encoded_quality_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     accuracy = {}
     if downstream is not None:
         lines = [r"\begin{table}[!tp]", r"\centering\small",
@@ -87,7 +87,7 @@ def generate(encoded, downstream, out):
             delta = avg - accuracy["no_compression"]["average_percent"]
             lines.append(label + " & " + " & ".join(f"{v:.2f}" for v in values + [avg, delta]) + r" \\")
         lines += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
-        (out / "v100_downstream_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        (out / "v100_downstream_table.tex").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     outputs = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in out.glob("v100_*quality_table.tex")}
     if downstream is not None:
         p = out / "v100_downstream_table.tex"
