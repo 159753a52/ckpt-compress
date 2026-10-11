@@ -17,7 +17,8 @@ FIGS = PAPER / "paper" / "figs" / "gen"
 PROVENANCE = ["cross_model_rows", "cross_model_rows_extra", "tolerance_rows",
               "tolerance_rows_extra", "f1_base_chains_32b", "v100_fixed_budget",
               "e2_pythia_ablation", "f2_small_chains", "staged_system_curve",
-              "a2_taylor_fidelity_32b", "b3_scoring_cost_32b", "v100_dense_recovery", "v100_low_damage_recovery"]
+              "a2_taylor_fidelity_32b", "b3_scoring_cost_32b", "v100_dense_recovery", "v100_low_damage_recovery",
+              "v100_quality", "v100_encoded_recovery"]
 
 
 def sha256(path):
@@ -61,6 +62,7 @@ def main():
     import v100_confirmation_table
     import base_chains_fig
     import v100_dense_recovery_fig
+    import v100_quality_table
 
     dense, _ = v100_dense_recovery_fig.load(REPO / "results/v100_dense_recovery_20261011")
     dense_checks = v100_dense_recovery_fig.summarize(dense)
@@ -84,9 +86,12 @@ def main():
                         str(REPO / "results" / "v100_staged_confirmation_20261010"),
                         "--out-dir", str(generated)]
             v100_confirmation_table.main()
+            v100_quality_table.generate(REPO / "results/v100_retained_moments_bf16_20261011",
+                                       REPO / "results/v100_downstream_subset_20261011", generated)
         nc, records, _ = base_chains_fig.load(REPO / "results" / "probe_coverage_32b" / "run1" / "base_chains")
         (generated / "base_chains_rows.tex").write_text(base_chains_fig.tex_rows(nc, records, [0.95, 0.98]), encoding="utf-8")
-        manuscript = (PAPER / "paper" / "EMNLP_26_front.tex").read_text(encoding="utf-8")
+        manuscript = "\n".join((PAPER / "paper" / name).read_text(encoding="utf-8")
+                               for name in ("EMNLP_26_front.tex", "DACP_supplement.tex"))
         for path in sorted(generated.glob("*.tex")):
             matches = path.read_text(encoding="utf-8") == (FIGS / path.name).read_text(encoding="utf-8")
             included = (manuscript.count("\\input{figs/gen/" + path.stem + "}")
