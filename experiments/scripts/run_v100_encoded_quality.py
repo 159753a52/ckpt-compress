@@ -177,11 +177,16 @@ def main():
                             prior = torch.load(io.BytesIO(zlib.decompress(old_archive.read_bytes())), weights_only=True, map_location="cpu")
                             if payload["model"].keys() != prior["model"].keys():
                                 raise RuntimeError("reused weight payload names differ")
+                            same_weights = True
                             for n, encoded_weight in payload["model"].items():
                                 if encoded_weight.keys() != prior["model"][n].keys() or any(not (torch.equal(value, prior["model"][n][key]) if torch.is_tensor(value) else value == prior["model"][n][key]) for key, value in encoded_weight.items()):
-                                    raise RuntimeError("reused weight payload differs")
-                            reuse = {"file": str(old_path), "sha256": sha256_file(old_path),
-                                     "verification": "all encoded weight payload values are identical"}
+                                    same_weights = False
+                                    break
+                            if same_weights:
+                                reuse = {"file": str(old_path), "sha256": sha256_file(old_path),
+                                         "verification": "all encoded weight payload values are identical"}
+                            else:
+                                print("NEW_WEIGHT_EVALUATION sampled quantizer payload differs from prior archive", flush=True)
                             del prior
                     gate_result = old["gate"] if reuse is not None else evaluate_lm(model, gate, "cuda:0")
                     delta = gate_result["loss"] - calibration["baseline_gate"]["loss"]
