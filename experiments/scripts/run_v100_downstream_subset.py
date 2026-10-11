@@ -65,6 +65,8 @@ def main():
             cfg.pop("tag", None)
             cfg.update(dataset_path="parquet", dataset_name=None, training_split=None,
                        dataset_kwargs={"data_files": {entry["split"]: str(data_path)}})
+            if entry["split"] == "test":
+                cfg["validation_split"] = None
             task_dict[task] = ConfigurableTask(config=cfg)
     subsets = {}
     for task in tasks:
