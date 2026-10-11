@@ -1,0 +1,63 @@
+{
+  "backward_budget": 16,
+  "checkpoint_path": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+  "dataset": "alpaca",
+  "delta_loss": 0.42903976637104657,
+  "evaluation": {
+    "cumulative_s": 4.59,
+    "eval_s": 2.47,
+    "gradient_passes": 1,
+    "ppl": 8.280283342698102,
+    "select_s": 0.074,
+    "stages": 1,
+    "tokens": 14353,
+    "val": 2.113877187944294
+  },
+  "evaluation_sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44",
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "batches_per_stage": 16,
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "kappa": 1.0,
+    "scoring_sha256": "c01b0122b54b42cb46b5748f65f00993516cff569c11485feacbb814546cd607",
+    "script_sha256": "9b445b548880720a6faca5fea0faca94a985e6a40f46bf79b56a5a8081468d4f",
+    "seed": 42,
+    "sparsity": 0.98,
+    "stages": 1
+  },
+  "model": "pythia-410m",
+  "peak_allocated_gib": 8.33933401107788,
+  "purpose": "new V100 fixed-budget cost and kappa confirmation",
+  "reference": "pretrained_base",
+  "score_seconds": 2.02,
+  "selection_seconds": 0.074,
+  "source_provenance": {
+    "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "checkpoint_step": 1000,
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/root/ckpt-compress/code/checkpoint_compress/data/models/pythia-410m"
+    }
+  },
+  "stage_records": [
+    {
+      "score_loss_at_partial_point": 1.7694175988435745,
+      "score_s": 2.02,
+      "select_s": 0.074,
+      "sparsity": 0.98,
+      "stage": 1,
+      "val": 2.113877187944294
+    }
+  ],
+  "stage_scoring_policy": "disjoint consecutive groups from the same 16-batch pool",
+  "status": "completed",
+  "torch": "2.5.1+cu124",
+  "uncompressed": {
+    "eval_s": 2.9,
+    "ppl": 5.391574307422667,
+    "tokens": 14353,
+    "val": 1.6848374215732473
+  },
+  "unique_scoring_batches": 16
+}

@@ -1,0 +1,84 @@
+{
+  "backward_budget": 16,
+  "checkpoint_path": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+  "dataset": "alpaca",
+  "delta_loss": 0.34090280755425173,
+  "evaluation": {
+    "cumulative_s": 6.0,
+    "eval_s": 2.47,
+    "gradient_passes": 4,
+    "ppl": 7.5817210787674085,
+    "select_s": 0.252,
+    "stages": 4,
+    "tokens": 14353,
+    "val": 2.025740229127499
+  },
+  "evaluation_sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44",
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "batches_per_stage": 4,
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "kappa": 0.0,
+    "scoring_sha256": "e54c551a0e970b7d367ef22cd08c644459811d24a49ad180df5652f257ae435d",
+    "script_sha256": "9b445b548880720a6faca5fea0faca94a985e6a40f46bf79b56a5a8081468d4f",
+    "seed": 43,
+    "sparsity": 0.98,
+    "stages": 4
+  },
+  "model": "pythia-410m",
+  "peak_allocated_gib": 8.299294471740723,
+  "purpose": "new V100 fixed-budget cost and kappa confirmation",
+  "reference": "pretrained_base",
+  "score_seconds": 2.66,
+  "selection_seconds": 0.735,
+  "source_provenance": {
+    "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "checkpoint_step": 1000,
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/root/ckpt-compress/code/checkpoint_compress/data/models/pythia-410m"
+    }
+  },
+  "stage_records": [
+    {
+      "score_loss_at_partial_point": 1.8045140504837036,
+      "score_s": 0.79,
+      "select_s": 0.065,
+      "sparsity": 0.6239396906913606,
+      "stage": 1
+    },
+    {
+      "score_loss_at_partial_point": 1.7458205819129944,
+      "score_s": 0.63,
+      "select_s": 0.184,
+      "sparsity": 0.8585786437626904,
+      "stage": 2
+    },
+    {
+      "score_loss_at_partial_point": 1.9489226639270782,
+      "score_s": 0.62,
+      "select_s": 0.234,
+      "sparsity": 0.9468170410305501,
+      "stage": 3
+    },
+    {
+      "score_loss_at_partial_point": 2.2898995876312256,
+      "score_s": 0.62,
+      "select_s": 0.252,
+      "sparsity": 0.98,
+      "stage": 4,
+      "val": 2.025740229127499
+    }
+  ],
+  "stage_scoring_policy": "disjoint consecutive groups from the same 16-batch pool",
+  "status": "completed",
+  "torch": "2.5.1+cu124",
+  "uncompressed": {
+    "eval_s": 2.59,
+    "ppl": 5.391574307422667,
+    "tokens": 14353,
+    "val": 1.6848374215732473
+  },
+  "unique_scoring_batches": 16
+}

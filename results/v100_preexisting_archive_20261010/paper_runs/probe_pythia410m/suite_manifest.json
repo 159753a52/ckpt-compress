@@ -1,0 +1,114 @@
+{
+  "completed_jobs": {
+    "pythia_410m_alpaca_p1p0000000000000p-1_k1": {
+      "path": "pythia_410m_alpaca_p1p0000000000000p-1_k1.json",
+      "sha256": "389e351c6e971b8eb022f333024196a99f614e77df3d96c3e4991ac5e3b2aa11"
+    }
+  },
+  "data_identities": {
+    "pythia_410m_alpaca": {
+      "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+      "checkpoint_step": 1000,
+      "evaluation_batches": {
+        "count": 100,
+        "sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44"
+      },
+      "training_pool": {
+        "count": 108,
+        "sha256": "cf70dc6f089426155d592d52fd107d1f74d91506b55144adae8605baaed658f6"
+      }
+    }
+  },
+  "finished_at": "2026-08-22T15:59:01.090524+00:00",
+  "plan": {
+    "jobs": [
+      {
+        "batch_size": 2,
+        "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+        "checkpoint_step": 1000,
+        "data_dir": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/data",
+        "dataset": "alpaca",
+        "eval_batches": 100,
+        "hvp_batches": 8,
+        "learning_rate": 5e-05,
+        "max_layer_ratio": 0.95,
+        "metric": "perplexity",
+        "model": "pythia-410m",
+        "model_family": "pythia",
+        "name": "pythia_410m_alpaca",
+        "prune_ratio": 0.5,
+        "prune_ratios": [
+          0.5
+        ],
+        "recovery_count": 1,
+        "recovery_counts": [
+          1
+        ],
+        "recovery_protocol": {
+          "learning_rate": 5e-05,
+          "learning_rate_source": "manifest",
+          "optimizer_state": "restored_from_checkpoint",
+          "scheduler": {
+            "eta_min": 0.0,
+            "name": "cosine_annealing",
+            "scope": "matched_recovery_horizon",
+            "state": "fresh",
+            "t_max": 100
+          }
+        },
+        "seeds": [
+          42
+        ],
+        "seq_length": 128,
+        "task_type": "lm",
+        "total_steps": 100,
+        "train_pool_batches": 108
+      }
+    ],
+    "methods": [
+      {
+        "description": "Training trajectory without lossy checkpoint restoration.",
+        "fidelity": "native",
+        "internal_method": "no_compression",
+        "name": "no_compression",
+        "owner": "control"
+      },
+      {
+        "description": "Residual-magnitude scoring with exact global top-k selection under the same residual sparsity and recovery protocol; excludes ExCP optimizer compression and quantization.",
+        "fidelity": "style",
+        "internal_method": "residual_magnitude_exact_global",
+        "name": "excp_style",
+        "owner": "excp"
+      },
+      {
+        "description": "Full-weight first-order sensitivity |g*theta| with exact global top-k selection, transferred to the same residual sparsity and recovery protocol; excludes the full partition, search, and encoding pipeline.",
+        "fidelity": "style",
+        "internal_method": "first_order_exact_global",
+        "name": "inshrinkerator_style",
+        "owner": "inshrinkerator"
+      },
+      {
+        "description": "Taylor damage scoring with Weibull moment allocation.",
+        "fidelity": "native",
+        "internal_method": "taylor_weibull_mom",
+        "name": "dacp",
+        "owner": "dacp"
+      }
+    ]
+  },
+  "planned_jobs": [
+    "pythia_410m_alpaca_p1p0000000000000p-1_k1"
+  ],
+  "provenance": {
+    "dirty_source_paths": [],
+    "git_commit": "49d0129c902cd6f47e300032571bd2f652fdd62a",
+    "git_dirty": false,
+    "manifest": "/root/ckpt-compress-sync-20260822/code/checkpoint_compress/experiments/configs/paper_experiments.yaml",
+    "manifest_sha256": "97442587827da13341c17b727bab5d019a70c6be8b1eb9cbe6d7169892150299",
+    "source_file_count": 206,
+    "source_state_sha256": "9474a850c40b3ffa2df72c879d210ac05f354a3554d7950a7260764f6aa306c4"
+  },
+  "schema_version": 5,
+  "started_at": "2026-08-22T15:55:41.034704+00:00",
+  "status": "complete"
+}
