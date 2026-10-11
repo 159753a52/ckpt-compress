@@ -12,6 +12,7 @@ import importlib.metadata
 import io
 import json
 import random
+import re
 import subprocess
 import sys
 import time
@@ -21,6 +22,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+def semantic_identity(identity):
+    value = json.loads(json.dumps(identity))
+    value["protocol"].pop("script_sha256", None)
+    return re.sub(r"<function ([^ ]+) at 0x[0-9a-fA-F]+>", r"<function \1>", json.dumps(value, sort_keys=True))
 
 
 def main():
@@ -86,8 +93,6 @@ def main():
     if args.task_data is not None:
         protocol["local_dataset_provenance"] = local_data
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    write_json(args.out_dir / "run-manifest.json", {"protocol": protocol, "code_commit": commit,
-                                                   "gpu": torch.cuda.get_device_name(0)})
     selected = json.loads((args.encoded_dir / "completed.json").read_text())["selected"] if any(m != "no_compression" for m in methods) else {}
     todo = []
     for method in methods:
@@ -108,7 +113,10 @@ def main():
             path = args.out_dir / f"{method}_{task}.json"
             if path.exists():
                 old = json.loads(path.read_text())
-                if old["identity"] != identity or old["status"] != "completed":
+                frozen_source = subprocess.check_output(["git", "show", old["code_commit"] + ":experiments/scripts/run_v100_downstream_subset.py"], cwd=ROOT)
+                if hashlib.sha256(frozen_source).hexdigest() != old["identity"]["protocol"]["script_sha256"]:
+                    raise RuntimeError("frozen evaluation source hash differs")
+                if semantic_identity(old["identity"]) != semantic_identity(identity) or old["status"] != "completed":
                     raise RuntimeError("downstream result identity conflict")
                 print("SKIP " + str(path), flush=True)
             else:
@@ -117,6 +125,8 @@ def main():
             todo.append((method, archive, identity, missing))
     if not todo:
         return
+    write_json(args.out_dir / "run-manifest.json", {"protocol": protocol, "code_commit": commit,
+                                                   "gpu": torch.cuda.get_device_name(0)})
     model = GPTNeoXForCausalLM.from_pretrained(args.model_root, dtype=torch.float32, local_files_only=True)
     base = {n: p.detach().cpu().clone() for n, p in model.named_parameters()}
     tokenizer = AutoTokenizer.from_pretrained(args.model_root, local_files_only=True)
