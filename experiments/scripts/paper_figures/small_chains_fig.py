@@ -126,14 +126,16 @@ def main() -> None:
                 ax.plot(xs, mu, **S.line_kw(m))
                 ax.fill_between(xs, [a - b for a, b in zip(mu, sd)], [a + b for a, b in zip(mu, sd)],
                                 color=S.style_of(m).color, alpha=0.15, lw=0)
-            zero_line(ax)
             if ph == "immediate":
                 ys = [s[0] - s[1] for m in ORDER if (m, sp, ph) in table for s in table[(m, sp, ph)]]
                 if min(ys) > 0:
                     ax.set_yscale("log")
                 else:
                     ax.set_yscale("symlog", linthresh=10)
+                    zero_line(ax)
                 ax.set_title(f"$P={sp:g}$ ({1 / (1 - sp):.0f}$\\times$ residual compression)")
+            else:
+                zero_line(ax)
             if j == 0:
                 ax.set_ylabel("Restored" if ph == "immediate" else "After 50 steps")
             if i == 1:
