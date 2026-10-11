@@ -1,0 +1,207 @@
+{
+  "code_commit": "42f87e0adc5167205658c58054b7ff32d560509d",
+  "current_cycle": {
+    "cycle": 1,
+    "immediate": {
+      "val": {
+        "eval_s": 2.47,
+        "loss": 1.6906071393604287,
+        "ppl": 5.422772084242174,
+        "tokens": 14353
+      }
+    },
+    "restore": {
+      "kept": 90596967,
+      "kept_per_layer": [
+        3557763,
+        2922057,
+        3043343,
+        3009684,
+        2791073,
+        2918102,
+        2718087,
+        2772127,
+        3123440,
+        3474238,
+        3684360,
+        4265697,
+        4279765,
+        4188581,
+        4265944,
+        4353361,
+        4288724,
+        4173767,
+        3393764,
+        3780408,
+        3796602,
+        4372140,
+        4956414,
+        6467526
+      ],
+      "kept_residual_l2": 2.3352063354641084,
+      "kept_residual_l2_fraction": 0.8732809119903784
+    },
+    "score": {
+      "schedule": [
+        0.7
+      ],
+      "scoring_batches": 16,
+      "stages": [
+        {
+          "score_loss_at_partial_point": 1.7694175988435745,
+          "score_s": 2.07,
+          "select_s": 0.073,
+          "sparsity": 0.7,
+          "stage": 1
+        }
+      ]
+    },
+    "score_total_s": 2.2010750850004115,
+    "step": 1000,
+    "train_log": [
+      {
+        "loss": 1.3672027587890625,
+        "step": 1001
+      },
+      {
+        "loss": 1.490143597126007,
+        "step": 1002
+      },
+      {
+        "loss": 1.603387475013733,
+        "step": 1003
+      },
+      {
+        "loss": 1.9333463311195374,
+        "step": 1004
+      },
+      {
+        "loss": 1.6572594046592712,
+        "step": 1005
+      },
+      {
+        "loss": 2.1629379987716675,
+        "step": 1006
+      },
+      {
+        "loss": 1.471778690814972,
+        "step": 1007
+      },
+      {
+        "loss": 2.113432288169861,
+        "step": 1008
+      },
+      {
+        "loss": 1.7302537560462952,
+        "step": 1009
+      },
+      {
+        "loss": 1.8499324321746826,
+        "step": 1010
+      }
+    ],
+    "validation_trace": [
+      {
+        "step": 1000,
+        "val": {
+          "eval_s": 2.47,
+          "loss": 1.6906071393604287,
+          "ppl": 5.422772084242174,
+          "tokens": 14353
+        }
+      },
+      {
+        "step": 1010,
+        "val": {
+          "eval_s": 2.5,
+          "loss": 1.6917881423119907,
+          "ppl": 5.429180177322917,
+          "tokens": 14353
+        }
+      }
+    ]
+  },
+  "cycles": [],
+  "dataset": "alpaca",
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "evaluation_sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44",
+    "recovery": {
+      "batch_size": 4,
+      "chunk_sha256": [
+        "53b684147232237c425850279c6288338639edbed4ef8ea0fbab3df23a4cec57",
+        "d6587886b77197341de028541058da7974ef949d2941dca976ce85a473bc8dd1",
+        "cb1084d638a6229172435cf0eba7a3f8a198e9944b869fb89ae9a0c701d1295b"
+      ],
+      "count": 300,
+      "pool_alignment_verified": true,
+      "seq_length": 512,
+      "skipped_batches": 70
+    },
+    "scoring_sha256": "c01b0122b54b42cb46b5748f65f00993516cff569c11485feacbb814546cd607",
+    "training_pool_sha256": "99c1501e065521861835592fdea093991284decb729bd8f932e5200f3382ac5d"
+  },
+  "method": "first_order_ucb",
+  "model": "pythia-410m",
+  "protocol": {
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "config": {
+      "amp": false,
+      "cycles": 3,
+      "eval_batches": 100,
+      "eval_every": 10,
+      "gradient_baseline_batches": 8,
+      "lr": 2e-06,
+      "micro_batch_size": 2,
+      "recovery": 100,
+      "scoring_pool_batches": 16,
+      "seed": 42,
+      "sparsity": 0.7,
+      "staged_groups": "four disjoint groups of four",
+      "train_batch_size": 4,
+      "train_seq_length": 512
+    },
+    "initial_mask_record_sha256": "73212c0805d15f0e4d36901c5f497d8d8c4fb78adbf8729b55d579761193a7b6",
+    "input_files": {
+      "alpaca/alpaca_data.json": "2eddafc6b977608d778aaab8dfc7e50e547b3af9826dfb9e909d9fc362e4a419",
+      "models/pythia-410m/.gitattributes": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+      "models/pythia-410m/README.md": "d7d60ae94cb0882f19381632532a01d39247fe6f932016c39768b1f67c9f2bf9",
+      "models/pythia-410m/config.json": "d4c11e84a59c8af4d88446bba53b718f7aef740daa070ded08fd6a9a3aca4fc6",
+      "models/pythia-410m/model.safetensors": "3e09001631bb18ec8a6f4522f8e6ab26a53099e69228f9822adc91bfbe27511b",
+      "models/pythia-410m/pytorch_model.bin": "786bd9bcde112a970e1614807cbb23999482de65fc05c3e0795198719b5e1543",
+      "models/pythia-410m/special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+      "models/pythia-410m/tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+      "models/pythia-410m/tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+    },
+    "sources": {
+      "experiments/scripts/run_base_chains_small.py": "7a51b5f350bf852aeb04e8459cce3ac71dd89814fb4afd4d850bed11d7659c70",
+      "experiments/scripts/run_residual_ablation_small.py": "7597c579e5f649d98aa1ce623a71746dbe097a1e41f0f623ed137acae9fe923b",
+      "experiments/scripts/run_residual_sweep_small.py": "a375fb93bbb9b95e30b36300e02760b832eb62bfac48ffb64fea4362911d2833",
+      "experiments/scripts/run_v100_dense_recovery.py": "a7356086ce062063f07ccf6b3bdd494480b8a6b70209f0c6f1dda63cad52d492"
+    }
+  },
+  "purpose": "new dense V100 recovery measurements",
+  "reference": "base",
+  "seed": 42,
+  "source_provenance": {
+    "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "checkpoint_step": 1000,
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/root/ckpt-compress/code/checkpoint_compress/data/models/pythia-410m"
+    }
+  },
+  "sparsity": 0.7,
+  "start_step": 1000,
+  "status": "running",
+  "torch": "2.5.1+cu124",
+  "uncompressed": {
+    "val": {
+      "eval_s": 2.47,
+      "loss": 1.6848374215732473,
+      "ppl": 5.391574307422667,
+      "tokens": 14353
+    }
+  }
+}
