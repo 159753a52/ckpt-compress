@@ -1,0 +1,105 @@
+{
+  "archive": {
+    "byte_compression": 3.7973013680254244,
+    "bytes": 1281011280,
+    "file": "iterative_ucb_disjoint_p0.7_bf16mom.zlib",
+    "original_checkpoint_bytes": 4864385886,
+    "sha256": "c7eabf7237d55278cb1574dcfcc4a770631e3f02628856db1775911e73f38174",
+    "torch_serialized_bytes": 1824427926
+  },
+  "baseline_gate_reused": {
+    "batches": 64,
+    "loss": 1.7429862131124987,
+    "perplexity": 5.714382332553243,
+    "seconds": 1.5744974760000332,
+    "tokens": 9824
+  },
+  "baseline_validation_reused": {
+    "eval_s": 2.6,
+    "ppl": 5.391574307422667,
+    "tokens": 14353,
+    "val": 1.6848374215732473
+  },
+  "code_commit": "b6af2bffff276fd2060b21ba05845a95ed3ca30b",
+  "codec": "retained_moments_bf16",
+  "decoded_optimizer_states": 292,
+  "eligible_kept": 90596967,
+  "gate": {
+    "batches": 64,
+    "loss": 1.7500485892404563,
+    "perplexity": 5.754882294572057,
+    "seconds": 1.6384542590001274,
+    "tokens": 9824
+  },
+  "gate_relative_ppl_change": 0.007087373518585959,
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "base_files": {
+      ".gitattributes": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+      "README.md": "d7d60ae94cb0882f19381632532a01d39247fe6f932016c39768b1f67c9f2bf9",
+      "config.json": "d4c11e84a59c8af4d88446bba53b718f7aef740daa070ded08fd6a9a3aca4fc6",
+      "model.safetensors": "3e09001631bb18ec8a6f4522f8e6ab26a53099e69228f9822adc91bfbe27511b",
+      "pytorch_model.bin": "786bd9bcde112a970e1614807cbb23999482de65fc05c3e0795198719b5e1543",
+      "special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+      "tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+      "tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+    },
+    "calibration_sha256": "cd46eb52f5775895b6dfefd013a62ae368d5bd88db5237fdec18e8a4d39bef05",
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "codec_grid": [
+      "kmeans4_joint",
+      "kmeans8_joint",
+      "fp16_lossless_moments"
+    ],
+    "gate_ppl_tolerance": 0.01,
+    "magnitude_sparsities": [
+      0.7,
+      0.5
+    ],
+    "mask_record_sha256": "73212c0805d15f0e4d36901c5f497d8d8c4fb78adbf8729b55d579761193a7b6",
+    "mask_sha256": "7bca8b6c1fd11fde305c8d6b186d7619e349e1c4bee85a29d700adbc72537d1e",
+    "moment_codebook_dtype": "float32",
+    "moment_storage": "all Adam entries retained in bfloat16",
+    "reference_scope": "pretrained base supplied separately; not in archive bytes",
+    "seed": 42,
+    "sources": {
+      "run_system_bytes_comparison.py": "281c1add8a97a219d76e4726e9db43c4ee801f6a85e203595e9b0828ab6c6a11",
+      "run_v100_encoded_quality.py": "c96007628bf532e36ef58dc3d54e09a7c40bc00b11db3ebc01461ff3625a2f50"
+    },
+    "state_scope": "all model parameters and buffers, both Adam moments, steps and param_groups",
+    "transform_source_sha256": "c8da3fb3dcfe097b290b4f58701f8c9575071fe803deef2462b2e866750e5f26"
+  },
+  "method": "iterative_ucb_disjoint",
+  "passed_gate": true,
+  "peak_allocated_gib": 2.568220615386963,
+  "quantization": {
+    "joint_moment_beta": null,
+    "moment_bits": 16,
+    "weight_bits": 4
+  },
+  "seed": 42,
+  "sparsity": 0.7,
+  "status": "completed",
+  "timing": {
+    "encode_and_write_s": 148.43319802199994,
+    "read_and_decode_s": 15.409970329000316,
+    "scope": "CPU moment conversion/serialization/write and full CPU tensor read/decode; encoded weights reused",
+    "selection_reused": true,
+    "selection_s": 3.3249999999999997
+  },
+  "torch": "2.5.1+cu124",
+  "validation": {
+    "batches": 100,
+    "loss": 1.6919751286564793,
+    "perplexity": 5.430195454796397,
+    "seconds": 2.4605585289998544,
+    "tokens": 14353
+  },
+  "validation_relative_ppl_change": 0.007163241230035556,
+  "weight_payload_reused_from_archive_sha256": "a641ffb1a9b4176c4bd45c1a7064fab5e28e255320c3539f56142a824468fa63",
+  "weight_quality_reused": {
+    "file": "/root/dacp-v100-stable-20261011/results/v100_encoded_quality_fp32mom_20261011/iterative_ucb_disjoint_p0.7_kmeans4_joint.json",
+    "sha256": "bb15fc84a291acb537c709cad344fb1e9c7a6e3985dd88197de8dcb6412edf01",
+    "verification": "weight payload copied without modification"
+  }
+}
