@@ -56,9 +56,11 @@ def main():
     s, pool = ctx["sweep"], ctx["pool"]
     plan = partition_repeated_seed_batches(pool, 100, 1, 16, 42)
     scoring = plan.scoring_batches[0][:args.batches]
-    excluded = set(plan.selected_pool_indices[100:116])
+    offset = len(plan.training_segments[0])
+    excluded = set(plan.selected_pool_indices[offset:offset + 16])
     gate_indices = [i for i in range(len(pool)) if i not in excluded][:64]
     gate = [pool[i] for i in gate_indices]
+    assert not excluded.intersection(gate_indices)
     identity.update(scoring_sha256=batch_hash(scoring), gate_sha256=batch_hash(gate),
                     heldout_sha256=batch_hash(ctx["eval_batches"]))
     checkpoint = load_training_checkpoint(args.checkpoint)
