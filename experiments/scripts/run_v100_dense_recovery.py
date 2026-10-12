@@ -81,8 +81,8 @@ def main():
         protocol["initial_mask_record_sha256"] = sha256_file(args.initial_mask_record)
     archive_record = None
     if args.initial_archive_record is not None:
-        if methods != ["iterative_ucb_disjoint"] or args.cycles != 1 or mask_record is None:
-            ap.error("archive continuation requires one staged cycle and its cached mask")
+        if len(methods) != 1 or methods[0] not in {"iterative_ucb_disjoint", "excp_style"} or args.cycles != 1:
+            ap.error("archive continuation requires one selector and one cycle")
         archive_record = json.loads(args.initial_archive_record.read_text())
         if archive_record["identity"]["checkpoint_sha256"] != protocol["checkpoint_sha256"] or archive_record["sparsity"] != args.sparsity or not archive_record["passed_gate"]:
             raise RuntimeError("archive does not match the calibrated operating point")
@@ -158,7 +158,11 @@ def main():
             if method != "no_compression":
                 t0 = time.perf_counter()
                 reuse_initial = method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None
-                if reuse_initial:
+                if archive_record is not None:
+                    rec["score"] = {"reused_from": str(args.initial_archive_record),
+                                    "backward_budget": archive_record.get("backward_budget"),
+                                    "note": "decoded archive contains the selected weights; no scoring repeated"}
+                elif reuse_initial:
                     mask_path = args.initial_mask_record.parent / mask_record["mask"]["file"]
                     if sha256_file(mask_path) != mask_record["mask"]["sha256"]:
                         raise RuntimeError("initial mask artifact hash differs")
