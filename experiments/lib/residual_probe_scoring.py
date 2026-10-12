@@ -123,6 +123,8 @@ def compute_probe_gn_scores(
     block_parameter_names: Sequence[Sequence[str]] | None = None,
     signs_fn: SignsFn | None = None,
     return_components: bool = False,
+    report_rounds: Sequence[int] = (),
+    on_prefix: Callable | None = None,
 ) -> Tuple[TensorDict | Dict[str, TensorDict], Dict[str, object]]:
     """Score residual coordinates with a coverage-tracked Gauss--Newton probe.
 
@@ -142,6 +144,8 @@ def compute_probe_gn_scores(
         raise ValueError(f"seed must be a non-negative integer, got {seed!r}")
     if not batches:
         raise ValueError("batches must contain at least one scoring batch")
+    if any(r < 1 or r > rounds for r in report_rounds):
+        raise ValueError("reported prefixes must lie within the probe run")
 
     named_params = dict(model.named_parameters())
     structural_blocks = _structural_blocks_for_scoring(
@@ -322,6 +326,12 @@ def compute_probe_gn_scores(
                 record["head_mean_mass"] = float(head.mean().item())
                 record["head_p05_mass"] = _lower_quantile(head, 0.05)
             per_round.append(record)
+            if on_prefix is not None and round_index + 1 in report_rounds:
+                prefix_scores = {name: (-g * d + 0.5 * d * u).abs().cpu()
+                                 for name, g, d, u in zip(eligible_names, gradient, probes, curvature)}
+                on_prefix(round_index + 1, prefix_scores,
+                          {name: u for name, u in zip(eligible_names, curvature)}, dict(record))
+                del prefix_scores
 
         t5 = time.perf_counter()
         scores: TensorDict = {}
