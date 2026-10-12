@@ -20,6 +20,7 @@ def main():
     ap.add_argument("--selected", type=Path, required=True)
     ap.add_argument("--legacy-archive", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--weight-bits", choices=(4, 8), type=int, default=4)
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime
@@ -55,11 +56,16 @@ def main():
         raise RuntimeError("selected mask hash differs")
     keep = torch.load(mask_path, map_location="cpu", weights_only=True)
     payload = torch.load(io.BytesIO(zlib.decompress(source.read_bytes())), map_location="cpu", weights_only=True)
+    from transformers import GPTNeoXForCausalLM
+    base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
+    base = dict(base_model.named_parameters())
+    params = dict(s.model.named_parameters())
     started = time.perf_counter()
     for index, name in enumerate(payload["parameter_names"]):
-        if name in keep:
-            residual = s.delta[name].to("cuda:0") * keep[name].to("cuda:0")
-            payload["model"][name] = excp_quant(residual, 42 * 100003 + 3 * index, 4)
+        if name in keep or args.weight_bits == 8:
+            residual = (s.delta[name].to("cuda:0") * keep[name].to("cuda:0") if name in keep
+                        else params[name].detach() - base[name].to("cuda:0"))
+            payload["model"][name] = excp_quant(residual, 42 * 100003 + 3 * index, args.weight_bits)
     payload["identity"] = {"checkpoint_sha256": sha256_file(args.checkpoint), "selection_sha256": sha256_file(args.selected)}
     stream = io.BytesIO()
     torch.save(payload, stream)
@@ -69,10 +75,6 @@ def main():
     # Reopen the saved bytes; quality measurements use decoded weights.
     del payload, stream
     payload = torch.load(io.BytesIO(zlib.decompress(archive.read_bytes())), map_location="cpu", weights_only=True)
-    from transformers import GPTNeoXForCausalLM
-    base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
-    base = dict(base_model.named_parameters())
-    params = dict(s.model.named_parameters())
     with torch.no_grad():
         for name, encoded in payload["model"].items():
             params[name].copy_(base[name].to("cuda:0") + excp_dequant(encoded, base[name].shape, "cuda:0").float())
@@ -88,7 +90,7 @@ def main():
               "byte_compression": args.checkpoint.stat().st_size / archive.stat().st_size,
               "gate": calibration, "gate_ppl_change_percent": 100 * math.expm1(delta), "passed_gate": delta <= math.log1p(.01),
               "validation": validation, "validation_ppl_change_percent": 100 * math.expm1(validation["loss"] - ctx["uncompressed"]["val"]),
-              "quantization": {"weight_bits": 4, "moment_bits": 16, "moment_dtype": "bfloat16", "all_moments_retained": True},
+              "quantization": {"weight_bits": args.weight_bits, "moment_bits": 16, "moment_dtype": "bfloat16", "all_moments_retained": True},
               "optimizer_payload_reused": {"source": str(args.legacy_archive), "sha256": old["archive"]["sha256"]},
               "encode_seconds": encode_seconds, "baseline_validation": ctx["uncompressed"]}
     write_json(record_path, record)

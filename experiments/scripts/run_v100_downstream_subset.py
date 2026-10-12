@@ -40,6 +40,7 @@ def main():
     ap.add_argument("--tasks", default="hellaswag,arc_easy,piqa")
     ap.add_argument("--examples", type=int, default=256)
     ap.add_argument("--task-data", type=Path)
+    ap.add_argument("--subset", choices=("main", "calibration"), default="main")
     args = ap.parse_args()
     import torch
     import lm_eval
@@ -79,7 +80,13 @@ def main():
     for task in tasks:
         obj = task_dict[task]
         count = len(obj.eval_docs)
-        indices = sorted(random.Random(42).sample(range(count), min(args.examples, count)))
+        if args.subset == "calibration":
+            main_indices = set(random.Random(42).sample(range(count), min(256, count)))
+            candidates = [i for i in range(count) if i not in main_indices]
+            indices = sorted(random.Random(42).sample(candidates, min(args.examples, len(candidates))))
+            assert not main_indices.intersection(indices)
+        else:
+            indices = sorted(random.Random(42).sample(range(count), min(args.examples, count)))
         docs = [(i, obj.eval_docs[i]) for i in indices]
         digest = hashlib.sha256(json.dumps(docs, sort_keys=True, default=handle_non_serializable).encode()).hexdigest()
         subsets[task] = {"indices": indices, "documents_sha256": digest, "split_size": count,
@@ -90,6 +97,8 @@ def main():
                 "checkpoint_sha256": sha256_file(args.checkpoint),
                 "base_files": {p.name: sha256_file(p) for p in sorted(args.model_root.glob("*")) if p.is_file()}}
     protocol = json.loads(json.dumps(protocol, default=handle_non_serializable))
+    if args.subset == "calibration":
+        protocol["subset"] = "calibration; disjoint from the existing 256-example main subset"
     if args.task_data is not None:
         protocol["local_dataset_provenance"] = local_data
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
