@@ -38,6 +38,8 @@ def main():
     s = ctx["sweep"]
     plan = partition_repeated_seed_batches(ctx["pool"], 100, 1, 16, 42)
     scoring = plan.scoring_batches[0][:4]
+    tokens = [int((batch["labels"][:, 1:] != -100).sum()) for batch in scoring]
+    batch_weights = [count / sum(tokens) for count in tokens]
     selected = json.loads(args.selected.read_text())
     legacy = json.loads(args.legacy_mask_record.read_text())
     masks = {}
@@ -59,6 +61,7 @@ def main():
                 "scoring_sha256": batch_hash(scoring), "heldout_sha256": batch_hash(ctx["eval_batches"]),
                 "script_sha256": sha256_file(Path(__file__)), "seed": 42, "scoring_batches": 4,
                 "orthogonal_library_sha256": sha256_file(ROOT / "experiments/lib/residual_orthogonal_probes.py")}
+    identity["batch_weights"] = batch_weights
     manifest = {"identity": identity, "code_commit": commit, "baseline": baseline,
                 "gpu": torch.cuda.get_device_name(0), "masks": {}, "prefixes": [1, 2, 4, 8, 16, 32],
                 "definition": "g^T e + 0.5 * mean_j (w_j^T e)^2; e is the actual omitted residual",
@@ -66,7 +69,7 @@ def main():
     for tag, keep in masks.items():
         started = time.perf_counter()
         e = {n: -s.delta[n] * (~keep[n]) for n in s.names}
-        exact = exact_gn_product(s.model, scoring, s.names, e, s.device)
+        exact = exact_gn_product(s.model, scoring, s.names, e, s.device, batch_weights=batch_weights)
         q = .5 * sum(float((e[n].to(s.device).double() * exact[n].double()).sum()) for n in s.names)
         del exact
         s.apply(keep)
@@ -109,7 +112,7 @@ def main():
         prefixes.append(record)
         print("PREFIX " + str(count) + " mean_abs_error=" + str(sum(v["prediction_absolute_error"] for v in record["masks"].values())/len(masks)), flush=True)
     set_seed(42)
-    score, meta = orthogonal_scores(s.model, scoring, s.names, s.delta, s.device, 32, on_direction=direction)
+    score, meta = orthogonal_scores(s.model, scoring, s.names, s.delta, s.device, 32, on_direction=direction, batch_weights=batch_weights)
     del score
     write_json(args.out_dir / "completed.json", {"status": "completed", "identity": identity,
                "code_commit": commit, "probe": meta, "raw_quadratic_samples": cumulative,

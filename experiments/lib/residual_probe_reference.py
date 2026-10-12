@@ -4,13 +4,17 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 from experiments.lib.residual_probe_scoring import valid_shifted_logits
 
 
-def exact_gn_product(model, batches, names, delta, device):
+def exact_gn_product(model, batches, names, delta, device, batch_weights=None):
+    import math
+    batch_weights = [1 / len(batches)] * len(batches) if batch_weights is None else list(batch_weights)
+    if len(batch_weights) != len(batches) or min(batch_weights) <= 0 or not math.isclose(sum(batch_weights), 1., rel_tol=1e-6):
+        raise ValueError("batch weights must be positive and sum to one")
     params = dict(model.named_parameters())
     variables = [params[n] for n in names]
     probes = [delta[n].to(device) for n in names]
     out = [torch.zeros_like(d) for d in probes]
     model.eval()
-    for batch in batches:
+    for batch, batch_weight in zip(batches, batch_weights):
         with sdpa_kernel(SDPBackend.MATH):
             logits, _ = valid_shifted_logits(model, batch, device)
             dummy = torch.zeros_like(logits, requires_grad=True)
@@ -18,7 +22,7 @@ def exact_gn_product(model, batches, names, delta, device):
             contraction = sum((g * d).sum() for g, d in zip(pullback, probes))
             tangent = torch.autograd.grad(contraction, dummy, retain_graph=True)[0].detach()
             p = logits.detach().softmax(-1)
-            cotangent = p * (tangent - (p * tangent).sum(-1, keepdim=True)) / (len(batches) * logits.shape[0])
+            cotangent = p * (tangent - (p * tangent).sum(-1, keepdim=True)) * (batch_weight / logits.shape[0])
             values = torch.autograd.grad(logits, variables, cotangent)
         for target, value in zip(out, values):
             target.add_(value.detach())
