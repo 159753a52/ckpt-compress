@@ -108,9 +108,14 @@ def self_check():
     d = {"weight": torch.tensor([[.1, -.2], [.3, .4], [-.5, .6]])}
     truth = exact_gn_product(model, [batch], ["weight"], d, "cpu")
     captured = []
+    quadratic = []
+    def capture_direction(count, values, gradient, metadata):
+        quadratic.append(.5 * float((values["weight"] * d["weight"]).sum()) ** 2)
     orthogonal_scores(model, [batch], ["weight"], d, "cpu", 8, report_rounds=(8,),
-                      on_prefix=lambda m, scores, u, meta: captured.append(u["weight"].clone()))
+                      on_prefix=lambda m, scores, u, meta: captured.append(u["weight"].clone()),
+                      on_direction=capture_direction)
     assert torch.allclose(captured[0], truth["weight"], atol=1e-6, rtol=1e-5)
+    assert math.isclose(sum(quadratic) / 8, .5 * float((truth["weight"] * d["weight"]).sum()), rel_tol=1e-5, abs_tol=1e-6)
     print("Hadamard columns are orthogonal; complete basis recovers exact GN")
 
 

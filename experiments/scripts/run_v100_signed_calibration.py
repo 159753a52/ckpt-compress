@@ -65,6 +65,20 @@ def main():
     scale_score = sum(float(x.abs().double().sum()) for x in mean) / total
     scale_residual = sum(float(s.delta[n].double().square().sum()) for n in s.names) / total
     candidates = []
+    def make_scores(config):
+        signed, penalty, damping = config
+        scores = {}
+        for i, n in enumerate(s.names):
+            d = s.delta[n].to(s.device)
+            if damping == "magnitude":
+                value = d.square()
+            else:
+                value = mean[i] if signed else mean[i].abs()
+                value = value + penalty * (m2[i] / 63).clamp_min(0).sqrt() / 8
+                value = value + damping * scale_score / max(scale_residual, 1e-30) * d.square()
+            scores[n] = value
+        minimum = min(float(x.min()) for x in scores.values())
+        return {n: x - min(minimum, 0.) for n, x in scores.items()}
     # Magnitude is an explicit calibration candidate; it is never relabelled as a new improvement.
     configs = [(signed, penalty, damping) for signed in (False, True)
                for penalty in (0., 2.) for damping in (0., 1., 4.)]
@@ -74,33 +88,16 @@ def main():
         path = args.out_dir / (tag + ".json")
         if path.exists():
             rec = json.loads(path.read_text())
-            if rec["identity"] != identity:
+            if {k: v for k, v in rec["identity"].items() if k != "script_sha256"} != {k: v for k, v in identity.items() if k != "script_sha256"}:
                 raise RuntimeError("existing candidate identity differs")
         else:
-            scores = {}
-            for i, n in enumerate(s.names):
-                d = s.delta[n].to(s.device)
-                if damping == "magnitude":
-                    value = d.square()
-                else:
-                    value = mean[i] if signed else mean[i].abs()
-                    value = value + penalty * (m2[i] / 63).clamp_min(0).sqrt() / 8
-                    value = value + damping * scale_score / max(scale_residual, 1e-30) * d.square()
-                scores[n] = value
-            minimum = min(float(x.min()) for x in scores.values())
-            if minimum < 0:
-                scores = {n: x - minimum for n, x in scores.items()}
+            scores = make_scores((signed, penalty, damping))
             points = {}
             for p, keep, _ in global_keep_masks(scores, s.names, targets, s.device):
                 s.apply(keep)
                 value = evaluate_lm(s.model, gate, s.device)
-                stream = io.BytesIO()
-                torch.save({n: x.cpu() for n, x in keep.items()}, stream)
-                mask = args.out_dir / f"{tag}_p{p}-mask.pt.zlib"
-                mask.write_bytes(zlib.compress(stream.getvalue(), 6))
                 points[str(p)] = {"gate": value, "gate_ppl_change_percent":
-                    100 * math.expm1(value["loss"] - prior["baseline_gate"]["loss"]),
-                    "mask": {"file": mask.name, "sha256": sha256_file(mask)}}
+                    100 * math.expm1(value["loss"] - prior["baseline_gate"]["loss"])}
                 print(f"CAL {args.regime} {tag} P={p} change={points[str(p)]['gate_ppl_change_percent']:.4f}", flush=True)
             s.apply(None)
             rec = {"status": "completed", "identity": identity, "config": [signed, penalty, damping],
@@ -118,11 +115,18 @@ def main():
     tag, selected = max(candidates, key=key)
     folder = args.previous if tag.startswith("previous_") else args.out_dir
     points = {}
-    for p, point in selected["points"].items():
-        mask = folder / point["mask"]["file"]
-        if sha256_file(mask) != point["mask"]["sha256"]:
-            raise RuntimeError("selected mask hash differs")
-        keep = torch.load(io.BytesIO(zlib.decompress(mask.read_bytes())), map_location="cpu", weights_only=True)
+    if tag.startswith("previous_"):
+        def selected_masks():
+            for p, point in selected["points"].items():
+                mask = folder / point["mask"]["file"]
+                if sha256_file(mask) != point["mask"]["sha256"]:
+                    raise RuntimeError("selected mask hash differs")
+                yield p, torch.load(io.BytesIO(zlib.decompress(mask.read_bytes())), map_location="cpu", weights_only=True)
+        masks = selected_masks()
+    else:
+        scores = make_scores(selected["config"])
+        masks = ((str(p), keep) for p, keep, _ in global_keep_masks(scores, s.names, targets, s.device))
+    for p, keep in masks:
         s.apply(keep)
         value = s.evaluate()
         points[p] = {"evaluation": value, "ppl_change_percent":
