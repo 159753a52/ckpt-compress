@@ -21,7 +21,8 @@ def hadamard_signs(indices, frequency):
 
 
 def orthogonal_scores(model, batches, names, delta, device, rounds, seed=42,
-                      report_rounds=(), on_prefix=None, on_direction=None, batch_weights=None):
+                      report_rounds=(), on_prefix=None, on_direction=None, batch_weights=None,
+                      on_batch_direction=None):
     batch_weights = [1 / len(batches)] * len(batches) if batch_weights is None else list(batch_weights)
     if len(batch_weights) != len(batches) or min(batch_weights) <= 0 or not math.isclose(sum(batch_weights), 1., rel_tol=1e-6):
         raise ValueError("batch weights must be positive and sum to one")
@@ -53,7 +54,7 @@ def orthogonal_scores(model, batches, names, delta, device, rounds, seed=42,
     for index, frequency in enumerate(frequencies):
         direction = [torch.zeros_like(x) for x in probes]
         offset = 0
-        for batch, size, batch_weight in zip(batches, sizes, batch_weights):
+        for batch_index, (batch, size, batch_weight) in enumerate(zip(batches, sizes, batch_weights)):
             with sdpa_kernel(SDPBackend.MATH):
                 logits, _ = valid_shifted_logits(model, batch, device)
                 logp = logits.log_softmax(-1)
@@ -63,6 +64,8 @@ def orthogonal_scores(model, batches, names, delta, device, rounds, seed=42,
                 weights = logp.detach().exp().sqrt() * signs.reshape(logits.shape) * math.sqrt(batch_weight / positions)
                 scalar = -(weights * logp).sum()
                 values = torch.autograd.grad(scalar, variables)
+            if on_batch_direction is not None:
+                on_batch_direction(index + 1, batch_index, dict(zip(names, values)))
             for target, value in zip(direction, values):
                 target.add_(value.detach())
             offset += size
@@ -122,9 +125,12 @@ def self_check():
     second = {"input_ids": torch.tensor([[1, 0, 1]]), "labels": torch.tensor([[1, 2, -100]])}
     weighted = exact_gn_product(model, [batch, second], ["weight"], d, "cpu", batch_weights=[.25, .75])
     captured.clear()
+    separated = []
     orthogonal_scores(model, [batch, second], ["weight"], d, "cpu", 16, batch_weights=[.25, .75],
-                      report_rounds=(16,), on_prefix=lambda m, scores, u, meta: captured.append(u["weight"].clone()))
+                      report_rounds=(16,), on_prefix=lambda m, scores, u, meta: captured.append(u["weight"].clone()),
+                      on_batch_direction=lambda m, b, values: separated.append(.5 * float((values["weight"] * d["weight"]).sum()) ** 2))
     assert torch.allclose(captured[0], weighted["weight"], atol=1e-6, rtol=1e-5)
+    assert math.isclose(sum(separated)/16, .5*float((weighted["weight"]*d["weight"]).sum()), abs_tol=1e-6, rel_tol=1e-5)
     print("Hadamard columns are orthogonal; complete basis recovers exact GN")
 
 

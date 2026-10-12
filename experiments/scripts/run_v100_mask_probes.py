@@ -22,6 +22,8 @@ def main():
     ap.add_argument("--selected", type=Path, required=True)
     ap.add_argument("--legacy-mask-record", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--rounds", type=int, default=32)
+    ap.add_argument("--reference", type=Path, help="reuse exact GN and measured fixed-mask losses with matching inputs")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -65,10 +67,16 @@ def main():
                 "orthogonal_library_sha256": sha256_file(ROOT / "experiments/lib/residual_orthogonal_probes.py")}
     identity["batch_weights"] = batch_weights
     manifest = {"identity": identity, "code_commit": commit, "baseline": baseline,
-                "gpu": torch.cuda.get_device_name(0), "masks": {}, "prefixes": [1, 2, 4, 8, 16, 32],
+                "gpu": torch.cuda.get_device_name(0), "masks": {}, "prefixes": [m for m in [1, 2, 4, 8, 16, 32, 64, 128] if m <= args.rounds],
                 "definition": "g^T e + 0.5 * mean_j (w_j^T e)^2; e is the actual omitted residual",
                 "selection": "fixed masks, no heldout selection"}
     for tag, keep in masks.items():
+        if args.reference is not None:
+            old = json.loads(args.reference.read_text())
+            if any(old["identity"][key] != identity[key] for key in ["checkpoint_sha256", "scoring_sha256", "heldout_sha256", "batch_weights"]):
+                raise RuntimeError("offline reference input differs")
+            manifest["masks"][tag] = old["masks"][tag]
+            continue
         started = time.perf_counter()
         e = {n: -s.delta[n] * (~keep[n]) for n in s.names}
         exact = exact_gn_product(s.model, scoring, s.names, e, s.device, batch_weights=batch_weights)
@@ -84,17 +92,27 @@ def main():
         print(f"EXACT {tag} Q={q:.8g} actual={actual['loss']-baseline['loss']:.8g}", flush=True)
     write_json(args.out_dir / "run-manifest.json", manifest)
     cumulative = {tag: [] for tag in masks}
+    batch_separated = {tag: [] for tag in masks}
+    batch_projections = {tag: [] for tag in masks}
+    cache = {tag: {n: (-s.delta[n] * (~keep[n])).to(s.device) for n in s.names} for tag, keep in masks.items()}
+    def batch_direction(count, batch_index, values):
+        for tag in masks:
+            projection = sum(float((values[n].double()*cache[tag][n].double()).sum()) for n in s.names)
+            if batch_index == 0:
+                batch_projections[tag].append([])
+            batch_projections[tag][-1].append(projection)
     linear = {}
     prefixes = []
     def direction(count, values, gradient, meta):
         for tag, keep in masks.items():
             projection, first = 0., 0.
             for n in s.names:
-                e = (-s.delta[n] * (~keep[n])).to(s.device)
+                e = cache[tag][n]
                 projection += float((values[n].double() * e.double()).sum())
                 if count == 1:
                     first += float((gradient[n].double() * e.double()).sum())
             cumulative[tag].append(.5 * projection**2)
+            batch_separated[tag].append(.5 * sum(x*x for x in batch_projections[tag][-1]))
             if count == 1:
                 linear[tag] = first
         if count not in manifest["prefixes"]:
@@ -104,20 +122,25 @@ def main():
             q = sum(samples) / len(samples)
             truth = manifest["masks"][tag]
             prediction = linear[tag] + q
+            separated = linear[tag] + sum(batch_separated[tag])/count
             record["masks"][tag] = {"linear": linear[tag], "quadratic_estimate": q,
                "quadratic_relative_error": abs(q - truth["exact_directional_quadratic"]) / max(abs(truth["exact_directional_quadratic"]), 1e-30),
                "predicted_delta_loss": prediction, "actual_delta_loss": truth["actual_delta_loss"],
                "prediction_absolute_error": abs(prediction - truth["actual_delta_loss"]),
+               "batch_separated_predicted_delta_loss": separated,
+               "batch_separated_prediction_absolute_error": abs(separated - truth["actual_delta_loss"]),
                "first_order_absolute_error": abs(linear[tag] - truth["actual_delta_loss"]),
                "exact_gn_prediction_absolute_error": abs(linear[tag] + truth["exact_directional_quadratic"] - truth["actual_delta_loss"])}
         write_json(args.out_dir / f"mask_m{count}_seed42.json", {"identity": identity, "code_commit": commit, **record})
         prefixes.append(record)
         print("PREFIX " + str(count) + " mean_abs_error=" + str(sum(v["prediction_absolute_error"] for v in record["masks"].values())/len(masks)), flush=True)
     set_seed(42)
-    score, meta = orthogonal_scores(s.model, scoring, s.names, s.delta, s.device, 32, on_direction=direction, batch_weights=batch_weights)
+    score, meta = orthogonal_scores(s.model, scoring, s.names, s.delta, s.device, args.rounds, on_direction=direction,
+                    batch_weights=batch_weights, on_batch_direction=batch_direction)
     del score
     write_json(args.out_dir / "completed.json", {"status": "completed", "identity": identity,
                "code_commit": commit, "probe": meta, "raw_quadratic_samples": cumulative,
+               "batch_separated_quadratic_samples": batch_separated, "batch_projections": batch_projections,
                "diagnostic_scope": "scalar mask damage; not an accuracy gain or a true-loss guarantee"})
 
 
