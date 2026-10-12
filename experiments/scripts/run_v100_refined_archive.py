@@ -37,6 +37,9 @@ def main():
     record_path = args.out_dir / f"{args.method}_p0.7_bf16mom.json"
     if record_path.exists():
         record = json.loads(record_path.read_text())
+        quant = record["quantization"]
+        if quant["weight_bits"] != args.weight_bits or quant.get("dense_weight_bits") != args.dense_weight_bits or quant.get("lossless_vectors", False) != args.lossless_vectors:
+            raise RuntimeError("existing archive encoding configuration differs")
         if record["selection_sha256"] != sha256_file(args.selected) or sha256_file(args.out_dir / record["archive"]["file"]) != record["archive"]["sha256"]:
             raise RuntimeError("existing refined archive differs")
         print("SKIP refined archive", flush=True)
@@ -85,7 +88,12 @@ def main():
             stream = io.BytesIO()
             torch.save(state, stream)
             args.shared_state.write_bytes(zlib.compress(stream.getvalue(), 6))
+            write_json(args.shared_state.with_suffix(".identity.json"),
+                       {"checkpoint_sha256": sha256_file(args.checkpoint), "source_archive_sha256": old["archive"]["sha256"]})
             del stream, state
+        shared_identity = json.loads(args.shared_state.with_suffix(".identity.json").read_text())
+        if shared_identity != {"checkpoint_sha256": sha256_file(args.checkpoint), "source_archive_sha256": old["archive"]["sha256"]}:
+            raise RuntimeError("shared optimizer state source differs")
         shared = args.out_dir / "optimizer_state.zlib"
         if not shared.exists():
             os.link(args.shared_state, shared)

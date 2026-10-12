@@ -56,6 +56,20 @@ def self_check():
         assert torch.equal(decoded["model"]["w"]["raw"], torch.tensor([1.25, -2.5]))
         assert torch.equal(decoded["exp_avg"]["w"], moment)
         assert torch.equal(load_payload(base)["model"]["w"]["raw"], torch.tensor([1., -2.]))
+        state_file = root / "state.zlib"
+        weights_file = root / "weights.zlib"
+        for file, data in [(state_file, {"exp_avg": {"w": moment}}),
+                           (weights_file, {"model": {"w": {"raw": torch.tensor([1., -2.])}}})]:
+            stream = io.BytesIO()
+            torch.save(data, stream)
+            file.write_bytes(zlib.compress(stream.getvalue()))
+        manifest.write_text(json.dumps({"format": "checkpoint-components-v1",
+            "state": {"file": state_file.name, "sha256": sha256_file(state_file)},
+            "weights": {"file": weights_file.name, "sha256": sha256_file(weights_file)},
+            "gain": 1.25, "gain_parameter_names": ["w"]}))
+        decoded = load_payload(manifest)
+        assert torch.equal(decoded["model"]["w"]["raw"], torch.tensor([1.25, -2.5]))
+        assert torch.equal(decoded["exp_avg"]["w"], moment)
     print("Gain bundle scales weights once, preserves moments and leaves its base intact")
 
 
