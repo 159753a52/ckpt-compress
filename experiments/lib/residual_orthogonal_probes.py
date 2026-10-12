@@ -21,7 +21,7 @@ def hadamard_signs(indices, frequency):
 
 
 def orthogonal_scores(model, batches, names, delta, device, rounds, seed=42,
-                      report_rounds=(), on_prefix=None):
+                      report_rounds=(), on_prefix=None, on_direction=None):
     params = dict(model.named_parameters())
     variables = [params[n] for n in names]
     probes = [delta[n].to(device, torch.float32) for n in names]
@@ -74,6 +74,8 @@ def orthogonal_scores(model, batches, names, delta, device, rounds, seed=42,
                "expected_mse_factor": (dimension - count) / (count * (dimension - 1)),
                "probability_weighting": "all categories; sqrt(p) detached", "cumulative_seconds": time.perf_counter() - started}
         records.append(rec)
+        if on_direction is not None:
+            on_direction(count, dict(zip(names, direction)), dict(zip(names, gradient)), rec)
         if count in report_rounds and on_prefix is not None:
             mean = {n: u / count for n, u in zip(names, accumulated)}
             # The curvature term is d_i * (F d)_i.

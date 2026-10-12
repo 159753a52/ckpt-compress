@@ -1,0 +1,70 @@
+{
+  "code_commit": "4f73d46cfeab3807438e2ad74c07329c151c285f",
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "evaluation_sha256": "08547ea394549c3792f65d1a72642b7c97f15619094915e01f50cb21b3c44a44",
+    "recovery": {
+      "batch_size": 4,
+      "chunk_sha256": [
+        "53b684147232237c425850279c6288338639edbed4ef8ea0fbab3df23a4cec57"
+      ],
+      "count": 100,
+      "pool_alignment_verified": true,
+      "seq_length": 512,
+      "skipped_batches": 70
+    },
+    "scoring_sha256": "c01b0122b54b42cb46b5748f65f00993516cff569c11485feacbb814546cd607",
+    "training_pool_sha256": "99c1501e065521861835592fdea093991284decb729bd8f932e5200f3382ac5d"
+  },
+  "methods": [
+    "iterative_ucb_disjoint"
+  ],
+  "protocol": {
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "config": {
+      "amp": false,
+      "cycles": 1,
+      "eval_batches": 100,
+      "eval_every": 10,
+      "gradient_baseline_batches": 8,
+      "lr": 2e-06,
+      "micro_batch_size": 2,
+      "recovery": 100,
+      "scoring_pool_batches": 16,
+      "seed": 42,
+      "sparsity": 0.7,
+      "staged_groups": "decoded archive; no scoring repeated",
+      "train_batch_size": 4,
+      "train_seq_length": 512
+    },
+    "initial_archive_record_sha256": "be2427baec5ad30b867c5d66882f534bdcc6029d460858c7d5a2412ddd09377e",
+    "initial_archive_sha256": "36f59091fba8471c1afd5f0c855cf5ab5cc37625b005960c23be6dbeca976541",
+    "input_files": {
+      "alpaca/alpaca_data.json": "2eddafc6b977608d778aaab8dfc7e50e547b3af9826dfb9e909d9fc362e4a419",
+      "models/pythia-410m/.gitattributes": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+      "models/pythia-410m/README.md": "d7d60ae94cb0882f19381632532a01d39247fe6f932016c39768b1f67c9f2bf9",
+      "models/pythia-410m/config.json": "d4c11e84a59c8af4d88446bba53b718f7aef740daa070ded08fd6a9a3aca4fc6",
+      "models/pythia-410m/model.safetensors": "3e09001631bb18ec8a6f4522f8e6ab26a53099e69228f9822adc91bfbe27511b",
+      "models/pythia-410m/pytorch_model.bin": "786bd9bcde112a970e1614807cbb23999482de65fc05c3e0795198719b5e1543",
+      "models/pythia-410m/special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+      "models/pythia-410m/tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+      "models/pythia-410m/tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+    },
+    "sources": {
+      "experiments/scripts/run_base_chains_small.py": "7a51b5f350bf852aeb04e8459cce3ac71dd89814fb4afd4d850bed11d7659c70",
+      "experiments/scripts/run_residual_ablation_small.py": "7597c579e5f649d98aa1ce623a71746dbe097a1e41f0f623ed137acae9fe923b",
+      "experiments/scripts/run_residual_sweep_small.py": "a375fb93bbb9b95e30b36300e02760b832eb62bfac48ffb64fea4362911d2833",
+      "experiments/scripts/run_v100_dense_recovery.py": "62f19bed39e454291c2130aae701c9b6d0c09af05557903c2a32d11e6c7d4d22"
+    }
+  },
+  "source_provenance": {
+    "checkpoint": "/root/ckpt-compress/code/checkpoint_compress/checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "checkpoint_step": 1000,
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/root/ckpt-compress/code/checkpoint_compress/data/models/pythia-410m"
+    }
+  },
+  "torch": "2.5.1+cu124"
+}

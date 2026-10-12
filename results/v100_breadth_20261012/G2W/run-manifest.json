@@ -1,0 +1,52 @@
+{
+  "baseline_gate": {
+    "batches": 64,
+    "loss": 3.533351147268701,
+    "perplexity": 34.238513879126295,
+    "seconds": 0.6386478349995741,
+    "tokens": 16256
+  },
+  "baseline_heldout": {
+    "eval_s": 1.0,
+    "ppl": 27.511849493705164,
+    "tokens": 25400,
+    "val": 3.314616802545983
+  },
+  "code_commit": "4f73d46cfeab3807438e2ad74c07329c151c285f",
+  "finetune_seed": 42,
+  "finetune_steps": 1000,
+  "gpu": "Tesla V100-PCIE-32GB",
+  "identity": {
+    "checkpoint_sha256": "b7c6589fc7ba47d9f3cf2430b3c3134d5c5206c680c15ea40517d98049993287",
+    "gate_sha256": "7469a5593397a4e97fb6bb7023bb476cb10586dc897ac2c804c58f364fda44b0",
+    "heldout_sha256": "edb7e2c00f4f4f846027c93ce32895a88bc6f37db53bc49413a0741f47a7e7bb",
+    "regime": "G2W",
+    "scoring_sha256": "bec673fc3fb55e0096ac83bb9bf7178761b9c4c764beb2e5cc86209f8dbd6462",
+    "script_sha256": "e4c26641b735ae4d52b471dc909e0ca0d9fade6ea6b475475277d7f4fab6fad0",
+    "seed": 42
+  },
+  "platform": "new V100 reconstruction; not the missing H200 checkpoint",
+  "source_provenance": {
+    "checkpoint": "/root/dacp-v100-breadth-assets-20261012/checkpoints/gpt2_wikitext2/checkpoint_step_1000.pt",
+    "checkpoint_sha256": "b7c6589fc7ba47d9f3cf2430b3c3134d5c5206c680c15ea40517d98049993287",
+    "checkpoint_step": 1000,
+    "data": {
+      "dataset": "wikitext2",
+      "eval_split": "validation file",
+      "finetune_tokens": 2307170,
+      "holdout_fraction": 0.05,
+      "pool_split": "scoring (held-out training-file tail)",
+      "scoring_tokens": 121431,
+      "seq_length": 128,
+      "train_sequences": 948,
+      "train_split": "scoring",
+      "train_tokens": 2428601,
+      "valid_sequences": 1961,
+      "valid_tokens": 251048
+    },
+    "reference": {
+      "kind": "pretrained_base",
+      "source": "/root/dacp-v100-breadth-assets-20261012/models/gpt2"
+    }
+  }
+}
