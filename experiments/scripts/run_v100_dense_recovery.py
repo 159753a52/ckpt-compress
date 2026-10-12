@@ -204,7 +204,8 @@ def main():
                 import zlib
                 from transformers import GPTNeoXForCausalLM
                 from run_system_bytes_comparison import excp_dequant
-                payload = torch.load(io.BytesIO(zlib.decompress(archive_path.read_bytes())), map_location="cpu", weights_only=True)
+                from experiments.lib.calibrated_archive import load_payload
+                payload = load_payload(archive_path)
                 base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
                 base = dict(base_model.named_parameters())
                 params = dict(sweep.model.named_parameters())

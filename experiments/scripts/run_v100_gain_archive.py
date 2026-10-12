@@ -18,6 +18,7 @@ def main():
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--data-root", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--bundle", action="store_true", help="store a verified base payload and gain manifest without duplicating the payload")
     args = ap.parse_args()
     import torch
     from experiments.lib.residual_runtime import evaluate_lm, batch_hash, sha256_file, write_json
@@ -38,17 +39,32 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     gain = chosen["gain"]
     method = cal["method"]
-    payload = torch.load(io.BytesIO(zlib.decompress(source_archive.read_bytes())), map_location="cpu", weights_only=True)
-    for encoded in payload["model"].values():
-        key = "raw" if "raw" in encoded else "codebook"
-        encoded[key] = encoded[key].float() * gain
-    payload["gain_calibration"] = {"gain": gain, "sha256": sha256_file(args.calibration)}
-    stream = io.BytesIO()
-    torch.save(payload, stream)
-    archive = args.out_dir / f"{method}_gain{gain:g}.zlib"
-    archive.write_bytes(zlib.compress(stream.getvalue(), 6))
-    del payload, stream
-    payload = torch.load(io.BytesIO(zlib.decompress(archive.read_bytes())), map_location="cpu", weights_only=True)
+    if args.bundle:
+        import os
+        base_file = args.out_dir / "base_payload.zlib"
+        if not base_file.exists():
+            os.link(source_archive, base_file)
+        if sha256_file(base_file) != sha256_file(source_archive):
+            raise RuntimeError("gain bundle base payload differs")
+        archive = args.out_dir / f"{method}_gain{gain:g}.manifest.json"
+        write_json(archive, {"format": "residual-gain-bundle-v1", "base_file": base_file.name,
+                   "base_sha256": sha256_file(base_file), "gain": gain,
+                   "calibration_sha256": sha256_file(args.calibration)})
+        archive_bytes = base_file.stat().st_size + archive.stat().st_size
+    else:
+        payload = torch.load(io.BytesIO(zlib.decompress(source_archive.read_bytes())), map_location="cpu", weights_only=True)
+        for encoded in payload["model"].values():
+            key = "raw" if "raw" in encoded else "codebook"
+            encoded[key] = encoded[key].float() * gain
+        payload["gain_calibration"] = {"gain": gain, "sha256": sha256_file(args.calibration)}
+        stream = io.BytesIO()
+        torch.save(payload, stream)
+        archive = args.out_dir / f"{method}_gain{gain:g}.zlib"
+        archive.write_bytes(zlib.compress(stream.getvalue(), 6))
+        archive_bytes = archive.stat().st_size
+        del payload, stream
+    from experiments.lib.calibrated_archive import load_payload
+    payload = load_payload(archive)
     REGIMES["R1"]["checkpoint"] = str(args.checkpoint.resolve())
     ctx = load_regime("R1", args.checkpoint.parent, args.data_root, "cuda:0")
     s = ctx["sweep"]
@@ -81,10 +97,11 @@ def main():
               "gain": gain, "gate": actual_gate, "passed_gate": delta <= math.log1p(.01),
               "gate_ppl_change_percent": 100*math.expm1(delta), "validation": validation,
               "validation_ppl_change_percent": 100*math.expm1(validation["loss"]-ctx["uncompressed"]["val"]),
-              "archive": {"file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256_file(archive),
+              "archive": {"file": archive.name, "bytes": archive_bytes, "sha256": sha256_file(archive),
+                          "format": "base payload plus gain manifest; both files counted" if args.bundle else "single zlib payload",
                           "original_checkpoint_bytes": args.checkpoint.stat().st_size},
-              "byte_compression": args.checkpoint.stat().st_size/archive.stat().st_size,
-              "quantization": {**source["quantization"], "codebook_dtype": "float32", "gain_applied_to_codes": gain},
+              "byte_compression": args.checkpoint.stat().st_size/archive_bytes,
+              "quantization": {**source["quantization"], "decoded_codebook_dtype": "float32", "gain_applied_to_codes": gain},
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}
     path = args.out_dir / f"{method}_gain{gain:g}.json"
     write_json(path, record)

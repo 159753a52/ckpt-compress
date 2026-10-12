@@ -40,7 +40,7 @@ def main():
     ap.add_argument("--tasks", default="hellaswag,arc_easy,piqa")
     ap.add_argument("--examples", type=int, default=256)
     ap.add_argument("--task-data", type=Path)
-    ap.add_argument("--subset", choices=("main", "calibration"), default="main")
+    ap.add_argument("--subset", choices=("main", "calibration", "final"), default="main")
     ap.add_argument("--residual-scale", type=float, default=1.)
     args = ap.parse_args()
     import torch
@@ -81,7 +81,15 @@ def main():
     for task in tasks:
         obj = task_dict[task]
         count = len(obj.eval_docs)
-        if args.subset == "calibration":
+        if args.subset == "final":
+            main_indices = set(random.Random(42).sample(range(count), min(256, count)))
+            calibration_pool = [i for i in range(count) if i not in main_indices]
+            excluded = main_indices | set(random.Random(42).sample(calibration_pool, min(64, len(calibration_pool))))
+            excluded |= set(random.Random(42).sample(calibration_pool, min(128, len(calibration_pool))))
+            candidates = [i for i in range(count) if i not in excluded]
+            indices = sorted(random.Random(42).sample(candidates, min(args.examples, len(candidates))))
+            assert not excluded.intersection(indices)
+        elif args.subset == "calibration":
             main_indices = set(random.Random(42).sample(range(count), min(256, count)))
             candidates = [i for i in range(count) if i not in main_indices]
             indices = sorted(random.Random(42).sample(candidates, min(args.examples, len(candidates))))
@@ -100,6 +108,8 @@ def main():
     protocol = json.loads(json.dumps(protocol, default=handle_non_serializable))
     if args.subset == "calibration":
         protocol["subset"] = "calibration; disjoint from the existing 256-example main subset"
+    elif args.subset == "final":
+        protocol["subset"] = "final; excludes the 256-example development set and all 64/128-example calibration indices"
     if args.residual_scale != 1.:
         protocol["residual_scale"] = args.residual_scale
     if args.task_data is not None:
@@ -150,7 +160,8 @@ def main():
             model.load_state_dict(original["model_state_dict"], strict=True)
             del original
         else:
-            payload = torch.load(io.BytesIO(zlib.decompress(archive.read_bytes())), map_location="cpu", weights_only=True)
+            from experiments.lib.calibrated_archive import load_payload
+            payload = load_payload(archive)
             params = dict(model.named_parameters())
             with torch.no_grad():
                 for n, value in payload["model"].items():
