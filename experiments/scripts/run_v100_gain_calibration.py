@@ -24,6 +24,7 @@ def main():
     ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style"), required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--gains", default="0.8,1,1.2,1.4")
+    ap.add_argument("--ppl-gate", type=float, default=1.)
     ap.add_argument("--task-data", type=Path, required=True)
     args = ap.parse_args()
     import torch
@@ -44,6 +45,9 @@ def main():
     identity = {"checkpoint_sha256": sha256_file(args.checkpoint), "source_archive_sha256": sha256_file(archive),
                 "script_sha256": sha256_file(Path(__file__)), "gains": gains, "seed": 42,
                 "task_examples": 128, "selection": "maximum disjoint calibration task mean under a 1% calibration PPL gate"}
+    if args.ppl_gate != 1.:
+        identity["ppl_gate_percent"] = args.ppl_gate
+        identity["selection"] = "maximum disjoint calibration task mean under the registered PPL gate"
     if rec["identity"]["checkpoint_sha256"] != identity["checkpoint_sha256"]:
         raise RuntimeError("source checkpoint differs")
     REGIMES["R1"]["checkpoint"] = str(args.checkpoint.resolve())
@@ -78,7 +82,7 @@ def main():
             quality = evaluate_lm(s.model, gate, s.device)
             change = 100 * math.expm1(quality["loss"] - baseline_gate["loss"])
             point = {"identity": identity, "gain": gain, "gate": quality,
-                     "gate_ppl_change_percent": change, "passed_gate": change <= 1., "code_commit": commit}
+                     "gate_ppl_change_percent": change, "passed_gate": change <= args.ppl_gate, "code_commit": commit}
             write_json(path, point)
         points[str(gain)] = point
         print(f"GATE {args.method} gain={gain} change={point['gate_ppl_change_percent']:.5f} accepted={point['passed_gate']}", flush=True)
