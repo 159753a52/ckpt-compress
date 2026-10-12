@@ -42,6 +42,7 @@ def main():
     ap.add_argument("--task-data", type=Path)
     ap.add_argument("--subset", choices=("main", "calibration", "final"), default="main")
     ap.add_argument("--residual-scale", type=float, default=1.)
+    ap.add_argument("--gain-scope", choices=("all", "eligible"), default="all")
     args = ap.parse_args()
     import torch
     import lm_eval
@@ -112,6 +113,8 @@ def main():
         protocol["subset"] = "final; excludes the 256-example development set and all 64/128-example calibration indices"
     if args.residual_scale != 1.:
         protocol["residual_scale"] = args.residual_scale
+    if args.gain_scope != "all":
+        protocol["gain_scope"] = args.gain_scope
     if args.task_data is not None:
         protocol["local_dataset_provenance"] = local_data
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -165,7 +168,7 @@ def main():
             params = dict(model.named_parameters())
             with torch.no_grad():
                 for n, value in payload["model"].items():
-                    gain = args.residual_scale * payload.get("residual_scale", 1.)
+                    gain = (args.residual_scale if args.gain_scope == "all" or n in payload["eligible_parameter_names"] else 1.) * payload.get("residual_scale", 1.)
                     params[n].copy_(base[n].to("cuda:0") + gain * excp_dequant(value, base[n].shape, "cuda:0").float())
             model.load_state_dict({**model.state_dict(), **payload["buffers"]}, strict=True)
             del payload

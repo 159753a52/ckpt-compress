@@ -25,6 +25,7 @@ def main():
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--gains", default="0.8,1,1.2,1.4")
     ap.add_argument("--ppl-gate", type=float, default=1.)
+    ap.add_argument("--gain-scope", choices=("all", "eligible"), default="all")
     ap.add_argument("--task-data", type=Path, required=True)
     args = ap.parse_args()
     import torch
@@ -59,7 +60,10 @@ def main():
     gate = [pool[i] for i in range(len(pool)) if i not in used][:64]
     baseline_gate = evaluate_lm(s.model, gate, "cuda:0")
     identity["gate_sha256"] = batch_hash(gate)
-    payload = torch.load(io.BytesIO(zlib.decompress(archive.read_bytes())), map_location="cpu", weights_only=True)
+    if args.gain_scope == "eligible":
+        identity["gain_parameter_names"] = s.names
+    from experiments.lib.calibrated_archive import load_payload
+    payload = load_payload(archive)
     from transformers import GPTNeoXForCausalLM
     base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
     base = {n: p.detach().cpu() for n, p in base_model.named_parameters()}
@@ -77,7 +81,8 @@ def main():
         else:
             with torch.no_grad():
                 for n, p in s.model.named_parameters():
-                    p.copy_(base[n].to(s.device) + gain * residual[n].to(s.device))
+                    multiplier = gain if args.gain_scope == "all" or n in identity["gain_parameter_names"] else 1.
+                    p.copy_(base[n].to(s.device) + multiplier * residual[n].to(s.device))
             s.model.load_state_dict({**s.model.state_dict(), **buffers}, strict=True)
             quality = evaluate_lm(s.model, gate, s.device)
             change = 100 * math.expm1(quality["loss"] - baseline_gate["loss"])
@@ -98,7 +103,8 @@ def main():
         sys.argv = [str(Path(downstream.__file__)), "--checkpoint", str(args.checkpoint),
                     "--model-root", str(args.data_root / "models/pythia-410m"), "--encoded-dir", str(args.encoded_dir),
                     "--out-dir", str(output), "--methods", args.method, "--subset", "calibration",
-                    "--examples", "128", "--task-data", str(args.task_data), "--residual-scale", str(gain)]
+                    "--examples", "128", "--task-data", str(args.task_data), "--residual-scale", str(gain),
+                    "--gain-scope", args.gain_scope]
         downstream.main()
         values = []
         for task, metric in [("hellaswag", "acc_norm,none"), ("arc_easy", "acc_norm,none"), ("piqa", "acc,none")]:

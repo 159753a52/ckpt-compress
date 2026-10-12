@@ -21,6 +21,10 @@ def main():
     ap.add_argument("--legacy-archive", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--weight-bits", choices=(4, 8), type=int, default=4)
+    ap.add_argument("--dense-weight-bits", choices=(4, 8), type=int)
+    ap.add_argument("--lossless-vectors", action="store_true")
+    ap.add_argument("--shared-state", type=Path, help="store common optimizer state once; every checkpoint counts its full size")
+    ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style"), default="iterative_ucb_disjoint")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime
@@ -30,7 +34,7 @@ def main():
     chosen = json.loads(args.selected.read_text())
     old = json.loads(args.legacy_archive.read_text())
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    record_path = args.out_dir / "iterative_ucb_disjoint_p0.7_bf16mom.json"
+    record_path = args.out_dir / f"{args.method}_p0.7_bf16mom.json"
     if record_path.exists():
         record = json.loads(record_path.read_text())
         if record["selection_sha256"] != sha256_file(args.selected) or sha256_file(args.out_dir / record["archive"]["file"]) != record["archive"]["sha256"]:
@@ -61,20 +65,50 @@ def main():
     base = dict(base_model.named_parameters())
     params = dict(s.model.named_parameters())
     started = time.perf_counter()
-    for index, name in enumerate(payload["parameter_names"]):
-        if name in keep or args.weight_bits == 8:
-            residual = (s.delta[name].to("cuda:0") * keep[name].to("cuda:0") if name in keep
-                        else params[name].detach() - base[name].to("cuda:0"))
-            payload["model"][name] = excp_quant(residual, 42 * 100003 + 3 * index, args.weight_bits)
+    with torch.no_grad():
+        for index, name in enumerate(payload["parameter_names"]):
+            if name in keep or args.weight_bits == 8 or args.dense_weight_bits is not None or args.lossless_vectors:
+                residual = (s.delta[name].to("cuda:0") * keep[name].to("cuda:0") if name in keep
+                            else params[name].detach() - base[name].to("cuda:0"))
+                if args.lossless_vectors and params[name].ndim < 2:
+                    payload["model"][name] = {"raw": residual.cpu()}
+                else:
+                    bits = args.weight_bits if name in keep else (args.dense_weight_bits or args.weight_bits)
+                    payload["model"][name] = excp_quant(residual, 42 * 100003 + 3 * index, bits)
     payload["identity"] = {"checkpoint_sha256": sha256_file(args.checkpoint), "selection_sha256": sha256_file(args.selected)}
-    stream = io.BytesIO()
-    torch.save(payload, stream)
-    archive = args.out_dir / "iterative_ucb_disjoint_p0.7_bf16mom.zlib"
-    archive.write_bytes(zlib.compress(stream.getvalue(), 6))
+    payload["eligible_parameter_names"] = s.names
+    if args.shared_state is not None:
+        import os
+        args.shared_state.parent.mkdir(parents=True, exist_ok=True)
+        if not args.shared_state.exists():
+            state = {k: v for k, v in payload.items() if k not in {"model", "identity", "eligible_parameter_names"}}
+            stream = io.BytesIO()
+            torch.save(state, stream)
+            args.shared_state.write_bytes(zlib.compress(stream.getvalue(), 6))
+            del stream, state
+        shared = args.out_dir / "optimizer_state.zlib"
+        if not shared.exists():
+            os.link(args.shared_state, shared)
+        weights = args.out_dir / "weights.zlib"
+        stream = io.BytesIO()
+        torch.save({"model": payload["model"], "identity": payload["identity"], "eligible_parameter_names": s.names}, stream)
+        weights.write_bytes(zlib.compress(stream.getvalue(), 6))
+        archive = args.out_dir / f"{args.method}_p0.7.manifest.json"
+        write_json(archive, {"format": "checkpoint-components-v1",
+                   "state": {"file": shared.name, "sha256": sha256_file(shared)},
+                   "weights": {"file": weights.name, "sha256": sha256_file(weights)}})
+        archive_bytes = shared.stat().st_size + weights.stat().st_size + archive.stat().st_size
+    else:
+        stream = io.BytesIO()
+        torch.save(payload, stream)
+        archive = args.out_dir / f"{args.method}_p0.7_bf16mom.zlib"
+        archive.write_bytes(zlib.compress(stream.getvalue(), 6))
+        archive_bytes = archive.stat().st_size
     encode_seconds = time.perf_counter() - started
     # Reopen the saved bytes; quality measurements use decoded weights.
     del payload, stream
-    payload = torch.load(io.BytesIO(zlib.decompress(archive.read_bytes())), map_location="cpu", weights_only=True)
+    from experiments.lib.calibrated_archive import load_payload
+    payload = load_payload(archive)
     with torch.no_grad():
         for name, encoded in payload["model"].items():
             params[name].copy_(base[name].to("cuda:0") + excp_dequant(encoded, base[name].shape, "cuda:0").float())
@@ -83,18 +117,22 @@ def main():
     validation = evaluate_lm(s.model, ctx["eval_batches"], "cuda:0")
     old_gate = json.loads((ROOT / "results/v100_quality_calibration_20261011/staged_K4_B4_p0.7_seed42.json").read_text())["baseline_gate"]
     delta = calibration["loss"] - old_gate["loss"]
-    record = {"status": "completed", "identity": payload["identity"], "method": "iterative_ucb_disjoint", "sparsity": .7, "seed": 42,
+    record = {"status": "completed", "identity": payload["identity"], "method": args.method, "sparsity": .7, "seed": 42,
               "selection_sha256": sha256_file(args.selected), "config": chosen["config"], "backward_budget": chosen["backward_budget"],
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
-              "archive": {"file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256_file(archive)},
-              "byte_compression": args.checkpoint.stat().st_size / archive.stat().st_size,
+              "archive": {"file": archive.name, "bytes": archive_bytes, "sha256": sha256_file(archive),
+                          "format": "components; optimizer, weights and manifest all counted" if args.shared_state else "single zlib"},
+              "byte_compression": args.checkpoint.stat().st_size / archive_bytes,
               "gate": calibration, "gate_ppl_change_percent": 100 * math.expm1(delta), "passed_gate": delta <= math.log1p(.01),
               "validation": validation, "validation_ppl_change_percent": 100 * math.expm1(validation["loss"] - ctx["uncompressed"]["val"]),
               "quantization": {"weight_bits": args.weight_bits, "moment_bits": 16, "moment_dtype": "bfloat16", "all_moments_retained": True},
               "optimizer_payload_reused": {"source": str(args.legacy_archive), "sha256": old["archive"]["sha256"]},
               "encode_seconds": encode_seconds, "baseline_validation": ctx["uncompressed"]}
     write_json(record_path, record)
-    write_json(args.out_dir / "completed.json", {"status": "completed", "selected": {"iterative_ucb_disjoint": {"file": record_path.name, "sha256": sha256_file(record_path)}}})
+    if args.dense_weight_bits is not None or args.lossless_vectors:
+        record["quantization"].update(dense_weight_bits=args.dense_weight_bits, lossless_vectors=args.lossless_vectors)
+        write_json(record_path, record)
+    write_json(args.out_dir / "completed.json", {"status": "completed", "selected": {args.method: {"file": record_path.name, "sha256": sha256_file(record_path)}}})
     print("ARCHIVE " + json.dumps({k: record[k] for k in ("byte_compression", "validation_ppl_change_percent", "passed_gate")}), flush=True)
 
 
