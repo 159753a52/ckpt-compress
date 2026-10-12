@@ -38,7 +38,8 @@ def main():
     s = ctx["sweep"]
     plan = partition_repeated_seed_batches(ctx["pool"], 100, 1, 16, 42)
     scoring = plan.scoring_batches[0][:4]
-    tokens = [int((batch["labels"][:, 1:] != -100).sum()) for batch in scoring]
+    tokens = [int(((batch["labels"][:, 1:] != -100) &
+                  (batch["attention_mask"][:, 1:] != 0 if "attention_mask" in batch else True)).sum()) for batch in scoring]
     batch_weights = [count / sum(tokens) for count in tokens]
     selected = json.loads(args.selected.read_text())
     legacy = json.loads(args.legacy_mask_record.read_text())
@@ -56,6 +57,7 @@ def main():
         raise RuntimeError("legacy mask hash differs")
     masks["DACP_previous_p0.7"] = torch.load(oldmask, map_location="cpu", weights_only=True)
     baseline = evaluate_lm(s.model, scoring, s.device)
+    assert baseline["tokens"] == sum(tokens)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     identity = {"checkpoint_sha256": ctx["provenance"]["checkpoint_sha256"],
                 "scoring_sha256": batch_hash(scoring), "heldout_sha256": batch_hash(ctx["eval_batches"]),
