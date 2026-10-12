@@ -35,6 +35,7 @@ def main():
     ap.add_argument("--initial-mask-record", type=Path)
     ap.add_argument("--initial-archive-record", type=Path)
     ap.add_argument("--plan-only", action="store_true")
+    ap.add_argument("--no-final-state", action="store_true", help="one-cycle diagnostic; preserve measurements without a full final checkpoint")
     args = ap.parse_args()
     methods = args.methods.split(",")
     allowed = {"no_compression", "excp_style", "inshrinkerator_style", "dacp", "first_order_ucb", "iterative_ucb_disjoint"}
@@ -42,12 +43,16 @@ def main():
         ap.error("unknown or repeated method")
     if not 0 < args.sparsity < 1 or min(args.cycles, args.recovery, args.eval_every) < 1:
         ap.error("invalid sparsity or step count")
+    if args.no_final_state and args.cycles != 1:
+        ap.error("--no-final-state is restricted to one-cycle diagnostics")
     config = {key: getattr(args, key) for key in ("seed", "sparsity", "cycles", "recovery", "eval_every", "lr")}
     config.update(train_batch_size=4, train_seq_length=512, micro_batch_size=2, eval_batches=100,
                   scoring_pool_batches=16, gradient_baseline_batches=8,
                   staged_groups="four disjoint groups of four", amp=False)
     if args.initial_archive_record is not None:
         config["staged_groups"] = "decoded archive; no scoring repeated"
+    if args.no_final_state:
+        config["save_final_state"] = False
     if args.plan_only:
         print(json.dumps({"protocol": config, "methods": methods, "purpose": "new dense recovery measurements"}))
         return
@@ -250,20 +255,24 @@ def main():
             rec["recovery_train_s"] = train_seconds
             rec["peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
             record["cycles"].append(rec)
-            tmp_state = resume_path.with_suffix(".tmp")
-            torch.save({"record": record, "model": {n: p.detach().cpu() for n, p in sweep.model.state_dict().items()},
-                        "optimizer": opt.state_dict()}, tmp_state)
-            tmp_state.replace(resume_path)
+            if not args.no_final_state:
+                tmp_state = resume_path.with_suffix(".tmp")
+                torch.save({"record": record, "model": {n: p.detach().cpu() for n, p in sweep.model.state_dict().items()},
+                            "optimizer": opt.state_dict()}, tmp_state)
+                tmp_state.replace(resume_path)
             write_json(partial / f"{method}_cycle{cycle}.json", _jsonable(record))
-        states = args.out_dir / "final-states"
-        states.mkdir(exist_ok=True)
-        final_state = states / f"{method}_cycle{args.cycles}.pt"
-        if final_state.exists() and not os.path.samefile(final_state, resume_path):
-            raise RuntimeError(f"Final state already exists without its completed result: {final_state}")
-        if not final_state.exists():
-            os.link(resume_path, final_state)
+        final_state_record = {"serialized": False, "scope": "one-cycle diagnostic; input archive and measured trajectory retained"}
+        if not args.no_final_state:
+            states = args.out_dir / "final-states"
+            states.mkdir(exist_ok=True)
+            final_state = states / f"{method}_cycle{args.cycles}.pt"
+            if final_state.exists() and not os.path.samefile(final_state, resume_path):
+                raise RuntimeError(f"Final state already exists without its completed result: {final_state}")
+            if not final_state.exists():
+                os.link(resume_path, final_state)
+            final_state_record = {"path": str(final_state), "bytes": final_state.stat().st_size}
         record.update(status="completed", elapsed_this_process_s=time.time() - began,
-                      final_state={"path": str(final_state), "bytes": final_state.stat().st_size})
+                      final_state=final_state_record)
         write_json(path, _jsonable(record))
         print("RESULT " + str(path), flush=True)
         del opt
