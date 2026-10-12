@@ -24,7 +24,7 @@ def main():
     ap.add_argument("--dense-weight-bits", choices=(4, 8), type=int)
     ap.add_argument("--lossless-vectors", action="store_true")
     ap.add_argument("--shared-state", type=Path, help="store common optimizer state once; every checkpoint counts its full size")
-    ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style"), default="iterative_ucb_disjoint")
+    ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style", "inshrinkerator_style"), default="iterative_ucb_disjoint")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime

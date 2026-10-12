@@ -54,7 +54,7 @@ def main():
     from run_system_bytes_comparison import excp_dequant
 
     methods, tasks = args.methods.split(","), args.tasks.split(",")
-    if set(methods) - {"no_compression", "iterative_ucb_disjoint", "excp_style"} or len(set(methods)) != len(methods) or args.examples < 1 or not 0 < args.residual_scale <= 2:
+    if set(methods) - {"no_compression", "iterative_ucb_disjoint", "excp_style", "inshrinkerator_style"} or len(set(methods)) != len(methods) or args.examples < 1 or not 0 < args.residual_scale <= 2:
         ap.error("invalid methods or example count")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     manager = TaskManager()
