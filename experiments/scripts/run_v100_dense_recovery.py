@@ -46,6 +46,8 @@ def main():
     config.update(train_batch_size=4, train_seq_length=512, micro_batch_size=2, eval_batches=100,
                   scoring_pool_batches=16, gradient_baseline_batches=8,
                   staged_groups="four disjoint groups of four", amp=False)
+    if args.initial_archive_record is not None:
+        config["staged_groups"] = "decoded archive; no scoring repeated"
     if args.plan_only:
         print(json.dumps({"protocol": config, "methods": methods, "purpose": "new dense recovery measurements"}))
         return
@@ -189,8 +191,9 @@ def main():
                 else:
                     keep, rec["score"] = select_keep(sweep, method, args.sparsity, scoring[:8], scoring, args.seed, 16, 4)
                 rec["score_total_s"] = time.perf_counter() - t0
-                rec["restore"] = restore(sweep, keep)
-                del keep
+                if archive_record is None:
+                    rec["restore"] = restore(sweep, keep)
+                    del keep
             if archive_record is not None:
                 import io
                 import zlib
