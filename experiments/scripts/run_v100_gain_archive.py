@@ -30,6 +30,9 @@ def main():
     if chosen is None:
         raise RuntimeError("no gain satisfies the calibration quality gate")
     source_record = Path(cal["source_record"])
+    if not source_record.is_absolute():
+        source_root = next(parent.parent for parent in args.calibration.resolve().parents if parent.name == "results")
+        source_record = source_root / source_record
     if sha256_file(source_record) != cal["source_record_sha256"]:
         raise RuntimeError("source record differs")
     source = json.loads(source_record.read_text())
