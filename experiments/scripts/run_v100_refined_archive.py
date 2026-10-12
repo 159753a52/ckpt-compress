@@ -49,6 +49,8 @@ def main():
     if batch_hash(gate) != chosen["identity_common"]["gate_sha256"] or batch_hash(ctx["eval_batches"]) != chosen["identity_common"]["heldout_sha256"]:
         raise RuntimeError("selected calibration and validation inputs differ")
     mask_path = Path(chosen["mask_path"])
+    if not mask_path.is_absolute():
+        mask_path = args.selected.parent / mask_path.name
     if sha256_file(mask_path) != chosen["mask_sha256"]:
         raise RuntimeError("selected mask hash differs")
     keep = torch.load(mask_path, map_location="cpu", weights_only=True)
@@ -70,9 +72,10 @@ def main():
     from transformers import GPTNeoXForCausalLM
     base_model = GPTNeoXForCausalLM.from_pretrained(args.data_root / "models/pythia-410m", dtype=torch.float32, local_files_only=True)
     base = dict(base_model.named_parameters())
+    params = dict(s.model.named_parameters())
     with torch.no_grad():
         for name, encoded in payload["model"].items():
-            s.params[name].copy_(base[name].to("cuda:0") + excp_dequant(encoded, base[name].shape, "cuda:0").float())
+            params[name].copy_(base[name].to("cuda:0") + excp_dequant(encoded, base[name].shape, "cuda:0").float())
     s.model.load_state_dict({**s.model.state_dict(), **payload["buffers"]}, strict=True)
     calibration = evaluate_lm(s.model, gate, "cuda:0")
     validation = evaluate_lm(s.model, ctx["eval_batches"], "cuda:0")
