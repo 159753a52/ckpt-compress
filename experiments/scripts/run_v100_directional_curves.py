@@ -83,7 +83,8 @@ def main():
         for t in identity["scales"]:
             with torch.no_grad():
                 for n in s.names:
-                    s.params[n].copy_(s.cur_dev[n] + t*e[n])
+                    interpolated = torch.lerp(s.cur_dev[n], s.ref_dev[n], t)
+                    s.params[n].copy_(torch.where(masks[tag][n].to(s.device), s.cur_dev[n], interpolated))
             actual = evaluate_lm(s.model, scoring, s.device)
             d = derivatives[tag]
             delta = actual["loss"] - baseline["loss"]
@@ -94,10 +95,10 @@ def main():
         s.apply(masks[tag])
         direct = evaluate_lm(s.model, scoring, s.device)
         direct_delta = direct["loss"] - baseline["loss"]
-        endpoint = {"arithmetic_delta_loss": points[-1]["actual_delta_loss"], "direct_mask_delta_loss": direct_delta,
+        endpoint = {"interpolated_delta_loss": points[-1]["actual_delta_loss"], "direct_mask_delta_loss": direct_delta,
                     "reference_delta_loss": reference["masks"][tag]["actual_delta_loss"]}
         write_json(args.out_dir / (tag + "_endpoint.json"), endpoint)
-        if abs(direct_delta - endpoint["reference_delta_loss"]) > 1e-6 or abs(endpoint["arithmetic_delta_loss"]-direct_delta) > 1e-6:
+        if abs(direct_delta - endpoint["reference_delta_loss"]) > 1e-6 or abs(endpoint["interpolated_delta_loss"]-direct_delta) > 1e-6:
             raise RuntimeError(f"measured endpoint differs for {tag}: {endpoint}")
         write_json(args.out_dir / (tag + ".json"), {"status": "completed", "identity": identity, "tag": tag,
                    "derivatives": derivatives[tag], "points": points, "code_commit": commit})
