@@ -22,6 +22,9 @@ def main():
     ap.add_argument("--regime", choices=("P160_R1", "G2_R1", "G2W"), required=True)
     ap.add_argument("--assets", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
+    ap.add_argument("--damping", type=float, default=0.)
+    ap.add_argument("--config", help="stages,batches,variability penalty")
+    ap.add_argument("--targets", help="comma-separated residual sparsities")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -73,11 +76,22 @@ def main():
                "finetune_seed": 42, "finetune_steps": 1000, "platform": "new V100 reconstruction; not the missing H200 checkpoint"})
     targets = [.3, .4, .5, .6, .65, .7, .75, .8, .85, .9, .95, .98, .99, .995]
     configs = [(4, 4, 1.), (4, 16, 2.), (8, 8, 2.)]
+    if args.targets:
+        targets = [float(p) for p in args.targets.split(",")]
+    if args.config:
+        k, b, penalty = args.config.split(",")
+        configs = [(int(k), int(b), float(penalty))]
+    if args.damping < 0 or any(not 0 < p < 1 for p in targets) or any(k * b > 64 or k < 1 or b < 2 for k, b, penalty in configs):
+        ap.error("invalid damping, sparsities or scoring budget")
     records = []
     for stages, batches, penalty in configs:
         name = f"K{stages}_B{batches}_k{penalty:g}"
+        if args.damping:
+            name += f"_d{args.damping:g}"
         path = args.out_dir / f"calibration_{name}.json"
         identity = {**common, "config": [stages, batches, penalty], "targets": targets}
+        if args.damping:
+            identity["damping"] = args.damping
         if path.exists():
             rec = json.loads(path.read_text())
             if rec["identity"] != identity:
@@ -93,6 +107,12 @@ def main():
                     mean, m2, losses = grad_moments(current, bs, True)
                     scores = {n: mean[i].abs() + penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches)
                               for i, n in enumerate(current.names)}
+                    if args.damping:
+                        residual = {n: current.delta[n].to(current.device).square() for n in current.names}
+                        active = {n: (keep_prev[n].to(current.device) if keep_prev is not None else 1) for n in current.names}
+                        scale = sum(float((scores[n] * active[n]).double().sum()) for n in current.names)
+                        scale /= max(sum(float((residual[n] * active[n]).double().sum()) for n in current.names), 1e-30)
+                        scores = {n: scores[n] + args.damping * scale * residual[n] for n in current.names}
                     return scores, {"score_losses": losses}
                 set_seed(42)
                 _, detail, keep = run_iterative(s, scoring, geometric_schedule(p, stages), scorer, 42, eval_at=[], return_keep=True)
@@ -101,7 +121,7 @@ def main():
                 mask = args.out_dir / f"{name}_p{p}-mask.pt.zlib"
                 stream = io.BytesIO()
                 torch.save({n: x.cpu() for n, x in keep.items()}, stream)
-                mask.write_bytes(zlib.compress(stream.getvalue(), 6))
+                mask.write_bytes(zlib.compress(stream.getvalue(), 1 if args.damping else 6))
                 points[str(p)] = {"gate": value, "gate_ppl_change_percent": 100 * math.expm1(value["loss"] - baseline_gate["loss"]),
                                   "mask": {"file": mask.name, "sha256": sha256_file(mask)}, "stage_records": detail}
                 del keep
@@ -128,11 +148,20 @@ def main():
             value = s.evaluate()
             points[p] = {"evaluation": value, "ppl_change_percent": 100 * math.expm1(value["val"] - ctx["uncompressed"]["val"])}
         write_json(selected_path, {"status": "completed", "identity": common, "config": selected["config"], "points": points,
+                   "damping": args.damping,
                    "selection_rule": "largest training-calibration 1% frontier, then lowest calibration loss at 70%; fixed configuration for all reported cells", "code_commit": commit})
     from experiments.lib.residual_scoring import compute_block_first_order_scores
     for method in ("ExCP", "Inshrinkerator"):
         path = args.out_dir / f"{method}.json"
         if path.exists():
+            continue
+        previous = ROOT / "results/v100_breadth_20261012" / args.regime / f"{method}.json"
+        if args.damping and previous.exists():
+            old = json.loads(previous.read_text())
+            if any(old["identity"][key] != common[key] for key in ("checkpoint_sha256", "heldout_sha256", "scoring_sha256", "gate_sha256")):
+                raise RuntimeError("previous baseline input differs")
+            write_json(path, {**old, "points": {p: v for p, v in old["points"].items() if float(p) in targets},
+                       "reused_from": {"file": str(previous), "sha256": sha256_file(previous)}})
             continue
         s.apply(None)
         if method == "ExCP":
