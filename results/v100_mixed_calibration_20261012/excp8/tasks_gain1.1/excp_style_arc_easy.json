@@ -1,0 +1,7157 @@
+{
+  "code_commit": "fbd164e916dd6a984bf56d62f98115945a23a17e",
+  "elapsed_s": 2.925191526002891,
+  "gpu": "Tesla V100-PCIE-32GB",
+  "harness_task_version": 1.0,
+  "identity": {
+    "archive_sha256": "9653a638a7fea422d2fa29bb18b5574b9b530482d71ef6bf7b55842f7d7e1e31",
+    "method": "excp_style",
+    "protocol": {
+      "base_files": {
+        ".gitattributes": "db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+        "README.md": "d7d60ae94cb0882f19381632532a01d39247fe6f932016c39768b1f67c9f2bf9",
+        "config.json": "d4c11e84a59c8af4d88446bba53b718f7aef740daa070ded08fd6a9a3aca4fc6",
+        "model.safetensors": "3e09001631bb18ec8a6f4522f8e6ab26a53099e69228f9822adc91bfbe27511b",
+        "pytorch_model.bin": "786bd9bcde112a970e1614807cbb23999482de65fc05c3e0795198719b5e1543",
+        "special_tokens_map.json": "6f50ab5a5a509a1c309d6171f339b196a900dc9c99ad0408ff23bb615fdae7ad",
+        "tokenizer.json": "c24618a1b3e6a38167beff1c72cffd126c3a66254347304b50547d12c5f25624",
+        "tokenizer_config.json": "70e38394e494931c6f773ba41e19460dd4436526b852207367f04341b4066d3f"
+      },
+      "batch_size": 8,
+      "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+      "dtype": "float32",
+      "examples_requested": 128,
+      "gain_scope": "eligible",
+      "harness_version": "0.4.13",
+      "local_dataset_provenance": {
+        "arc_easy": {
+          "bytes": 346257,
+          "dataset": "allenai/ai2_arc",
+          "file": "arc_easy.parquet",
+          "revision": "210d026faf9955653af8916fad021475a3f00453",
+          "sha256": "4160597d618ae851c7eb04e281574f3f654776216ac6b6641588d64527b47177",
+          "source_url": "https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ARC-Easy/test-00000-of-00001.parquet",
+          "split": "test"
+        },
+        "hellaswag": {
+          "bytes": 6315951,
+          "dataset": "Rowan/hellaswag",
+          "file": "hellaswag.parquet",
+          "revision": "218ec52e09a7e7462a5400043bb9a69a41d06b76",
+          "sha256": "899813071e1e95efafec90f856e1987d2150fa4d020fc005df6962c259f660cd",
+          "source_url": "https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/data/validation-00000-of-00001.parquet",
+          "split": "validation"
+        },
+        "piqa": {
+          "bytes": 299694,
+          "dataset": "baber/piqa",
+          "file": "piqa.parquet",
+          "revision": "142f6d7367fd9877f0fb3b5734ea6a545f54cdd1",
+          "sha256": "2b17ee1215b1ceb2ddabf4c90a05c5a8b833bef9d207960f57d111c43a2080f3",
+          "source_url": "https://huggingface.co/datasets/baber/piqa/resolve/142f6d7367fd9877f0fb3b5734ea6a545f54cdd1/piqa_validation.parquet",
+          "split": "validation"
+        }
+      },
+      "num_fewshot": 0,
+      "residual_scale": 1.1,
+      "script_sha256": "0feaf0a88421fa9531367f95fa4cd5433c73c82de448dbc9f73cf3c79d6cb364",
+      "seed": 42,
+      "subset": "calibration; disjoint from the existing 256-example main subset",
+      "tasks": {
+        "arc_easy": {
+          "config": {
+            "dataset_kwargs": {
+              "data_files": {
+                "test": "/root/v100-downstream-data/arc_easy.parquet"
+              }
+            },
+            "dataset_path": "parquet",
+            "description": "",
+            "doc_to_choice": "{{choices.text}}",
+            "doc_to_decontamination_query": "Question: {{question}}\nAnswer:",
+            "doc_to_target": "{{choices.label.index(answerKey)}}",
+            "doc_to_text": "Question: {{question}}\nAnswer:",
+            "fewshot_config": {
+              "doc_to_choice": "{{choices.text}}",
+              "doc_to_target": "{{choices.label.index(answerKey)}}",
+              "doc_to_text": "Question: {{question}}\nAnswer:",
+              "fewshot_delimiter": "\n\n",
+              "fewshot_indices": null,
+              "gen_prefix": null,
+              "process_docs": null,
+              "sampler": "default",
+              "samples": null,
+              "split": null,
+              "target_delimiter": " "
+            },
+            "fewshot_delimiter": "\n\n",
+            "metadata": {
+              "version": 1.0
+            },
+            "metric_list": [
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc"
+              },
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc_norm"
+              }
+            ],
+            "output_type": "multiple_choice",
+            "repeats": 1,
+            "should_decontaminate": true,
+            "target_delimiter": " ",
+            "task": "arc_easy",
+            "test_split": "test",
+            "unsafe_code": false
+          },
+          "documents_sha256": "9ffdd54d236b4f6a10d636ad35edec90cc1fd0b9dbc7a87ced529247cb384a8c",
+          "indices": [
+            3,
+            16,
+            31,
+            53,
+            88,
+            113,
+            119,
+            137,
+            145,
+            146,
+            195,
+            206,
+            212,
+            259,
+            269,
+            298,
+            310,
+            324,
+            333,
+            365,
+            369,
+            408,
+            427,
+            434,
+            439,
+            454,
+            474,
+            479,
+            480,
+            497,
+            512,
+            520,
+            522,
+            534,
+            580,
+            639,
+            645,
+            663,
+            710,
+            720,
+            732,
+            738,
+            740,
+            746,
+            752,
+            755,
+            790,
+            822,
+            886,
+            919,
+            971,
+            978,
+            985,
+            998,
+            1016,
+            1020,
+            1021,
+            1025,
+            1038,
+            1057,
+            1062,
+            1077,
+            1079,
+            1114,
+            1120,
+            1137,
+            1141,
+            1148,
+            1167,
+            1219,
+            1221,
+            1227,
+            1228,
+            1236,
+            1237,
+            1240,
+            1249,
+            1271,
+            1285,
+            1286,
+            1336,
+            1351,
+            1354,
+            1374,
+            1416,
+            1445,
+            1449,
+            1490,
+            1491,
+            1545,
+            1565,
+            1581,
+            1630,
+            1650,
+            1661,
+            1662,
+            1668,
+            1676,
+            1699,
+            1714,
+            1740,
+            1744,
+            1746,
+            1753,
+            1768,
+            1814,
+            1830,
+            1840,
+            1925,
+            1935,
+            1938,
+            1940,
+            1965,
+            1996,
+            2060,
+            2081,
+            2082,
+            2104,
+            2107,
+            2120,
+            2144,
+            2243,
+            2267,
+            2293,
+            2301,
+            2320,
+            2331,
+            2340
+          ],
+          "split_size": 2376
+        },
+        "hellaswag": {
+          "config": {
+            "dataset_kwargs": {
+              "data_files": {
+                "validation": "/root/v100-downstream-data/hellaswag.parquet"
+              }
+            },
+            "dataset_path": "parquet",
+            "description": "",
+            "doc_to_choice": "choices",
+            "doc_to_target": "{{label}}",
+            "doc_to_text": "{{query}}",
+            "fewshot_config": {
+              "doc_to_choice": "choices",
+              "doc_to_target": "{{label}}",
+              "doc_to_text": "{{query}}",
+              "fewshot_delimiter": "\n\n",
+              "fewshot_indices": null,
+              "gen_prefix": null,
+              "process_docs": "<function process_docs at 0x7f4e732fdf30>",
+              "sampler": "default",
+              "samples": null,
+              "split": null,
+              "target_delimiter": " "
+            },
+            "fewshot_delimiter": "\n\n",
+            "metadata": {
+              "version": 1.0
+            },
+            "metric_list": [
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc"
+              },
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc_norm"
+              }
+            ],
+            "output_type": "multiple_choice",
+            "process_docs": "def process_docs(dataset: datasets.Dataset) -> datasets.Dataset:\n    def _process_doc(doc):\n        ctx = doc[\"ctx_a\"] + \" \" + doc[\"ctx_b\"].capitalize()\n        out_doc = {\n            \"query\": preprocess(doc[\"activity_label\"] + \": \" + ctx),\n            \"choices\": [preprocess(ending) for ending in doc[\"endings\"]],\n            \"gold\": int(doc[\"label\"]),\n        }\n        return out_doc\n\n    return dataset.map(_process_doc)\n",
+            "repeats": 1,
+            "should_decontaminate": false,
+            "target_delimiter": " ",
+            "task": "hellaswag",
+            "unsafe_code": false,
+            "validation_split": "validation"
+          },
+          "documents_sha256": "4e8750de6201509c70cd4fce5555bc39c0b693fb6a49a8507dc4d359db188942",
+          "indices": [
+            109,
+            193,
+            418,
+            444,
+            499,
+            534,
+            539,
+            726,
+            766,
+            788,
+            936,
+            1065,
+            1111,
+            1171,
+            1201,
+            1327,
+            1343,
+            1462,
+            1530,
+            1562,
+            1578,
+            1631,
+            1704,
+            1724,
+            1729,
+            1852,
+            1881,
+            1933,
+            2106,
+            2332,
+            2353,
+            2354,
+            2407,
+            2573,
+            2618,
+            2690,
+            2696,
+            2741,
+            2754,
+            2881,
+            3234,
+            3344,
+            3525,
+            3550,
+            3577,
+            3626,
+            3683,
+            3694,
+            3699,
+            3712,
+            3761,
+            3840,
+            3859,
+            3920,
+            3924,
+            4129,
+            4131,
+            4159,
+            4238,
+            4432,
+            4461,
+            4467,
+            4499,
+            4502,
+            4515,
+            4551,
+            4640,
+            4686,
+            4688,
+            4691,
+            4878,
+            4941,
+            5297,
+            5311,
+            5458,
+            5665,
+            5725,
+            5786,
+            5978,
+            6039,
+            6084,
+            6089,
+            6138,
+            6230,
+            6368,
+            6383,
+            6391,
+            6394,
+            6419,
+            6471,
+            6655,
+            6718,
+            6748,
+            7056,
+            7096,
+            7100,
+            7108,
+            7205,
+            7553,
+            7624,
+            7715,
+            7725,
+            7773,
+            7869,
+            8295,
+            8391,
+            8493,
+            8562,
+            8896,
+            8980,
+            9015,
+            9028,
+            9062,
+            9163,
+            9170,
+            9281,
+            9303,
+            9365,
+            9435,
+            9437,
+            9534,
+            9707,
+            9810,
+            9828,
+            9907,
+            9927,
+            10019,
+            10027
+          ],
+          "split_size": 10042
+        },
+        "piqa": {
+          "config": {
+            "dataset_kwargs": {
+              "data_files": {
+                "validation": "/root/v100-downstream-data/piqa.parquet"
+              }
+            },
+            "dataset_path": "parquet",
+            "description": "",
+            "doc_to_choice": "{{[sol1, sol2]}}",
+            "doc_to_decontamination_query": "goal",
+            "doc_to_target": "label",
+            "doc_to_text": "Question: {{goal}}\nAnswer:",
+            "fewshot_config": {
+              "doc_to_choice": "{{[sol1, sol2]}}",
+              "doc_to_target": "label",
+              "doc_to_text": "Question: {{goal}}\nAnswer:",
+              "fewshot_delimiter": "\n\n",
+              "fewshot_indices": null,
+              "gen_prefix": null,
+              "process_docs": null,
+              "sampler": "default",
+              "samples": null,
+              "split": null,
+              "target_delimiter": " "
+            },
+            "fewshot_delimiter": "\n\n",
+            "metadata": {
+              "version": 1.0
+            },
+            "metric_list": [
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc"
+              },
+              {
+                "aggregation": "mean",
+                "higher_is_better": true,
+                "metric": "acc_norm"
+              }
+            ],
+            "output_type": "multiple_choice",
+            "repeats": 1,
+            "should_decontaminate": true,
+            "target_delimiter": " ",
+            "task": "piqa",
+            "unsafe_code": false,
+            "validation_split": "validation"
+          },
+          "documents_sha256": "51f3b49890882db14723c689d7a613242785743ba43d3fe6efcd59e293356b69",
+          "indices": [
+            16,
+            59,
+            63,
+            71,
+            75,
+            101,
+            106,
+            129,
+            156,
+            165,
+            169,
+            187,
+            190,
+            208,
+            221,
+            223,
+            233,
+            242,
+            245,
+            268,
+            298,
+            336,
+            344,
+            372,
+            380,
+            387,
+            388,
+            405,
+            459,
+            477,
+            502,
+            506,
+            510,
+            516,
+            523,
+            525,
+            527,
+            533,
+            547,
+            551,
+            559,
+            586,
+            590,
+            627,
+            631,
+            632,
+            636,
+            639,
+            643,
+            656,
+            662,
+            687,
+            698,
+            749,
+            751,
+            772,
+            802,
+            809,
+            819,
+            843,
+            851,
+            856,
+            867,
+            879,
+            898,
+            900,
+            901,
+            937,
+            951,
+            991,
+            997,
+            998,
+            1012,
+            1060,
+            1069,
+            1081,
+            1082,
+            1091,
+            1179,
+            1192,
+            1263,
+            1269,
+            1274,
+            1290,
+            1306,
+            1321,
+            1332,
+            1345,
+            1368,
+            1383,
+            1386,
+            1397,
+            1401,
+            1427,
+            1432,
+            1446,
+            1467,
+            1492,
+            1509,
+            1510,
+            1520,
+            1521,
+            1528,
+            1541,
+            1544,
+            1562,
+            1578,
+            1599,
+            1612,
+            1627,
+            1630,
+            1637,
+            1661,
+            1668,
+            1669,
+            1675,
+            1701,
+            1706,
+            1732,
+            1733,
+            1748,
+            1757,
+            1759,
+            1769,
+            1773,
+            1806,
+            1818,
+            1829
+          ],
+          "split_size": 1838
+        }
+      }
+    }
+  },
+  "metrics": {
+    "acc,none": 0.5390625,
+    "acc_norm,none": 0.4765625,
+    "acc_norm_stderr,none": "N/A",
+    "acc_stderr,none": "N/A",
+    "alias": "arc_easy",
+    "name": "arc_easy",
+    "sample_len": 128
+  },
+  "n_samples": {
+    "effective": 128,
+    "original": 2376
+  },
+  "samples": [
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "0b1d32d8fff63c6f801aa24ea0d27d565a4433b59fa7720e7d2682c8b772594f",
+      "doc_id": 3,
+      "filtered_resps": [
+        [
+          -11.335847854614258,
+          false
+        ],
+        [
+          -11.781119346618652,
+          false
+        ],
+        [
+          -10.60335636138916,
+          false
+        ],
+        [
+          -9.30579948425293,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.335847854614258,
+            false
+          ]
+        ],
+        [
+          [
+            -11.781119346618652,
+            false
+          ]
+        ],
+        [
+          [
+            -10.60335636138916,
+            false
+          ]
+        ],
+        [
+          [
+            -9.30579948425293,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "ed9246f5dba2f6092643addd83791292ff22941fb348a9bc056bf367dc972119",
+      "doc_id": 16,
+      "filtered_resps": [
+        [
+          -36.168556213378906,
+          false
+        ],
+        [
+          -33.80952072143555,
+          false
+        ],
+        [
+          -34.0037956237793,
+          false
+        ],
+        [
+          -45.61543655395508,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -36.168556213378906,
+            false
+          ]
+        ],
+        [
+          [
+            -33.80952072143555,
+            false
+          ]
+        ],
+        [
+          [
+            -34.0037956237793,
+            false
+          ]
+        ],
+        [
+          [
+            -45.61543655395508,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "81755ed085852e343c48816c10777a00988d2795f3f8501e9ad6f031fbdb59b1",
+      "doc_id": 31,
+      "filtered_resps": [
+        [
+          -22.628124237060547,
+          false
+        ],
+        [
+          -21.422035217285156,
+          false
+        ],
+        [
+          -16.22248077392578,
+          false
+        ],
+        [
+          -26.64908218383789,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -22.628124237060547,
+            false
+          ]
+        ],
+        [
+          [
+            -21.422035217285156,
+            false
+          ]
+        ],
+        [
+          [
+            -16.22248077392578,
+            false
+          ]
+        ],
+        [
+          [
+            -26.64908218383789,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "eee600bb19b75d5d6cbeff26bf22c6a4567740213b93b5d8578ef3e970db89bb",
+      "doc_id": 53,
+      "filtered_resps": [
+        [
+          -16.526222229003906,
+          false
+        ],
+        [
+          -20.77700424194336,
+          false
+        ],
+        [
+          -18.919391632080078,
+          false
+        ],
+        [
+          -26.508588790893555,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.526222229003906,
+            false
+          ]
+        ],
+        [
+          [
+            -20.77700424194336,
+            false
+          ]
+        ],
+        [
+          [
+            -18.919391632080078,
+            false
+          ]
+        ],
+        [
+          [
+            -26.508588790893555,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "e0ff4599b2843095fc40b57430140edeeb2b04cd8de7d3240572ce474243ac79",
+      "doc_id": 88,
+      "filtered_resps": [
+        [
+          -12.136218070983887,
+          false
+        ],
+        [
+          -20.31344985961914,
+          false
+        ],
+        [
+          -14.377843856811523,
+          false
+        ],
+        [
+          -22.304468154907227,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -12.136218070983887,
+            false
+          ]
+        ],
+        [
+          [
+            -20.31344985961914,
+            false
+          ]
+        ],
+        [
+          [
+            -14.377843856811523,
+            false
+          ]
+        ],
+        [
+          [
+            -22.304468154907227,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "797cefdca85795a5eac5812edac87e04292e95ffe1efc4ec54b0f054f6f83080",
+      "doc_id": 113,
+      "filtered_resps": [
+        [
+          -13.867393493652344,
+          false
+        ],
+        [
+          -12.560234069824219,
+          false
+        ],
+        [
+          -13.864812850952148,
+          false
+        ],
+        [
+          -18.869956970214844,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.867393493652344,
+            false
+          ]
+        ],
+        [
+          [
+            -12.560234069824219,
+            false
+          ]
+        ],
+        [
+          [
+            -13.864812850952148,
+            false
+          ]
+        ],
+        [
+          [
+            -18.869956970214844,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "b92986d7d8c8d704f71a92a7c6b0c49c60da42e6f507ecdb6990ee59f7cbcf1c",
+      "doc_id": 119,
+      "filtered_resps": [
+        [
+          -14.174249649047852,
+          false
+        ],
+        [
+          -12.92667007446289,
+          false
+        ],
+        [
+          -12.65044116973877,
+          false
+        ],
+        [
+          -15.622703552246094,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.174249649047852,
+            false
+          ]
+        ],
+        [
+          [
+            -12.92667007446289,
+            false
+          ]
+        ],
+        [
+          [
+            -12.65044116973877,
+            false
+          ]
+        ],
+        [
+          [
+            -15.622703552246094,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "281ef8fc98920f7ac371c87c87b137addde12e180fd40c1c95980ff89b84b0c3",
+      "doc_id": 137,
+      "filtered_resps": [
+        [
+          -16.05501937866211,
+          false
+        ],
+        [
+          -23.631267547607422,
+          false
+        ],
+        [
+          -15.559788703918457,
+          false
+        ],
+        [
+          -30.078086853027344,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.05501937866211,
+            false
+          ]
+        ],
+        [
+          [
+            -23.631267547607422,
+            false
+          ]
+        ],
+        [
+          [
+            -15.559788703918457,
+            false
+          ]
+        ],
+        [
+          [
+            -30.078086853027344,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "5e785a76e4984f0fc45d914c15b1d411009e438513f634377206aa907cd31b20",
+      "doc_id": 145,
+      "filtered_resps": [
+        [
+          -25.296085357666016,
+          false
+        ],
+        [
+          -33.04625701904297,
+          false
+        ],
+        [
+          -59.417747497558594,
+          false
+        ],
+        [
+          -38.2768669128418,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -25.296085357666016,
+            false
+          ]
+        ],
+        [
+          [
+            -33.04625701904297,
+            false
+          ]
+        ],
+        [
+          [
+            -59.417747497558594,
+            false
+          ]
+        ],
+        [
+          [
+            -38.2768669128418,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "03c72d88c2606ed6fa44ce3adc5e620682b146259c6f8ed0885766c70f92c35e",
+      "doc_id": 146,
+      "filtered_resps": [
+        [
+          -19.492223739624023,
+          false
+        ],
+        [
+          -26.316545486450195,
+          false
+        ],
+        [
+          -26.456159591674805,
+          false
+        ],
+        [
+          -30.812299728393555,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -19.492223739624023,
+            false
+          ]
+        ],
+        [
+          [
+            -26.316545486450195,
+            false
+          ]
+        ],
+        [
+          [
+            -26.456159591674805,
+            false
+          ]
+        ],
+        [
+          [
+            -30.812299728393555,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6029af010ba7359a348e2f5b96750e9e651823ac20813603c39853c54dadfe0f",
+      "doc_id": 195,
+      "filtered_resps": [
+        [
+          -14.527069091796875,
+          false
+        ],
+        [
+          -14.99367904663086,
+          false
+        ],
+        [
+          -19.112916946411133,
+          false
+        ],
+        [
+          -19.509042739868164,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.527069091796875,
+            false
+          ]
+        ],
+        [
+          [
+            -14.99367904663086,
+            false
+          ]
+        ],
+        [
+          [
+            -19.112916946411133,
+            false
+          ]
+        ],
+        [
+          [
+            -19.509042739868164,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "1c785e6d974eff923b57000b7aa5ddeca50b80a0f232b129eb900e997eba256c",
+      "doc_id": 206,
+      "filtered_resps": [
+        [
+          -14.523222923278809,
+          false
+        ],
+        [
+          -25.536405563354492,
+          false
+        ],
+        [
+          -17.840007781982422,
+          false
+        ],
+        [
+          -39.64100646972656,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.523222923278809,
+            false
+          ]
+        ],
+        [
+          [
+            -25.536405563354492,
+            false
+          ]
+        ],
+        [
+          [
+            -17.840007781982422,
+            false
+          ]
+        ],
+        [
+          [
+            -39.64100646972656,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "afb0b461eddd7b9e3aa0c7da47c83371b40bc129015d3ad2f9be4adc7983911c",
+      "doc_id": 212,
+      "filtered_resps": [
+        [
+          -24.373817443847656,
+          false
+        ],
+        [
+          -27.87392234802246,
+          false
+        ],
+        [
+          -22.82656478881836,
+          false
+        ],
+        [
+          -26.305618286132812,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -24.373817443847656,
+            false
+          ]
+        ],
+        [
+          [
+            -27.87392234802246,
+            false
+          ]
+        ],
+        [
+          [
+            -22.82656478881836,
+            false
+          ]
+        ],
+        [
+          [
+            -26.305618286132812,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6e240443e51eb4ed19b955d290bd4f0845875decc92f0286818fb712a7d5fd77",
+      "doc_id": 259,
+      "filtered_resps": [
+        [
+          -33.37319564819336,
+          false
+        ],
+        [
+          -31.902503967285156,
+          false
+        ],
+        [
+          -38.776039123535156,
+          false
+        ],
+        [
+          -41.62444305419922,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -33.37319564819336,
+            false
+          ]
+        ],
+        [
+          [
+            -31.902503967285156,
+            false
+          ]
+        ],
+        [
+          [
+            -38.776039123535156,
+            false
+          ]
+        ],
+        [
+          [
+            -41.62444305419922,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "92c5648e45e926c51bbe25b323a999fce82290c30567b7f76e60269494637a43",
+      "doc_id": 269,
+      "filtered_resps": [
+        [
+          -28.31958770751953,
+          false
+        ],
+        [
+          -21.76559066772461,
+          false
+        ],
+        [
+          -32.98748016357422,
+          false
+        ],
+        [
+          -26.384716033935547,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -28.31958770751953,
+            false
+          ]
+        ],
+        [
+          [
+            -21.76559066772461,
+            false
+          ]
+        ],
+        [
+          [
+            -32.98748016357422,
+            false
+          ]
+        ],
+        [
+          [
+            -26.384716033935547,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "d6a82eaea36802e2477859925ca7dc01c65c7fb5db5787af33566dba8c7a59b1",
+      "doc_id": 298,
+      "filtered_resps": [
+        [
+          -43.64976501464844,
+          false
+        ],
+        [
+          -38.73347091674805,
+          false
+        ],
+        [
+          -42.61970901489258,
+          false
+        ],
+        [
+          -41.01274871826172,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -43.64976501464844,
+            false
+          ]
+        ],
+        [
+          [
+            -38.73347091674805,
+            false
+          ]
+        ],
+        [
+          [
+            -42.61970901489258,
+            false
+          ]
+        ],
+        [
+          [
+            -41.01274871826172,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "d1336b48ec1e5ffca8eb157cb9d07bfba0da759268221f9d8fcb302c96cc72d2",
+      "doc_id": 310,
+      "filtered_resps": [
+        [
+          -21.28073501586914,
+          false
+        ],
+        [
+          -17.573408126831055,
+          false
+        ],
+        [
+          -23.202341079711914,
+          false
+        ],
+        [
+          -25.856910705566406,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -21.28073501586914,
+            false
+          ]
+        ],
+        [
+          [
+            -17.573408126831055,
+            false
+          ]
+        ],
+        [
+          [
+            -23.202341079711914,
+            false
+          ]
+        ],
+        [
+          [
+            -25.856910705566406,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "c0dad8d26486b6870fd053a617156bce9dca2484ae446d4664e7265470dfecdb",
+      "doc_id": 324,
+      "filtered_resps": [
+        [
+          -27.818775177001953,
+          false
+        ],
+        [
+          -29.781017303466797,
+          false
+        ],
+        [
+          -19.73472785949707,
+          false
+        ],
+        [
+          -26.224044799804688,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.818775177001953,
+            false
+          ]
+        ],
+        [
+          [
+            -29.781017303466797,
+            false
+          ]
+        ],
+        [
+          [
+            -19.73472785949707,
+            false
+          ]
+        ],
+        [
+          [
+            -26.224044799804688,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "9d28f404cb4fd0175c737fcd37ba07e9bcc321e31ea151570c2a8a79ad71f388",
+      "doc_id": 333,
+      "filtered_resps": [
+        [
+          -16.047988891601562,
+          false
+        ],
+        [
+          -19.561613082885742,
+          false
+        ],
+        [
+          -22.91274070739746,
+          false
+        ],
+        [
+          -15.340559959411621,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.047988891601562,
+            false
+          ]
+        ],
+        [
+          [
+            -19.561613082885742,
+            false
+          ]
+        ],
+        [
+          [
+            -22.91274070739746,
+            false
+          ]
+        ],
+        [
+          [
+            -15.340559959411621,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "6fb6d7c618e46c66388ac7e36f80707189fc686914c8383651f7c244eaf5c23b",
+      "doc_id": 365,
+      "filtered_resps": [
+        [
+          -37.39109802246094,
+          false
+        ],
+        [
+          -32.88372039794922,
+          false
+        ],
+        [
+          -34.68041229248047,
+          false
+        ],
+        [
+          -25.158470153808594,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -37.39109802246094,
+            false
+          ]
+        ],
+        [
+          [
+            -32.88372039794922,
+            false
+          ]
+        ],
+        [
+          [
+            -34.68041229248047,
+            false
+          ]
+        ],
+        [
+          [
+            -25.158470153808594,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "91fa410c63a02a7f77c103ea08c4d25dc02f06b88ac242148214b919c2a2d9ba",
+      "doc_id": 369,
+      "filtered_resps": [
+        [
+          -41.03369140625,
+          false
+        ],
+        [
+          -49.05455780029297,
+          false
+        ],
+        [
+          -52.45586395263672,
+          false
+        ],
+        [
+          -30.216537475585938,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -41.03369140625,
+            false
+          ]
+        ],
+        [
+          [
+            -49.05455780029297,
+            false
+          ]
+        ],
+        [
+          [
+            -52.45586395263672,
+            false
+          ]
+        ],
+        [
+          [
+            -30.216537475585938,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "7ef3bfbc6f9d599eb20207fe7afd32e2ef20dec2e17c15db99fa2f36514b191f",
+      "doc_id": 408,
+      "filtered_resps": [
+        [
+          -12.611655235290527,
+          false
+        ],
+        [
+          -16.066011428833008,
+          false
+        ],
+        [
+          -18.89303207397461,
+          false
+        ],
+        [
+          -19.88551139831543,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -12.611655235290527,
+            false
+          ]
+        ],
+        [
+          [
+            -16.066011428833008,
+            false
+          ]
+        ],
+        [
+          [
+            -18.89303207397461,
+            false
+          ]
+        ],
+        [
+          [
+            -19.88551139831543,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "cbc0b33e6606f30f5cad769546ec8eca355fcfbbbb20d75891e7c888a5530ecb",
+      "doc_id": 427,
+      "filtered_resps": [
+        [
+          -6.632358551025391,
+          false
+        ],
+        [
+          -6.153816223144531,
+          false
+        ],
+        [
+          -6.573337554931641,
+          false
+        ],
+        [
+          -7.586291313171387,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -6.632358551025391,
+            false
+          ]
+        ],
+        [
+          [
+            -6.153816223144531,
+            false
+          ]
+        ],
+        [
+          [
+            -6.573337554931641,
+            false
+          ]
+        ],
+        [
+          [
+            -7.586291313171387,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "75dbb159048760f570810c5dd5f839c8d17be0f51f6f12bdbf132d5d50327c9c",
+      "doc_id": 434,
+      "filtered_resps": [
+        [
+          -11.601786613464355,
+          false
+        ],
+        [
+          -13.70543384552002,
+          false
+        ],
+        [
+          -15.623496055603027,
+          false
+        ],
+        [
+          -14.614636421203613,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.601786613464355,
+            false
+          ]
+        ],
+        [
+          [
+            -13.70543384552002,
+            false
+          ]
+        ],
+        [
+          [
+            -15.623496055603027,
+            false
+          ]
+        ],
+        [
+          [
+            -14.614636421203613,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "737df373da39d1cd5e8671aaff39817f9381d6c84e1e07d6fd24d8f5b6e840b7",
+      "doc_id": 439,
+      "filtered_resps": [
+        [
+          -10.861448287963867,
+          false
+        ],
+        [
+          -10.995187759399414,
+          false
+        ],
+        [
+          -10.796741485595703,
+          false
+        ],
+        [
+          -13.06871509552002,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -10.861448287963867,
+            false
+          ]
+        ],
+        [
+          [
+            -10.995187759399414,
+            false
+          ]
+        ],
+        [
+          [
+            -10.796741485595703,
+            false
+          ]
+        ],
+        [
+          [
+            -13.06871509552002,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "7283eb82008b462a1f6c5983f3d405d82f7f041efa27fb5b4083897ccd2ae381",
+      "doc_id": 454,
+      "filtered_resps": [
+        [
+          -16.221920013427734,
+          false
+        ],
+        [
+          -14.716026306152344,
+          false
+        ],
+        [
+          -16.632062911987305,
+          false
+        ],
+        [
+          -13.950029373168945,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.221920013427734,
+            false
+          ]
+        ],
+        [
+          [
+            -14.716026306152344,
+            false
+          ]
+        ],
+        [
+          [
+            -16.632062911987305,
+            false
+          ]
+        ],
+        [
+          [
+            -13.950029373168945,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "38767d00832c405ad17b113688ec01d7d466cbbafc7075ccb74e9e5bbb96cb2c",
+      "doc_id": 474,
+      "filtered_resps": [
+        [
+          -18.376056671142578,
+          false
+        ],
+        [
+          -23.34154510498047,
+          false
+        ],
+        [
+          -15.56460189819336,
+          false
+        ],
+        [
+          -23.412031173706055,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.376056671142578,
+            false
+          ]
+        ],
+        [
+          [
+            -23.34154510498047,
+            false
+          ]
+        ],
+        [
+          [
+            -15.56460189819336,
+            false
+          ]
+        ],
+        [
+          [
+            -23.412031173706055,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "389053364db89cc9fd43ae988feed928544ddb14f52c3be6356059525c5cab1e",
+      "doc_id": 479,
+      "filtered_resps": [
+        [
+          -10.754973411560059,
+          false
+        ],
+        [
+          -12.453190803527832,
+          false
+        ],
+        [
+          -14.287871360778809,
+          false
+        ],
+        [
+          -15.01154899597168,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -10.754973411560059,
+            false
+          ]
+        ],
+        [
+          [
+            -12.453190803527832,
+            false
+          ]
+        ],
+        [
+          [
+            -14.287871360778809,
+            false
+          ]
+        ],
+        [
+          [
+            -15.01154899597168,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "f7709cb9305b5d449651b448ea9313c22eb4c9fe93214fcd4da8f008697430cb",
+      "doc_id": 480,
+      "filtered_resps": [
+        [
+          -19.837697982788086,
+          false
+        ],
+        [
+          -16.587432861328125,
+          false
+        ],
+        [
+          -20.156465530395508,
+          false
+        ],
+        [
+          -25.66701316833496,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -19.837697982788086,
+            false
+          ]
+        ],
+        [
+          [
+            -16.587432861328125,
+            false
+          ]
+        ],
+        [
+          [
+            -20.156465530395508,
+            false
+          ]
+        ],
+        [
+          [
+            -25.66701316833496,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "5165849eef30e28024bc4e18dd5ab2f0d33b3218729ddbeaeab55048e6c12e23",
+      "doc_id": 497,
+      "filtered_resps": [
+        [
+          -26.367942810058594,
+          false
+        ],
+        [
+          -26.489227294921875,
+          false
+        ],
+        [
+          -26.653730392456055,
+          false
+        ],
+        [
+          -24.937732696533203,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -26.367942810058594,
+            false
+          ]
+        ],
+        [
+          [
+            -26.489227294921875,
+            false
+          ]
+        ],
+        [
+          [
+            -26.653730392456055,
+            false
+          ]
+        ],
+        [
+          [
+            -24.937732696533203,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "38ee7a017c03535e777800f914f14ce5c8e955a0dcdb715988b6c4cf044563d9",
+      "doc_id": 512,
+      "filtered_resps": [
+        [
+          -16.340221405029297,
+          false
+        ],
+        [
+          -19.434444427490234,
+          false
+        ],
+        [
+          -23.996103286743164,
+          false
+        ],
+        [
+          -17.931406021118164,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.340221405029297,
+            false
+          ]
+        ],
+        [
+          [
+            -19.434444427490234,
+            false
+          ]
+        ],
+        [
+          [
+            -23.996103286743164,
+            false
+          ]
+        ],
+        [
+          [
+            -17.931406021118164,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "73bc8190aa60dea2f981a0a576d5e1e803d584ba6a6476b763ea288e3759d1d8",
+      "doc_id": 520,
+      "filtered_resps": [
+        [
+          -9.56114387512207,
+          false
+        ],
+        [
+          -8.669452667236328,
+          false
+        ],
+        [
+          -10.426095008850098,
+          false
+        ],
+        [
+          -9.612313270568848,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.56114387512207,
+            false
+          ]
+        ],
+        [
+          [
+            -8.669452667236328,
+            false
+          ]
+        ],
+        [
+          [
+            -10.426095008850098,
+            false
+          ]
+        ],
+        [
+          [
+            -9.612313270568848,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "c90bed71e8185671930008d46136cd39646a2fe67dd4e25ede712b94c060b09f",
+      "doc_id": 522,
+      "filtered_resps": [
+        [
+          -10.470837593078613,
+          false
+        ],
+        [
+          -15.447924613952637,
+          false
+        ],
+        [
+          -12.323860168457031,
+          false
+        ],
+        [
+          -10.953012466430664,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -10.470837593078613,
+            false
+          ]
+        ],
+        [
+          [
+            -15.447924613952637,
+            false
+          ]
+        ],
+        [
+          [
+            -12.323860168457031,
+            false
+          ]
+        ],
+        [
+          [
+            -10.953012466430664,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "e167efba4f7a698dd917a286b321af579f1ca98431f1b3cf751fbac32afc1145",
+      "doc_id": 534,
+      "filtered_resps": [
+        [
+          -9.459088325500488,
+          false
+        ],
+        [
+          -12.382221221923828,
+          false
+        ],
+        [
+          -10.597285270690918,
+          false
+        ],
+        [
+          -11.408040046691895,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.459088325500488,
+            false
+          ]
+        ],
+        [
+          [
+            -12.382221221923828,
+            false
+          ]
+        ],
+        [
+          [
+            -10.597285270690918,
+            false
+          ]
+        ],
+        [
+          [
+            -11.408040046691895,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "4fb3794043fb44453702e0ed4092d0c4cf6d74e7e0b4ec047390070f6bbb2cac",
+      "doc_id": 580,
+      "filtered_resps": [
+        [
+          -39.06956100463867,
+          false
+        ],
+        [
+          -37.1640625,
+          false
+        ],
+        [
+          -39.22713851928711,
+          false
+        ],
+        [
+          -33.84971237182617,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -39.06956100463867,
+            false
+          ]
+        ],
+        [
+          [
+            -37.1640625,
+            false
+          ]
+        ],
+        [
+          [
+            -39.22713851928711,
+            false
+          ]
+        ],
+        [
+          [
+            -33.84971237182617,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "26d719c16b9505892099c21ba72355ffe8f96cca73df2db5fa1122579b4ee9b7",
+      "doc_id": 639,
+      "filtered_resps": [
+        [
+          -7.49161434173584,
+          false
+        ],
+        [
+          -6.582365989685059,
+          false
+        ],
+        [
+          -5.20771598815918,
+          false
+        ],
+        [
+          -7.617067337036133,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -7.49161434173584,
+            false
+          ]
+        ],
+        [
+          [
+            -6.582365989685059,
+            false
+          ]
+        ],
+        [
+          [
+            -5.20771598815918,
+            false
+          ]
+        ],
+        [
+          [
+            -7.617067337036133,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "378ab2dc07513d97754dcbff7b5024b5707864533711037c0456b2c20f515432",
+      "doc_id": 645,
+      "filtered_resps": [
+        [
+          -21.449542999267578,
+          false
+        ],
+        [
+          -37.801353454589844,
+          false
+        ],
+        [
+          -30.24007225036621,
+          false
+        ],
+        [
+          -34.91709518432617,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -21.449542999267578,
+            false
+          ]
+        ],
+        [
+          [
+            -37.801353454589844,
+            false
+          ]
+        ],
+        [
+          [
+            -30.24007225036621,
+            false
+          ]
+        ],
+        [
+          [
+            -34.91709518432617,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "b9eefbe6ccb81d6f1871094d3c153177eff5365df7130176ae67b09c895226f5",
+      "doc_id": 663,
+      "filtered_resps": [
+        [
+          -18.171951293945312,
+          false
+        ],
+        [
+          -20.509618759155273,
+          false
+        ],
+        [
+          -24.648971557617188,
+          false
+        ],
+        [
+          -30.032012939453125,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.171951293945312,
+            false
+          ]
+        ],
+        [
+          [
+            -20.509618759155273,
+            false
+          ]
+        ],
+        [
+          [
+            -24.648971557617188,
+            false
+          ]
+        ],
+        [
+          [
+            -30.032012939453125,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "65e71eff40d0d1c309627702556d1f7e50e608858c8a1be424045100d05de881",
+      "doc_id": 710,
+      "filtered_resps": [
+        [
+          -7.6693549156188965,
+          false
+        ],
+        [
+          -6.2846245765686035,
+          false
+        ],
+        [
+          -8.710667610168457,
+          false
+        ],
+        [
+          -6.038219928741455,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -7.6693549156188965,
+            false
+          ]
+        ],
+        [
+          [
+            -6.2846245765686035,
+            false
+          ]
+        ],
+        [
+          [
+            -8.710667610168457,
+            false
+          ]
+        ],
+        [
+          [
+            -6.038219928741455,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "f91b3397a824c2dbb78e6440b2345b9d54b09ea570511a7ae0a63064278c4fbe",
+      "doc_id": 720,
+      "filtered_resps": [
+        [
+          -14.230934143066406,
+          false
+        ],
+        [
+          -16.751733779907227,
+          false
+        ],
+        [
+          -17.130224227905273,
+          false
+        ],
+        [
+          -27.079788208007812,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.230934143066406,
+            false
+          ]
+        ],
+        [
+          [
+            -16.751733779907227,
+            false
+          ]
+        ],
+        [
+          [
+            -17.130224227905273,
+            false
+          ]
+        ],
+        [
+          [
+            -27.079788208007812,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "9d21b55b7b726cdb0d43dda2a9f04286faf2efcf87bb18c6d5de13f8adcf7064",
+      "doc_id": 732,
+      "filtered_resps": [
+        [
+          -20.18489646911621,
+          false
+        ],
+        [
+          -14.778118133544922,
+          false
+        ],
+        [
+          -18.92626190185547,
+          false
+        ],
+        [
+          -12.002395629882812,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -20.18489646911621,
+            false
+          ]
+        ],
+        [
+          [
+            -14.778118133544922,
+            false
+          ]
+        ],
+        [
+          [
+            -18.92626190185547,
+            false
+          ]
+        ],
+        [
+          [
+            -12.002395629882812,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "45e8ee7e4ca166400654144f09a632851d7977c13d4bc21e6ad41adb1287ad41",
+      "doc_id": 738,
+      "filtered_resps": [
+        [
+          -34.92451477050781,
+          false
+        ],
+        [
+          -40.570308685302734,
+          false
+        ],
+        [
+          -25.887195587158203,
+          false
+        ],
+        [
+          -46.41693878173828,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -34.92451477050781,
+            false
+          ]
+        ],
+        [
+          [
+            -40.570308685302734,
+            false
+          ]
+        ],
+        [
+          [
+            -25.887195587158203,
+            false
+          ]
+        ],
+        [
+          [
+            -46.41693878173828,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "a7b9c081c8c304843a70fc99c4ec1f6e0486b00b08aca5d9deaa048e1898de52",
+      "doc_id": 740,
+      "filtered_resps": [
+        [
+          -25.156936645507812,
+          false
+        ],
+        [
+          -19.4453182220459,
+          false
+        ],
+        [
+          -19.2181339263916,
+          false
+        ],
+        [
+          -15.151052474975586,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -25.156936645507812,
+            false
+          ]
+        ],
+        [
+          [
+            -19.4453182220459,
+            false
+          ]
+        ],
+        [
+          [
+            -19.2181339263916,
+            false
+          ]
+        ],
+        [
+          [
+            -15.151052474975586,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "798479feeb841fd28fcadcf7b494a4c350cf5be55a33fe292497b837c1b99ff0",
+      "doc_id": 746,
+      "filtered_resps": [
+        [
+          -27.751869201660156,
+          false
+        ],
+        [
+          -21.079978942871094,
+          false
+        ],
+        [
+          -41.14610290527344,
+          false
+        ],
+        [
+          -39.342796325683594,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.751869201660156,
+            false
+          ]
+        ],
+        [
+          [
+            -21.079978942871094,
+            false
+          ]
+        ],
+        [
+          [
+            -41.14610290527344,
+            false
+          ]
+        ],
+        [
+          [
+            -39.342796325683594,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "135c323da5c871cadfc2f6b13cec3e153ab47587934f14e4ed75ba0ec089252f",
+      "doc_id": 752,
+      "filtered_resps": [
+        [
+          -6.9640703201293945,
+          false
+        ],
+        [
+          -6.883334159851074,
+          false
+        ],
+        [
+          -12.579227447509766,
+          false
+        ],
+        [
+          -8.619603157043457,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -6.9640703201293945,
+            false
+          ]
+        ],
+        [
+          [
+            -6.883334159851074,
+            false
+          ]
+        ],
+        [
+          [
+            -12.579227447509766,
+            false
+          ]
+        ],
+        [
+          [
+            -8.619603157043457,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "9f80a72d49a995d3ef306d2167b0f32a5303ee1ac8354c8c18a295b16aa32b76",
+      "doc_id": 755,
+      "filtered_resps": [
+        [
+          -17.46744155883789,
+          false
+        ],
+        [
+          -18.420726776123047,
+          false
+        ],
+        [
+          -7.202561855316162,
+          false
+        ],
+        [
+          -8.860495567321777,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -17.46744155883789,
+            false
+          ]
+        ],
+        [
+          [
+            -18.420726776123047,
+            false
+          ]
+        ],
+        [
+          [
+            -7.202561855316162,
+            false
+          ]
+        ],
+        [
+          [
+            -8.860495567321777,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "3e49c588229e1dd9502aa0259f68d305c1fff74edd043e02feadd2e2b060e57b",
+      "doc_id": 790,
+      "filtered_resps": [
+        [
+          -15.178451538085938,
+          false
+        ],
+        [
+          -16.431598663330078,
+          false
+        ],
+        [
+          -9.789287567138672,
+          false
+        ],
+        [
+          -16.17072105407715,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.178451538085938,
+            false
+          ]
+        ],
+        [
+          [
+            -16.431598663330078,
+            false
+          ]
+        ],
+        [
+          [
+            -9.789287567138672,
+            false
+          ]
+        ],
+        [
+          [
+            -16.17072105407715,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "4c67d12c84fa173160e08f427cfd853f0ba150d863151f27bf3ce3d777c8db54",
+      "doc_id": 822,
+      "filtered_resps": [
+        [
+          -16.911792755126953,
+          false
+        ],
+        [
+          -17.896806716918945,
+          false
+        ],
+        [
+          -18.08198356628418,
+          false
+        ],
+        [
+          -20.09949493408203,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.911792755126953,
+            false
+          ]
+        ],
+        [
+          [
+            -17.896806716918945,
+            false
+          ]
+        ],
+        [
+          [
+            -18.08198356628418,
+            false
+          ]
+        ],
+        [
+          [
+            -20.09949493408203,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "1f8ca2defd248c0b3b56a1107716d7bebab1edc71cbfb7dcf0321736618fe14f",
+      "doc_id": 886,
+      "filtered_resps": [
+        [
+          -3.109774589538574,
+          false
+        ],
+        [
+          -3.2126095294952393,
+          false
+        ],
+        [
+          -1.028681755065918,
+          true
+        ],
+        [
+          -7.122243881225586,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -3.109774589538574,
+            false
+          ]
+        ],
+        [
+          [
+            -3.2126095294952393,
+            false
+          ]
+        ],
+        [
+          [
+            -1.028681755065918,
+            true
+          ]
+        ],
+        [
+          [
+            -7.122243881225586,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "9eb0e96e393b51228435a2a737866cdb8a8ec57f023af7dda7355795e74555c8",
+      "doc_id": 919,
+      "filtered_resps": [
+        [
+          -40.35542297363281,
+          false
+        ],
+        [
+          -35.369842529296875,
+          false
+        ],
+        [
+          -41.69010925292969,
+          false
+        ],
+        [
+          -53.998233795166016,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -40.35542297363281,
+            false
+          ]
+        ],
+        [
+          [
+            -35.369842529296875,
+            false
+          ]
+        ],
+        [
+          [
+            -41.69010925292969,
+            false
+          ]
+        ],
+        [
+          [
+            -53.998233795166016,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "7539810900440eef888ec6e8dc3398aa6f5f5c4ef2a6d56494d42d6a388ab4ff",
+      "doc_id": 971,
+      "filtered_resps": [
+        [
+          -41.59589385986328,
+          false
+        ],
+        [
+          -43.929908752441406,
+          false
+        ],
+        [
+          -35.393333435058594,
+          false
+        ],
+        [
+          -25.7119197845459,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -41.59589385986328,
+            false
+          ]
+        ],
+        [
+          [
+            -43.929908752441406,
+            false
+          ]
+        ],
+        [
+          [
+            -35.393333435058594,
+            false
+          ]
+        ],
+        [
+          [
+            -25.7119197845459,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "1cf36405b3ec1ebfa3eae37ecab33062858b0a0f33eb0a8a80d400b6c9bce6f8",
+      "doc_id": 978,
+      "filtered_resps": [
+        [
+          -21.30370330810547,
+          false
+        ],
+        [
+          -15.797507286071777,
+          false
+        ],
+        [
+          -16.094459533691406,
+          false
+        ],
+        [
+          -8.601430892944336,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -21.30370330810547,
+            false
+          ]
+        ],
+        [
+          [
+            -15.797507286071777,
+            false
+          ]
+        ],
+        [
+          [
+            -16.094459533691406,
+            false
+          ]
+        ],
+        [
+          [
+            -8.601430892944336,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "2c9ba8995539a629bb2ca34f8e8a17dc44fa0fe910fa5dce415c78a8a4aab144",
+      "doc_id": 985,
+      "filtered_resps": [
+        [
+          -15.632186889648438,
+          false
+        ],
+        [
+          -15.444419860839844,
+          false
+        ],
+        [
+          -14.752778053283691,
+          false
+        ],
+        [
+          -13.164937973022461,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.632186889648438,
+            false
+          ]
+        ],
+        [
+          [
+            -15.444419860839844,
+            false
+          ]
+        ],
+        [
+          [
+            -14.752778053283691,
+            false
+          ]
+        ],
+        [
+          [
+            -13.164937973022461,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "42ec44d1c278198923f48036a1886bb1b203c6825cb598842c60b272226884a1",
+      "doc_id": 998,
+      "filtered_resps": [
+        [
+          -15.839422225952148,
+          false
+        ],
+        [
+          -19.40216064453125,
+          false
+        ],
+        [
+          -19.037330627441406,
+          false
+        ],
+        [
+          -20.65494155883789,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.839422225952148,
+            false
+          ]
+        ],
+        [
+          [
+            -19.40216064453125,
+            false
+          ]
+        ],
+        [
+          [
+            -19.037330627441406,
+            false
+          ]
+        ],
+        [
+          [
+            -20.65494155883789,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "a9653ab7045066ecbb4f2f9f9824c5b5fe675c3fc67ce9c40419215fa4efa870",
+      "doc_id": 1016,
+      "filtered_resps": [
+        [
+          -11.442499160766602,
+          false
+        ],
+        [
+          -12.327926635742188,
+          false
+        ],
+        [
+          -7.128555774688721,
+          false
+        ],
+        [
+          -12.003825187683105,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.442499160766602,
+            false
+          ]
+        ],
+        [
+          [
+            -12.327926635742188,
+            false
+          ]
+        ],
+        [
+          [
+            -7.128555774688721,
+            false
+          ]
+        ],
+        [
+          [
+            -12.003825187683105,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "4835a243f1ee1fd7d9d26403ce0f4cb5ff5fcc02543f174e9aae55a465265736",
+      "doc_id": 1020,
+      "filtered_resps": [
+        [
+          -27.883974075317383,
+          false
+        ],
+        [
+          -29.158096313476562,
+          false
+        ],
+        [
+          -42.366397857666016,
+          false
+        ],
+        [
+          -28.956872940063477,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.883974075317383,
+            false
+          ]
+        ],
+        [
+          [
+            -29.158096313476562,
+            false
+          ]
+        ],
+        [
+          [
+            -42.366397857666016,
+            false
+          ]
+        ],
+        [
+          [
+            -28.956872940063477,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "1e233d62f500327e63e86a4ee11f3d1237c62ea18046c2bddad2f28b99071bfc",
+      "doc_id": 1021,
+      "filtered_resps": [
+        [
+          -8.247187614440918,
+          false
+        ],
+        [
+          -8.744526863098145,
+          false
+        ],
+        [
+          -7.692298889160156,
+          false
+        ],
+        [
+          -4.249534606933594,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -8.247187614440918,
+            false
+          ]
+        ],
+        [
+          [
+            -8.744526863098145,
+            false
+          ]
+        ],
+        [
+          [
+            -7.692298889160156,
+            false
+          ]
+        ],
+        [
+          [
+            -4.249534606933594,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "2243e9e17d34b97581d0210923db452891b5d08f231f050ef69e8f837d4570fa",
+      "doc_id": 1025,
+      "filtered_resps": [
+        [
+          -13.987308502197266,
+          false
+        ],
+        [
+          -19.258275985717773,
+          false
+        ],
+        [
+          -13.302657127380371,
+          false
+        ],
+        [
+          -17.981529235839844,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.987308502197266,
+            false
+          ]
+        ],
+        [
+          [
+            -19.258275985717773,
+            false
+          ]
+        ],
+        [
+          [
+            -13.302657127380371,
+            false
+          ]
+        ],
+        [
+          [
+            -17.981529235839844,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "aa1d00dd1235a53f1546f1af7d3a794d118ed84c314dad006bf92037bef09ca2",
+      "doc_id": 1038,
+      "filtered_resps": [
+        [
+          -9.90861701965332,
+          false
+        ],
+        [
+          -16.916488647460938,
+          false
+        ],
+        [
+          -10.947280883789062,
+          false
+        ],
+        [
+          -11.97410774230957,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.90861701965332,
+            false
+          ]
+        ],
+        [
+          [
+            -16.916488647460938,
+            false
+          ]
+        ],
+        [
+          [
+            -10.947280883789062,
+            false
+          ]
+        ],
+        [
+          [
+            -11.97410774230957,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "f3701f7dcdc9b864d61071ea9291d1c10a304cbf1c9a89259cd42be48bbac7d4",
+      "doc_id": 1057,
+      "filtered_resps": [
+        [
+          -13.277254104614258,
+          false
+        ],
+        [
+          -19.47625160217285,
+          false
+        ],
+        [
+          -15.59476375579834,
+          false
+        ],
+        [
+          -16.20883560180664,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.277254104614258,
+            false
+          ]
+        ],
+        [
+          [
+            -19.47625160217285,
+            false
+          ]
+        ],
+        [
+          [
+            -15.59476375579834,
+            false
+          ]
+        ],
+        [
+          [
+            -16.20883560180664,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "be8b8a2e2c93c699da6b8f86c2a8954fdf5cc2398f121453862c91d344818d12",
+      "doc_id": 1062,
+      "filtered_resps": [
+        [
+          -27.742965698242188,
+          false
+        ],
+        [
+          -23.0645694732666,
+          false
+        ],
+        [
+          -16.945659637451172,
+          false
+        ],
+        [
+          -13.75226879119873,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.742965698242188,
+            false
+          ]
+        ],
+        [
+          [
+            -23.0645694732666,
+            false
+          ]
+        ],
+        [
+          [
+            -16.945659637451172,
+            false
+          ]
+        ],
+        [
+          [
+            -13.75226879119873,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "8dc0278c44a55569fe1f5740db8c9f54d81d760813abf9574009a65d74aa66ef",
+      "doc_id": 1077,
+      "filtered_resps": [
+        [
+          -27.11489486694336,
+          false
+        ],
+        [
+          -23.018051147460938,
+          false
+        ],
+        [
+          -36.76897048950195,
+          false
+        ],
+        [
+          -32.70709991455078,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.11489486694336,
+            false
+          ]
+        ],
+        [
+          [
+            -23.018051147460938,
+            false
+          ]
+        ],
+        [
+          [
+            -36.76897048950195,
+            false
+          ]
+        ],
+        [
+          [
+            -32.70709991455078,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6f5f25c7e9a1f85a1f3ce9a4578d31618715f5c12b4b47d7dccc15e9cf9fc895",
+      "doc_id": 1079,
+      "filtered_resps": [
+        [
+          -18.6336612701416,
+          false
+        ],
+        [
+          -20.498912811279297,
+          false
+        ],
+        [
+          -15.832608222961426,
+          false
+        ],
+        [
+          -15.053656578063965,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.6336612701416,
+            false
+          ]
+        ],
+        [
+          [
+            -20.498912811279297,
+            false
+          ]
+        ],
+        [
+          [
+            -15.832608222961426,
+            false
+          ]
+        ],
+        [
+          [
+            -15.053656578063965,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "704ee0fb4d78c5219a475818bb68c100fe966d8194844dfc066f79527360649d",
+      "doc_id": 1114,
+      "filtered_resps": [
+        [
+          -11.640436172485352,
+          false
+        ],
+        [
+          -8.255332946777344,
+          false
+        ],
+        [
+          -5.724905014038086,
+          false
+        ],
+        [
+          -11.38779354095459,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.640436172485352,
+            false
+          ]
+        ],
+        [
+          [
+            -8.255332946777344,
+            false
+          ]
+        ],
+        [
+          [
+            -5.724905014038086,
+            false
+          ]
+        ],
+        [
+          [
+            -11.38779354095459,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "a60a8feaca3639ca34dcbf1b682840f7715fc30241969b8a4459e07e03dc8301",
+      "doc_id": 1120,
+      "filtered_resps": [
+        [
+          -9.65625,
+          false
+        ],
+        [
+          -9.073046684265137,
+          false
+        ],
+        [
+          -17.423561096191406,
+          false
+        ],
+        [
+          -16.566429138183594,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.65625,
+            false
+          ]
+        ],
+        [
+          [
+            -9.073046684265137,
+            false
+          ]
+        ],
+        [
+          [
+            -17.423561096191406,
+            false
+          ]
+        ],
+        [
+          [
+            -16.566429138183594,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "5413fbdc37d06ad6f170399255098ac7e5b7f761a3d7aa47f1822ce721b23eb6",
+      "doc_id": 1137,
+      "filtered_resps": [
+        [
+          -16.544374465942383,
+          false
+        ],
+        [
+          -19.118661880493164,
+          false
+        ],
+        [
+          -24.883174896240234,
+          false
+        ],
+        [
+          -21.18181610107422,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.544374465942383,
+            false
+          ]
+        ],
+        [
+          [
+            -19.118661880493164,
+            false
+          ]
+        ],
+        [
+          [
+            -24.883174896240234,
+            false
+          ]
+        ],
+        [
+          [
+            -21.18181610107422,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "ff47fcbe0c18d1fc7c30743c4e05a9864e66a756387b40f85c74f239788fedb8",
+      "doc_id": 1141,
+      "filtered_resps": [
+        [
+          -10.636096000671387,
+          false
+        ],
+        [
+          -14.600505828857422,
+          false
+        ],
+        [
+          -8.548998832702637,
+          false
+        ],
+        [
+          -10.597844123840332,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -10.636096000671387,
+            false
+          ]
+        ],
+        [
+          [
+            -14.600505828857422,
+            false
+          ]
+        ],
+        [
+          [
+            -8.548998832702637,
+            false
+          ]
+        ],
+        [
+          [
+            -10.597844123840332,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "39122dccf4a32f00f9eaa7edcb0ce14308b0bbef8743754198806f91b2cae8ad",
+      "doc_id": 1148,
+      "filtered_resps": [
+        [
+          -12.657379150390625,
+          false
+        ],
+        [
+          -7.963386535644531,
+          false
+        ],
+        [
+          -10.206396102905273,
+          false
+        ],
+        [
+          -11.12507438659668,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -12.657379150390625,
+            false
+          ]
+        ],
+        [
+          [
+            -7.963386535644531,
+            false
+          ]
+        ],
+        [
+          [
+            -10.206396102905273,
+            false
+          ]
+        ],
+        [
+          [
+            -11.12507438659668,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6e633b8b64f1d495dbed192475fb283ddd43086bd5d4aac1c1471c90ed1dd7bd",
+      "doc_id": 1167,
+      "filtered_resps": [
+        [
+          -32.57769775390625,
+          false
+        ],
+        [
+          -33.24180603027344,
+          false
+        ],
+        [
+          -22.20857810974121,
+          false
+        ],
+        [
+          -23.463624954223633,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -32.57769775390625,
+            false
+          ]
+        ],
+        [
+          [
+            -33.24180603027344,
+            false
+          ]
+        ],
+        [
+          [
+            -22.20857810974121,
+            false
+          ]
+        ],
+        [
+          [
+            -23.463624954223633,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "5ec73f347a4133cb4ef31dd3e935f3adf4fe285081d9caaebbbc6eaa30c024c2",
+      "doc_id": 1219,
+      "filtered_resps": [
+        [
+          -12.08322525024414,
+          false
+        ],
+        [
+          -18.893827438354492,
+          false
+        ],
+        [
+          -10.78820514678955,
+          false
+        ],
+        [
+          -15.779603958129883,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -12.08322525024414,
+            false
+          ]
+        ],
+        [
+          [
+            -18.893827438354492,
+            false
+          ]
+        ],
+        [
+          [
+            -10.78820514678955,
+            false
+          ]
+        ],
+        [
+          [
+            -15.779603958129883,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "a8aa0c1b28637b8cec997b3f7e4ff4f0ec9aa6e0bc80895e09c184e6b6f9a950",
+      "doc_id": 1221,
+      "filtered_resps": [
+        [
+          -27.585208892822266,
+          false
+        ],
+        [
+          -18.879182815551758,
+          false
+        ],
+        [
+          -18.108325958251953,
+          false
+        ],
+        [
+          -33.52723693847656,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.585208892822266,
+            false
+          ]
+        ],
+        [
+          [
+            -18.879182815551758,
+            false
+          ]
+        ],
+        [
+          [
+            -18.108325958251953,
+            false
+          ]
+        ],
+        [
+          [
+            -33.52723693847656,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "5593b7e26a3fe5ef8fdba5839776e83f0e771325f19757d70580d20ded45b708",
+      "doc_id": 1227,
+      "filtered_resps": [
+        [
+          -29.505043029785156,
+          false
+        ],
+        [
+          -23.41922378540039,
+          false
+        ],
+        [
+          -26.504249572753906,
+          false
+        ],
+        [
+          -30.39346694946289,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -29.505043029785156,
+            false
+          ]
+        ],
+        [
+          [
+            -23.41922378540039,
+            false
+          ]
+        ],
+        [
+          [
+            -26.504249572753906,
+            false
+          ]
+        ],
+        [
+          [
+            -30.39346694946289,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "aad31b3d5752c73d3a2a3c45b021e7e0c494a8fe8d51c402ca88709ba56c40c7",
+      "doc_id": 1228,
+      "filtered_resps": [
+        [
+          -13.86912727355957,
+          false
+        ],
+        [
+          -10.34283447265625,
+          false
+        ],
+        [
+          -13.470396041870117,
+          false
+        ],
+        [
+          -16.095272064208984,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.86912727355957,
+            false
+          ]
+        ],
+        [
+          [
+            -10.34283447265625,
+            false
+          ]
+        ],
+        [
+          [
+            -13.470396041870117,
+            false
+          ]
+        ],
+        [
+          [
+            -16.095272064208984,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "d27d6ec49a19ef91877e908b43f001c3735d35588d9a4ba9290e9f0441bcffb9",
+      "doc_id": 1236,
+      "filtered_resps": [
+        [
+          -25.77875328063965,
+          false
+        ],
+        [
+          -39.216583251953125,
+          false
+        ],
+        [
+          -49.77909851074219,
+          false
+        ],
+        [
+          -32.80342102050781,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -25.77875328063965,
+            false
+          ]
+        ],
+        [
+          [
+            -39.216583251953125,
+            false
+          ]
+        ],
+        [
+          [
+            -49.77909851074219,
+            false
+          ]
+        ],
+        [
+          [
+            -32.80342102050781,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "b8b93b1565fa3a4f5050fa9beacdd260d4b2a0793fa29293907cc1849ca187d2",
+      "doc_id": 1237,
+      "filtered_resps": [
+        [
+          -14.664337158203125,
+          false
+        ],
+        [
+          -15.66638469696045,
+          false
+        ],
+        [
+          -14.968039512634277,
+          false
+        ],
+        [
+          -18.608875274658203,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.664337158203125,
+            false
+          ]
+        ],
+        [
+          [
+            -15.66638469696045,
+            false
+          ]
+        ],
+        [
+          [
+            -14.968039512634277,
+            false
+          ]
+        ],
+        [
+          [
+            -18.608875274658203,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "fd46ac363588755ffe64e497ec3e629896b7aa03d26d5abb9dc1fac26ffc0c27",
+      "doc_id": 1240,
+      "filtered_resps": [
+        [
+          -14.342618942260742,
+          false
+        ],
+        [
+          -15.013513565063477,
+          false
+        ],
+        [
+          -15.035982131958008,
+          false
+        ],
+        [
+          -17.223979949951172,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.342618942260742,
+            false
+          ]
+        ],
+        [
+          [
+            -15.013513565063477,
+            false
+          ]
+        ],
+        [
+          [
+            -15.035982131958008,
+            false
+          ]
+        ],
+        [
+          [
+            -17.223979949951172,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "16d3a0ff5e83214ee91b16f1112f51493aa5e031bcca4fb8d526bd44a51eead4",
+      "doc_id": 1249,
+      "filtered_resps": [
+        [
+          -19.19395637512207,
+          false
+        ],
+        [
+          -15.053470611572266,
+          false
+        ],
+        [
+          -29.18511199951172,
+          false
+        ],
+        [
+          -17.652053833007812,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -19.19395637512207,
+            false
+          ]
+        ],
+        [
+          [
+            -15.053470611572266,
+            false
+          ]
+        ],
+        [
+          [
+            -29.18511199951172,
+            false
+          ]
+        ],
+        [
+          [
+            -17.652053833007812,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "828c285be54295959ba4e10816d11cd79e9863514cde709b8c21dbc828179d6e",
+      "doc_id": 1271,
+      "filtered_resps": [
+        [
+          -16.745624542236328,
+          false
+        ],
+        [
+          -18.893173217773438,
+          false
+        ],
+        [
+          -15.15943717956543,
+          false
+        ],
+        [
+          -19.738231658935547,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.745624542236328,
+            false
+          ]
+        ],
+        [
+          [
+            -18.893173217773438,
+            false
+          ]
+        ],
+        [
+          [
+            -15.15943717956543,
+            false
+          ]
+        ],
+        [
+          [
+            -19.738231658935547,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6a52b294f07499c99dea9431a7d0e24e120882cd9923d44f638f4f742660bd61",
+      "doc_id": 1285,
+      "filtered_resps": [
+        [
+          -15.813112258911133,
+          false
+        ],
+        [
+          -17.916194915771484,
+          false
+        ],
+        [
+          -32.6060905456543,
+          false
+        ],
+        [
+          -34.06093978881836,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.813112258911133,
+            false
+          ]
+        ],
+        [
+          [
+            -17.916194915771484,
+            false
+          ]
+        ],
+        [
+          [
+            -32.6060905456543,
+            false
+          ]
+        ],
+        [
+          [
+            -34.06093978881836,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "99f038c2dc373f595f145b4cf4ddc68977380e3a9e03e3479457a4c20f5091e6",
+      "doc_id": 1286,
+      "filtered_resps": [
+        [
+          -24.909645080566406,
+          false
+        ],
+        [
+          -24.49506378173828,
+          false
+        ],
+        [
+          -27.26995086669922,
+          false
+        ],
+        [
+          -31.329082489013672,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -24.909645080566406,
+            false
+          ]
+        ],
+        [
+          [
+            -24.49506378173828,
+            false
+          ]
+        ],
+        [
+          [
+            -27.26995086669922,
+            false
+          ]
+        ],
+        [
+          [
+            -31.329082489013672,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "ac3f0809309269bb0f673da7de4c0444c05a5bb8ab55aa5941ce195ee576bf3d",
+      "doc_id": 1336,
+      "filtered_resps": [
+        [
+          -15.591734886169434,
+          false
+        ],
+        [
+          -13.194506645202637,
+          false
+        ],
+        [
+          -19.045122146606445,
+          false
+        ],
+        [
+          -17.18695640563965,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.591734886169434,
+            false
+          ]
+        ],
+        [
+          [
+            -13.194506645202637,
+            false
+          ]
+        ],
+        [
+          [
+            -19.045122146606445,
+            false
+          ]
+        ],
+        [
+          [
+            -17.18695640563965,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "adbfc0f3736dcdb6f51c0cb90037ce3e61d57c9da54ec785e2a01fff434c9534",
+      "doc_id": 1351,
+      "filtered_resps": [
+        [
+          -14.425352096557617,
+          false
+        ],
+        [
+          -15.196000099182129,
+          false
+        ],
+        [
+          -22.417882919311523,
+          false
+        ],
+        [
+          -16.112586975097656,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.425352096557617,
+            false
+          ]
+        ],
+        [
+          [
+            -15.196000099182129,
+            false
+          ]
+        ],
+        [
+          [
+            -22.417882919311523,
+            false
+          ]
+        ],
+        [
+          [
+            -16.112586975097656,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "7e6734f1c66d8396b26abc6e2cb4749098cc2832c03642925c0a9ad6c75a7760",
+      "doc_id": 1354,
+      "filtered_resps": [
+        [
+          -25.880340576171875,
+          false
+        ],
+        [
+          -34.93803405761719,
+          false
+        ],
+        [
+          -37.44383239746094,
+          false
+        ],
+        [
+          -35.11151885986328,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -25.880340576171875,
+            false
+          ]
+        ],
+        [
+          [
+            -34.93803405761719,
+            false
+          ]
+        ],
+        [
+          [
+            -37.44383239746094,
+            false
+          ]
+        ],
+        [
+          [
+            -35.11151885986328,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "ec340dfe7e97c40430082de90b03bd08be7337fd3d8f4cfa0485d8fde0fc59cf",
+      "doc_id": 1374,
+      "filtered_resps": [
+        [
+          -25.23853302001953,
+          false
+        ],
+        [
+          -35.946861267089844,
+          false
+        ],
+        [
+          -20.708831787109375,
+          false
+        ],
+        [
+          -28.376636505126953,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -25.23853302001953,
+            false
+          ]
+        ],
+        [
+          [
+            -35.946861267089844,
+            false
+          ]
+        ],
+        [
+          [
+            -20.708831787109375,
+            false
+          ]
+        ],
+        [
+          [
+            -28.376636505126953,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "3e47d368a1eafc897591da15ac0e796a93f0c4686ae8345e0ea2aa9f4a819bf9",
+      "doc_id": 1416,
+      "filtered_resps": [
+        [
+          -38.69622802734375,
+          false
+        ],
+        [
+          -38.014610290527344,
+          false
+        ],
+        [
+          -42.51475524902344,
+          false
+        ],
+        [
+          -40.773502349853516,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -38.69622802734375,
+            false
+          ]
+        ],
+        [
+          [
+            -38.014610290527344,
+            false
+          ]
+        ],
+        [
+          [
+            -42.51475524902344,
+            false
+          ]
+        ],
+        [
+          [
+            -40.773502349853516,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "0ae191490930d3b36f2a8faa05282775487400c03270e1307d816eda6712e57f",
+      "doc_id": 1445,
+      "filtered_resps": [
+        [
+          -23.697620391845703,
+          false
+        ],
+        [
+          -22.663501739501953,
+          false
+        ],
+        [
+          -23.9213809967041,
+          false
+        ],
+        [
+          -31.31906509399414,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -23.697620391845703,
+            false
+          ]
+        ],
+        [
+          [
+            -22.663501739501953,
+            false
+          ]
+        ],
+        [
+          [
+            -23.9213809967041,
+            false
+          ]
+        ],
+        [
+          [
+            -31.31906509399414,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "ea28171578eb332a9294f90b5fee3f86abd416e96dafd985308e21216d7c4324",
+      "doc_id": 1449,
+      "filtered_resps": [
+        [
+          -18.155733108520508,
+          false
+        ],
+        [
+          -21.55403709411621,
+          false
+        ],
+        [
+          -16.27684211730957,
+          false
+        ],
+        [
+          -18.861082077026367,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.155733108520508,
+            false
+          ]
+        ],
+        [
+          [
+            -21.55403709411621,
+            false
+          ]
+        ],
+        [
+          [
+            -16.27684211730957,
+            false
+          ]
+        ],
+        [
+          [
+            -18.861082077026367,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "7ab4fdebe612a8122488b663293de75506175b9266b831a233079b444fbfa3c2",
+      "doc_id": 1490,
+      "filtered_resps": [
+        [
+          -9.001670837402344,
+          false
+        ],
+        [
+          -7.030487060546875,
+          false
+        ],
+        [
+          -11.648204803466797,
+          false
+        ],
+        [
+          -8.11229419708252,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.001670837402344,
+            false
+          ]
+        ],
+        [
+          [
+            -7.030487060546875,
+            false
+          ]
+        ],
+        [
+          [
+            -11.648204803466797,
+            false
+          ]
+        ],
+        [
+          [
+            -8.11229419708252,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "9a1ad17a296cee6ea11201980c82b90dd0b2cade99d1627f0dffc033e8190ab7",
+      "doc_id": 1491,
+      "filtered_resps": [
+        [
+          -10.08603572845459,
+          false
+        ],
+        [
+          -16.320209503173828,
+          false
+        ],
+        [
+          -17.680320739746094,
+          false
+        ],
+        [
+          -15.35958480834961,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -10.08603572845459,
+            false
+          ]
+        ],
+        [
+          [
+            -16.320209503173828,
+            false
+          ]
+        ],
+        [
+          [
+            -17.680320739746094,
+            false
+          ]
+        ],
+        [
+          [
+            -15.35958480834961,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "7bb2b9026e2390cf7926665fd42545a01a23c845e8c7dcea21386e6d5c89284e",
+      "doc_id": 1545,
+      "filtered_resps": [
+        [
+          -11.513895034790039,
+          false
+        ],
+        [
+          -12.26864242553711,
+          false
+        ],
+        [
+          -16.234241485595703,
+          false
+        ],
+        [
+          -14.495351791381836,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.513895034790039,
+            false
+          ]
+        ],
+        [
+          [
+            -12.26864242553711,
+            false
+          ]
+        ],
+        [
+          [
+            -16.234241485595703,
+            false
+          ]
+        ],
+        [
+          [
+            -14.495351791381836,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "53bd615ad053c16f9075f2bb4112b96ece65d4fce20dd994b35b799ec0a45ba3",
+      "doc_id": 1565,
+      "filtered_resps": [
+        [
+          -28.191608428955078,
+          false
+        ],
+        [
+          -21.039058685302734,
+          false
+        ],
+        [
+          -16.04366111755371,
+          false
+        ],
+        [
+          -32.36395263671875,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -28.191608428955078,
+            false
+          ]
+        ],
+        [
+          [
+            -21.039058685302734,
+            false
+          ]
+        ],
+        [
+          [
+            -16.04366111755371,
+            false
+          ]
+        ],
+        [
+          [
+            -32.36395263671875,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "9394fca6bf813604ac7fd345a280d9e68bc1f453fa4d7af669529b8a70a08263",
+      "doc_id": 1581,
+      "filtered_resps": [
+        [
+          -13.793079376220703,
+          false
+        ],
+        [
+          -13.468733787536621,
+          false
+        ],
+        [
+          -14.227805137634277,
+          false
+        ],
+        [
+          -16.443796157836914,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.793079376220703,
+            false
+          ]
+        ],
+        [
+          [
+            -13.468733787536621,
+            false
+          ]
+        ],
+        [
+          [
+            -14.227805137634277,
+            false
+          ]
+        ],
+        [
+          [
+            -16.443796157836914,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "bfeec11de13bd1195840f5dbfae9e292f00c05b56a5f7343cdeafac643de35dd",
+      "doc_id": 1630,
+      "filtered_resps": [
+        [
+          -14.135940551757812,
+          false
+        ],
+        [
+          -15.777225494384766,
+          false
+        ],
+        [
+          -9.807880401611328,
+          false
+        ],
+        [
+          -12.575273513793945,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.135940551757812,
+            false
+          ]
+        ],
+        [
+          [
+            -15.777225494384766,
+            false
+          ]
+        ],
+        [
+          [
+            -9.807880401611328,
+            false
+          ]
+        ],
+        [
+          [
+            -12.575273513793945,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "108771aa7b507574974a6ad16911ad49d94c4deaa4e6b0b248e541baeaf3e5a0",
+      "doc_id": 1650,
+      "filtered_resps": [
+        [
+          -9.836047172546387,
+          false
+        ],
+        [
+          -8.855134010314941,
+          false
+        ],
+        [
+          -13.909475326538086,
+          false
+        ],
+        [
+          -9.509934425354004,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -9.836047172546387,
+            false
+          ]
+        ],
+        [
+          [
+            -8.855134010314941,
+            false
+          ]
+        ],
+        [
+          [
+            -13.909475326538086,
+            false
+          ]
+        ],
+        [
+          [
+            -9.509934425354004,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "a1122f385fcff5475cdabb199ea756c8bb1a14593da48439d0cf9b06210e7325",
+      "doc_id": 1661,
+      "filtered_resps": [
+        [
+          -16.563304901123047,
+          false
+        ],
+        [
+          -17.320871353149414,
+          false
+        ],
+        [
+          -16.895599365234375,
+          false
+        ],
+        [
+          -17.516420364379883,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.563304901123047,
+            false
+          ]
+        ],
+        [
+          [
+            -17.320871353149414,
+            false
+          ]
+        ],
+        [
+          [
+            -16.895599365234375,
+            false
+          ]
+        ],
+        [
+          [
+            -17.516420364379883,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "f3e3d976c368f8f1f85642705ff7cf0dce84999ed4c3e92ff75399cf06742fc2",
+      "doc_id": 1662,
+      "filtered_resps": [
+        [
+          -18.403667449951172,
+          false
+        ],
+        [
+          -16.228473663330078,
+          false
+        ],
+        [
+          -18.806079864501953,
+          false
+        ],
+        [
+          -26.104501724243164,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.403667449951172,
+            false
+          ]
+        ],
+        [
+          [
+            -16.228473663330078,
+            false
+          ]
+        ],
+        [
+          [
+            -18.806079864501953,
+            false
+          ]
+        ],
+        [
+          [
+            -26.104501724243164,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "c4ed54b3cf085c9d018bb109dd575556e0a51f883607b472d2ca1b2df8e7a368",
+      "doc_id": 1668,
+      "filtered_resps": [
+        [
+          -14.380983352661133,
+          false
+        ],
+        [
+          -18.933643341064453,
+          false
+        ],
+        [
+          -15.995887756347656,
+          false
+        ],
+        [
+          -17.916065216064453,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.380983352661133,
+            false
+          ]
+        ],
+        [
+          [
+            -18.933643341064453,
+            false
+          ]
+        ],
+        [
+          [
+            -15.995887756347656,
+            false
+          ]
+        ],
+        [
+          [
+            -17.916065216064453,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "3e4fac6295800c30d1360273fb69e5b4dc134c91baf141bd3bf4afe7aa5c27bb",
+      "doc_id": 1676,
+      "filtered_resps": [
+        [
+          -22.527873992919922,
+          false
+        ],
+        [
+          -22.08710289001465,
+          false
+        ],
+        [
+          -22.7857666015625,
+          false
+        ],
+        [
+          -29.404926300048828,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -22.527873992919922,
+            false
+          ]
+        ],
+        [
+          [
+            -22.08710289001465,
+            false
+          ]
+        ],
+        [
+          [
+            -22.7857666015625,
+            false
+          ]
+        ],
+        [
+          [
+            -29.404926300048828,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "2d9a49e52a89100ebe15b3643d0bd4df39fef04f45febac49a77909ebdd4605a",
+      "doc_id": 1699,
+      "filtered_resps": [
+        [
+          -16.104717254638672,
+          false
+        ],
+        [
+          -22.423725128173828,
+          false
+        ],
+        [
+          -26.50348663330078,
+          false
+        ],
+        [
+          -30.404687881469727,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -16.104717254638672,
+            false
+          ]
+        ],
+        [
+          [
+            -22.423725128173828,
+            false
+          ]
+        ],
+        [
+          [
+            -26.50348663330078,
+            false
+          ]
+        ],
+        [
+          [
+            -30.404687881469727,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "3d6f0bb7e6be442a5f2aad660d15bbdb9f0c71bd654cc8ce9bc5b2e8e637a267",
+      "doc_id": 1714,
+      "filtered_resps": [
+        [
+          -33.46208190917969,
+          false
+        ],
+        [
+          -25.282611846923828,
+          false
+        ],
+        [
+          -34.27156066894531,
+          false
+        ],
+        [
+          -27.809080123901367,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -33.46208190917969,
+            false
+          ]
+        ],
+        [
+          [
+            -25.282611846923828,
+            false
+          ]
+        ],
+        [
+          [
+            -34.27156066894531,
+            false
+          ]
+        ],
+        [
+          [
+            -27.809080123901367,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "247f2997713dbdd25490e4b18fbfade64108d73dfb636027f7c34f14041f1cea",
+      "doc_id": 1740,
+      "filtered_resps": [
+        [
+          -23.75197982788086,
+          false
+        ],
+        [
+          -36.08843231201172,
+          false
+        ],
+        [
+          -29.756221771240234,
+          false
+        ],
+        [
+          -20.707618713378906,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -23.75197982788086,
+            false
+          ]
+        ],
+        [
+          [
+            -36.08843231201172,
+            false
+          ]
+        ],
+        [
+          [
+            -29.756221771240234,
+            false
+          ]
+        ],
+        [
+          [
+            -20.707618713378906,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "4067378d2ba46f63eb452cc40922ce7e71770d5fe96c376fe3b9cc584c4d196b",
+      "doc_id": 1744,
+      "filtered_resps": [
+        [
+          -20.121198654174805,
+          false
+        ],
+        [
+          -21.940542221069336,
+          false
+        ],
+        [
+          -16.615148544311523,
+          false
+        ],
+        [
+          -20.06845474243164,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -20.121198654174805,
+            false
+          ]
+        ],
+        [
+          [
+            -21.940542221069336,
+            false
+          ]
+        ],
+        [
+          [
+            -16.615148544311523,
+            false
+          ]
+        ],
+        [
+          [
+            -20.06845474243164,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "8b1a1c9f44d7343c2280577bbc8b631ac29b82085f02a7c3608c83d3c1163fe1",
+      "doc_id": 1746,
+      "filtered_resps": [
+        [
+          -13.643526077270508,
+          false
+        ],
+        [
+          -13.016390800476074,
+          false
+        ],
+        [
+          -18.122556686401367,
+          false
+        ],
+        [
+          -18.952444076538086,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.643526077270508,
+            false
+          ]
+        ],
+        [
+          [
+            -13.016390800476074,
+            false
+          ]
+        ],
+        [
+          [
+            -18.122556686401367,
+            false
+          ]
+        ],
+        [
+          [
+            -18.952444076538086,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "d8719b44c15ed0ec1df80b3acc8557c09e4fb00ba42c49a3c6269524129bf13c",
+      "doc_id": 1753,
+      "filtered_resps": [
+        [
+          -66.34896087646484,
+          false
+        ],
+        [
+          -54.182334899902344,
+          false
+        ],
+        [
+          -48.68678665161133,
+          false
+        ],
+        [
+          -47.289180755615234,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -66.34896087646484,
+            false
+          ]
+        ],
+        [
+          [
+            -54.182334899902344,
+            false
+          ]
+        ],
+        [
+          [
+            -48.68678665161133,
+            false
+          ]
+        ],
+        [
+          [
+            -47.289180755615234,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "02743ac920d7beb019063138d2d8903aab00f8de8a1d616b964fe5719fe16332",
+      "doc_id": 1768,
+      "filtered_resps": [
+        [
+          -15.905160903930664,
+          false
+        ],
+        [
+          -10.265332221984863,
+          false
+        ],
+        [
+          -9.035154342651367,
+          false
+        ],
+        [
+          -12.638100624084473,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.905160903930664,
+            false
+          ]
+        ],
+        [
+          [
+            -10.265332221984863,
+            false
+          ]
+        ],
+        [
+          [
+            -9.035154342651367,
+            false
+          ]
+        ],
+        [
+          [
+            -12.638100624084473,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "74de2708622e0943c174113ca45882e476f4550217b7cc369394928be3dce3cf",
+      "doc_id": 1814,
+      "filtered_resps": [
+        [
+          -27.139965057373047,
+          false
+        ],
+        [
+          -26.6114501953125,
+          false
+        ],
+        [
+          -33.095741271972656,
+          false
+        ],
+        [
+          -41.51827621459961,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -27.139965057373047,
+            false
+          ]
+        ],
+        [
+          [
+            -26.6114501953125,
+            false
+          ]
+        ],
+        [
+          [
+            -33.095741271972656,
+            false
+          ]
+        ],
+        [
+          [
+            -41.51827621459961,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "2a55bd6c42987cc5a6918ecd281a7bfff3e2ce0a91a9fb509f99dae42854c48d",
+      "doc_id": 1830,
+      "filtered_resps": [
+        [
+          -12.209664344787598,
+          false
+        ],
+        [
+          -27.824668884277344,
+          false
+        ],
+        [
+          -35.690826416015625,
+          false
+        ],
+        [
+          -29.96476173400879,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -12.209664344787598,
+            false
+          ]
+        ],
+        [
+          [
+            -27.824668884277344,
+            false
+          ]
+        ],
+        [
+          [
+            -35.690826416015625,
+            false
+          ]
+        ],
+        [
+          [
+            -29.96476173400879,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "2d6337a38e564018c034b493fbe6c10b5907929aec63e843fd7e0206e3380074",
+      "doc_id": 1840,
+      "filtered_resps": [
+        [
+          -13.039046287536621,
+          false
+        ],
+        [
+          -15.675033569335938,
+          false
+        ],
+        [
+          -17.060903549194336,
+          false
+        ],
+        [
+          -15.592974662780762,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.039046287536621,
+            false
+          ]
+        ],
+        [
+          [
+            -15.675033569335938,
+            false
+          ]
+        ],
+        [
+          [
+            -17.060903549194336,
+            false
+          ]
+        ],
+        [
+          [
+            -15.592974662780762,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "3e53aa5f512015bcbe5e71899fbb68f00ff48d305f781c1eb053b10579a460b7",
+      "doc_id": 1925,
+      "filtered_resps": [
+        [
+          -17.578603744506836,
+          false
+        ],
+        [
+          -11.157821655273438,
+          false
+        ],
+        [
+          -17.144405364990234,
+          false
+        ],
+        [
+          -17.42690086364746,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -17.578603744506836,
+            false
+          ]
+        ],
+        [
+          [
+            -11.157821655273438,
+            false
+          ]
+        ],
+        [
+          [
+            -17.144405364990234,
+            false
+          ]
+        ],
+        [
+          [
+            -17.42690086364746,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "b27e367f96532182450f29b1f0eaca59f373c4a706844b965ea24a43fe6b2cd3",
+      "doc_id": 1935,
+      "filtered_resps": [
+        [
+          -22.158157348632812,
+          false
+        ],
+        [
+          -25.489919662475586,
+          false
+        ],
+        [
+          -25.627601623535156,
+          false
+        ],
+        [
+          -26.709808349609375,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -22.158157348632812,
+            false
+          ]
+        ],
+        [
+          [
+            -25.489919662475586,
+            false
+          ]
+        ],
+        [
+          [
+            -25.627601623535156,
+            false
+          ]
+        ],
+        [
+          [
+            -26.709808349609375,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "a5f24cbaa287aa60b5782cc3fbadccd3b28a0f84748ae2935419cd0ce46c4d75",
+      "doc_id": 1938,
+      "filtered_resps": [
+        [
+          -11.522636413574219,
+          false
+        ],
+        [
+          -11.314608573913574,
+          false
+        ],
+        [
+          -11.873233795166016,
+          false
+        ],
+        [
+          -11.751740455627441,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -11.522636413574219,
+            false
+          ]
+        ],
+        [
+          [
+            -11.314608573913574,
+            false
+          ]
+        ],
+        [
+          [
+            -11.873233795166016,
+            false
+          ]
+        ],
+        [
+          [
+            -11.751740455627441,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "69e055ade68da058a59f227f48a1864a223a67ba7e7349516304cdd26e23902c",
+      "doc_id": 1940,
+      "filtered_resps": [
+        [
+          -15.1988525390625,
+          false
+        ],
+        [
+          -19.72254180908203,
+          false
+        ],
+        [
+          -18.13165283203125,
+          false
+        ],
+        [
+          -21.487791061401367,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -15.1988525390625,
+            false
+          ]
+        ],
+        [
+          [
+            -19.72254180908203,
+            false
+          ]
+        ],
+        [
+          [
+            -18.13165283203125,
+            false
+          ]
+        ],
+        [
+          [
+            -21.487791061401367,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 1.0,
+      "doc_hash": "57d8654802442ab45ed71580e1b4da7745bf2e887aadd8d0de55f5e42d2d6327",
+      "doc_id": 1965,
+      "filtered_resps": [
+        [
+          -20.84998321533203,
+          false
+        ],
+        [
+          -18.563648223876953,
+          false
+        ],
+        [
+          -41.29671859741211,
+          false
+        ],
+        [
+          -19.281532287597656,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -20.84998321533203,
+            false
+          ]
+        ],
+        [
+          [
+            -18.563648223876953,
+            false
+          ]
+        ],
+        [
+          [
+            -41.29671859741211,
+            false
+          ]
+        ],
+        [
+          [
+            -19.281532287597656,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "961fd369e9d05f5746714dd5e910987e9865431791151e831b6f1789a5e23ffc",
+      "doc_id": 1996,
+      "filtered_resps": [
+        [
+          -26.483516693115234,
+          false
+        ],
+        [
+          -25.74514389038086,
+          false
+        ],
+        [
+          -31.37686538696289,
+          false
+        ],
+        [
+          -23.020450592041016,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -26.483516693115234,
+            false
+          ]
+        ],
+        [
+          [
+            -25.74514389038086,
+            false
+          ]
+        ],
+        [
+          [
+            -31.37686538696289,
+            false
+          ]
+        ],
+        [
+          [
+            -23.020450592041016,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "ce528d9890c801f1234ea7569f38d35e887d65586603b1de27325ea18fa911a2",
+      "doc_id": 2060,
+      "filtered_resps": [
+        [
+          -14.799114227294922,
+          false
+        ],
+        [
+          -12.213890075683594,
+          false
+        ],
+        [
+          -11.665801048278809,
+          false
+        ],
+        [
+          -11.375726699829102,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.799114227294922,
+            false
+          ]
+        ],
+        [
+          [
+            -12.213890075683594,
+            false
+          ]
+        ],
+        [
+          [
+            -11.665801048278809,
+            false
+          ]
+        ],
+        [
+          [
+            -11.375726699829102,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "0eb80d9631f84e24f0e6599698681e128a541102802b982d005a910acc5a797d",
+      "doc_id": 2081,
+      "filtered_resps": [
+        [
+          -13.006738662719727,
+          false
+        ],
+        [
+          -17.72779083251953,
+          false
+        ],
+        [
+          -19.480140686035156,
+          false
+        ],
+        [
+          -13.885795593261719,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.006738662719727,
+            false
+          ]
+        ],
+        [
+          [
+            -17.72779083251953,
+            false
+          ]
+        ],
+        [
+          [
+            -19.480140686035156,
+            false
+          ]
+        ],
+        [
+          [
+            -13.885795593261719,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "241789400ac9ae61c4c665730c7bb0b39b5123cf4616809b4243cf5e661b78eb",
+      "doc_id": 2082,
+      "filtered_resps": [
+        [
+          -13.70896053314209,
+          false
+        ],
+        [
+          -24.093318939208984,
+          false
+        ],
+        [
+          -28.36867904663086,
+          false
+        ],
+        [
+          -35.36901092529297,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.70896053314209,
+            false
+          ]
+        ],
+        [
+          [
+            -24.093318939208984,
+            false
+          ]
+        ],
+        [
+          [
+            -28.36867904663086,
+            false
+          ]
+        ],
+        [
+          [
+            -35.36901092529297,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "fddcc045e8b255cb37a904238ac8f3d7c70d4ea6c9318f27080c62105f95b368",
+      "doc_id": 2104,
+      "filtered_resps": [
+        [
+          -18.91788101196289,
+          false
+        ],
+        [
+          -16.207378387451172,
+          false
+        ],
+        [
+          -16.55767822265625,
+          false
+        ],
+        [
+          -18.898902893066406,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.91788101196289,
+            false
+          ]
+        ],
+        [
+          [
+            -16.207378387451172,
+            false
+          ]
+        ],
+        [
+          [
+            -16.55767822265625,
+            false
+          ]
+        ],
+        [
+          [
+            -18.898902893066406,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "6a58d57dd9868f8f3dd8b386e34bc2d66c646866361a085fa22e363d0cace9fc",
+      "doc_id": 2107,
+      "filtered_resps": [
+        [
+          -14.970402717590332,
+          false
+        ],
+        [
+          -14.333898544311523,
+          false
+        ],
+        [
+          -15.553537368774414,
+          false
+        ],
+        [
+          -14.749935150146484,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.970402717590332,
+            false
+          ]
+        ],
+        [
+          [
+            -14.333898544311523,
+            false
+          ]
+        ],
+        [
+          [
+            -15.553537368774414,
+            false
+          ]
+        ],
+        [
+          [
+            -14.749935150146484,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 0.0,
+      "doc_hash": "5b5b0699a3bba789c3a90388727478ea6257cd2124e195253ca5074981fa3ad1",
+      "doc_id": 2120,
+      "filtered_resps": [
+        [
+          -53.373924255371094,
+          false
+        ],
+        [
+          -35.333824157714844,
+          false
+        ],
+        [
+          -32.84034729003906,
+          false
+        ],
+        [
+          -36.75664520263672,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -53.373924255371094,
+            false
+          ]
+        ],
+        [
+          [
+            -35.333824157714844,
+            false
+          ]
+        ],
+        [
+          [
+            -32.84034729003906,
+            false
+          ]
+        ],
+        [
+          [
+            -36.75664520263672,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "465e4731d0e0522987d2fc0685209be14cb9cfffc3985ea7683d8b4ac77d7a0a",
+      "doc_id": 2144,
+      "filtered_resps": [
+        [
+          -14.655060768127441,
+          false
+        ],
+        [
+          -16.535985946655273,
+          false
+        ],
+        [
+          -16.807950973510742,
+          false
+        ],
+        [
+          -14.58318042755127,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -14.655060768127441,
+            false
+          ]
+        ],
+        [
+          [
+            -16.535985946655273,
+            false
+          ]
+        ],
+        [
+          [
+            -16.807950973510742,
+            false
+          ]
+        ],
+        [
+          [
+            -14.58318042755127,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "a142be18762098033671c14249ed5aab13cb746b356d5aa265ebbc1d3437f792",
+      "doc_id": 2243,
+      "filtered_resps": [
+        [
+          -19.481916427612305,
+          false
+        ],
+        [
+          -24.081253051757812,
+          false
+        ],
+        [
+          -21.1897029876709,
+          false
+        ],
+        [
+          -23.099327087402344,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -19.481916427612305,
+            false
+          ]
+        ],
+        [
+          [
+            -24.081253051757812,
+            false
+          ]
+        ],
+        [
+          [
+            -21.1897029876709,
+            false
+          ]
+        ],
+        [
+          [
+            -23.099327087402344,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "5d2b156f554aaf0651e84b8b696f45b88c58cc5f0252db06050333f87f5b8e4c",
+      "doc_id": 2267,
+      "filtered_resps": [
+        [
+          -18.326908111572266,
+          false
+        ],
+        [
+          -15.340116500854492,
+          false
+        ],
+        [
+          -16.57889747619629,
+          false
+        ],
+        [
+          -14.938552856445312,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.326908111572266,
+            false
+          ]
+        ],
+        [
+          [
+            -15.340116500854492,
+            false
+          ]
+        ],
+        [
+          [
+            -16.57889747619629,
+            false
+          ]
+        ],
+        [
+          [
+            -14.938552856445312,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "4510d6e92da10cb323b750a4f0f20ab27b0f8cde7c1a2c0d177807b6925f66f0",
+      "doc_id": 2293,
+      "filtered_resps": [
+        [
+          -18.321128845214844,
+          false
+        ],
+        [
+          -23.120725631713867,
+          false
+        ],
+        [
+          -15.84488296508789,
+          false
+        ],
+        [
+          -21.14897918701172,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -18.321128845214844,
+            false
+          ]
+        ],
+        [
+          [
+            -23.120725631713867,
+            false
+          ]
+        ],
+        [
+          [
+            -15.84488296508789,
+            false
+          ]
+        ],
+        [
+          [
+            -21.14897918701172,
+            false
+          ]
+        ]
+      ],
+      "target": 2
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "70ec05dddb5ed148d123147ae1dd299ed4416e2cb8efb77cf1fe8609373f3fc9",
+      "doc_id": 2301,
+      "filtered_resps": [
+        [
+          -8.846935272216797,
+          false
+        ],
+        [
+          -12.798785209655762,
+          false
+        ],
+        [
+          -13.777865409851074,
+          false
+        ],
+        [
+          -14.549403190612793,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -8.846935272216797,
+            false
+          ]
+        ],
+        [
+          [
+            -12.798785209655762,
+            false
+          ]
+        ],
+        [
+          [
+            -13.777865409851074,
+            false
+          ]
+        ],
+        [
+          [
+            -14.549403190612793,
+            false
+          ]
+        ]
+      ],
+      "target": 0
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "d30709a6583c9143d6c450645f5c7e7c2c53592fb5b13a44e88141dfc7aef0ea",
+      "doc_id": 2320,
+      "filtered_resps": [
+        [
+          -13.647564888000488,
+          false
+        ],
+        [
+          -8.497684478759766,
+          false
+        ],
+        [
+          -15.273088455200195,
+          false
+        ],
+        [
+          -13.467266082763672,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -13.647564888000488,
+            false
+          ]
+        ],
+        [
+          [
+            -8.497684478759766,
+            false
+          ]
+        ],
+        [
+          [
+            -15.273088455200195,
+            false
+          ]
+        ],
+        [
+          [
+            -13.467266082763672,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    },
+    {
+      "acc": 0.0,
+      "acc_norm": 0.0,
+      "doc_hash": "eb3a7ae0a163ee44194a077f4ca890e44f62b6edfbe6301c2eac59974d49bfcc",
+      "doc_id": 2331,
+      "filtered_resps": [
+        [
+          -21.097858428955078,
+          false
+        ],
+        [
+          -22.41206169128418,
+          false
+        ],
+        [
+          -19.47032928466797,
+          false
+        ],
+        [
+          -25.19029998779297,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -21.097858428955078,
+            false
+          ]
+        ],
+        [
+          [
+            -22.41206169128418,
+            false
+          ]
+        ],
+        [
+          [
+            -19.47032928466797,
+            false
+          ]
+        ],
+        [
+          [
+            -25.19029998779297,
+            false
+          ]
+        ]
+      ],
+      "target": 3
+    },
+    {
+      "acc": 1.0,
+      "acc_norm": 1.0,
+      "doc_hash": "f167b40e62f6643bcff48d8a6650a612896401f7984a9acd9bd2f5639b294230",
+      "doc_id": 2340,
+      "filtered_resps": [
+        [
+          -28.805030822753906,
+          false
+        ],
+        [
+          -20.667850494384766,
+          false
+        ],
+        [
+          -24.07601547241211,
+          false
+        ],
+        [
+          -33.32920837402344,
+          false
+        ]
+      ],
+      "resps": [
+        [
+          [
+            -28.805030822753906,
+            false
+          ]
+        ],
+        [
+          [
+            -20.667850494384766,
+            false
+          ]
+        ],
+        [
+          [
+            -24.07601547241211,
+            false
+          ]
+        ],
+        [
+          [
+            -33.32920837402344,
+            false
+          ]
+        ]
+      ],
+      "target": 1
+    }
+  ],
+  "status": "completed"
+}

@@ -31,6 +31,15 @@ def load_payload(path):
             raise ValueError("gain bundle base path or hash differs")
         payload = load_payload(base)
     targets = manifest.get("gain_parameter_names")
+    if "parameter_gains" in manifest:
+        if "gain" in manifest or set(manifest["parameter_gains"]) - set(payload["model"]):
+            raise ValueError("invalid parameter gain map")
+        for name, gain in manifest["parameter_gains"].items():
+            if not 0 < gain <= 2:
+                raise ValueError("parameter gain outside the registered range")
+            encoded = payload["model"][name]
+            key = "raw" if "raw" in encoded else "codebook"
+            encoded[key] = encoded[key].float() * gain
     if "gain" in manifest:
         for name, encoded in payload["model"].items():
             if targets is None or name in targets:
@@ -70,6 +79,15 @@ def self_check():
             "gain": 1.25, "gain_parameter_names": ["w"]}))
         decoded = load_payload(manifest)
         assert torch.equal(decoded["model"]["w"]["raw"], torch.tensor([1.25, -2.5]))
+        assert torch.equal(decoded["model"]["bias"]["raw"], torch.tensor([.25]))
+        assert torch.equal(decoded["exp_avg"]["w"], moment)
+        value = json.loads(manifest.read_text())
+        value.pop("gain")
+        value.pop("gain_parameter_names")
+        value["parameter_gains"] = {"w": .75}
+        manifest.write_text(json.dumps(value))
+        decoded = load_payload(manifest)
+        assert torch.equal(decoded["model"]["w"]["raw"], torch.tensor([.75, -1.5]))
         assert torch.equal(decoded["model"]["bias"]["raw"], torch.tensor([.25]))
         assert torch.equal(decoded["exp_avg"]["w"], moment)
     print("Gain bundle scales weights once, preserves moments and leaves its base intact")
