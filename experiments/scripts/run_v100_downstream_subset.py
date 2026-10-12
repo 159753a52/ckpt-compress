@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--examples", type=int, default=256)
     ap.add_argument("--task-data", type=Path)
     ap.add_argument("--subset", choices=("main", "calibration"), default="main")
+    ap.add_argument("--residual-scale", type=float, default=1.)
     args = ap.parse_args()
     import torch
     import lm_eval
@@ -52,7 +53,7 @@ def main():
     from run_system_bytes_comparison import excp_dequant
 
     methods, tasks = args.methods.split(","), args.tasks.split(",")
-    if set(methods) - {"no_compression", "iterative_ucb_disjoint", "excp_style"} or len(set(methods)) != len(methods) or args.examples < 1:
+    if set(methods) - {"no_compression", "iterative_ucb_disjoint", "excp_style"} or len(set(methods)) != len(methods) or args.examples < 1 or not 0 < args.residual_scale <= 2:
         ap.error("invalid methods or example count")
     args.out_dir.mkdir(parents=True, exist_ok=True)
     manager = TaskManager()
@@ -99,6 +100,8 @@ def main():
     protocol = json.loads(json.dumps(protocol, default=handle_non_serializable))
     if args.subset == "calibration":
         protocol["subset"] = "calibration; disjoint from the existing 256-example main subset"
+    if args.residual_scale != 1.:
+        protocol["residual_scale"] = args.residual_scale
     if args.task_data is not None:
         protocol["local_dataset_provenance"] = local_data
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
@@ -151,7 +154,8 @@ def main():
             params = dict(model.named_parameters())
             with torch.no_grad():
                 for n, value in payload["model"].items():
-                    params[n].copy_(base[n].to("cuda:0") + excp_dequant(value, base[n].shape, "cuda:0").float())
+                    gain = args.residual_scale * payload.get("residual_scale", 1.)
+                    params[n].copy_(base[n].to("cuda:0") + gain * excp_dequant(value, base[n].shape, "cuda:0").float())
             model.load_state_dict({**model.state_dict(), **payload["buffers"]}, strict=True)
             del payload
         lm = HFLM(pretrained=model, tokenizer=tokenizer, device="cuda:0", batch_size=8)
