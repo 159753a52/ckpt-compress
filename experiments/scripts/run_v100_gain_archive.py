@@ -72,8 +72,12 @@ def main():
         raise RuntimeError("written codebooks differ from gain calibration")
     validation = evaluate_lm(s.model, ctx["eval_batches"], s.device)
     delta = actual_gate["loss"] - baseline_gate["loss"]
-    record = {**source, "identity": {"checkpoint_sha256": sha256_file(args.checkpoint),
+    record = {"identity": {"checkpoint_sha256": sha256_file(args.checkpoint),
               "gain_calibration_sha256": sha256_file(args.calibration)}, "status": "completed", "method": method,
+              "sparsity": source["sparsity"], "seed": 42, "config": source.get("config"),
+              "source_selector": {"record": str(source_record), "record_sha256": sha256_file(source_record),
+                                  "archive_sha256": sha256_file(source_archive)},
+              "baseline_validation": ctx["uncompressed"],
               "gain": gain, "gate": actual_gate, "passed_gate": delta <= math.log1p(.01),
               "gate_ppl_change_percent": 100*math.expm1(delta), "validation": validation,
               "validation_ppl_change_percent": 100*math.expm1(validation["loss"]-ctx["uncompressed"]["val"]),
