@@ -39,21 +39,48 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     gain = chosen["gain"]
     method = cal["method"]
+    targets = cal["identity"].get("gain_parameter_names")
     if args.bundle:
         import os
-        base_file = args.out_dir / "base_payload.zlib"
-        if not base_file.exists():
-            os.link(source_archive, base_file)
-        if sha256_file(base_file) != sha256_file(source_archive):
-            raise RuntimeError("gain bundle base payload differs")
         archive = args.out_dir / f"{method}_gain{gain:g}.manifest.json"
-        write_json(archive, {"format": "residual-gain-bundle-v1", "base_file": base_file.name,
-                   "base_sha256": sha256_file(base_file), "gain": gain,
-                   "calibration_sha256": sha256_file(args.calibration)})
-        archive_bytes = base_file.stat().st_size + archive.stat().st_size
+        manifest = {"gain": gain, "calibration_sha256": sha256_file(args.calibration)}
+        if targets is not None:
+            manifest["gain_parameter_names"] = targets
+        component_bytes = 0
+        if source_archive.suffix == ".json":
+            source_manifest = json.loads(source_archive.read_text())
+            if source_manifest["format"] != "checkpoint-components-v1" or "gain" in source_manifest:
+                raise RuntimeError("gain writer requires an unscaled component archive")
+            manifest["format"] = "checkpoint-components-v1"
+            for key in ("state", "weights"):
+                item = source_manifest[key]
+                original = (source_archive.parent / item["file"]).resolve()
+                if original.parent != source_archive.parent.resolve() or sha256_file(original) != item["sha256"]:
+                    raise RuntimeError("source component path or hash differs")
+                dest = args.out_dir / item["file"]
+                if not dest.exists():
+                    os.link(original, dest)
+                if sha256_file(dest) != item["sha256"]:
+                    raise RuntimeError("gain bundle component differs")
+                manifest[key] = item
+                component_bytes += dest.stat().st_size
+        else:
+            base_file = args.out_dir / "base_payload.zlib"
+            if not base_file.exists():
+                os.link(source_archive, base_file)
+            if sha256_file(base_file) != sha256_file(source_archive):
+                raise RuntimeError("gain bundle base payload differs")
+            manifest.update({"format": "residual-gain-bundle-v1", "base_file": base_file.name,
+                             "base_sha256": sha256_file(base_file)})
+            component_bytes = base_file.stat().st_size
+        write_json(archive, manifest)
+        archive_bytes = component_bytes + archive.stat().st_size
     else:
-        payload = torch.load(io.BytesIO(zlib.decompress(source_archive.read_bytes())), map_location="cpu", weights_only=True)
-        for encoded in payload["model"].values():
+        from experiments.lib.calibrated_archive import load_payload
+        payload = load_payload(source_archive)
+        for name, encoded in payload["model"].items():
+            if targets is not None and name not in targets:
+                continue
             key = "raw" if "raw" in encoded else "codebook"
             encoded[key] = encoded[key].float() * gain
         payload["gain_calibration"] = {"gain": gain, "sha256": sha256_file(args.calibration)}
@@ -94,11 +121,12 @@ def main():
               "source_selector": {"record": str(source_record), "record_sha256": sha256_file(source_record),
                                   "archive_sha256": sha256_file(source_archive)},
               "baseline_validation": ctx["uncompressed"],
-              "gain": gain, "gate": actual_gate, "passed_gate": delta <= math.log1p(.01),
+              "gain": gain, "gain_parameter_names": targets, "gate": actual_gate,
+              "passed_gate": delta <= math.log1p(cal["identity"].get("ppl_gate_percent", 1.)/100),
               "gate_ppl_change_percent": 100*math.expm1(delta), "validation": validation,
               "validation_ppl_change_percent": 100*math.expm1(validation["loss"]-ctx["uncompressed"]["val"]),
               "archive": {"file": archive.name, "bytes": archive_bytes, "sha256": sha256_file(archive),
-                          "format": "base payload plus gain manifest; both files counted" if args.bundle else "single zlib payload",
+                          "format": "payload components plus gain manifest; all files counted" if args.bundle else "single zlib payload",
                           "original_checkpoint_bytes": args.checkpoint.stat().st_size},
               "byte_compression": args.checkpoint.stat().st_size/archive_bytes,
               "quantization": {**source["quantization"], "decoded_codebook_dtype": "float32", "gain_applied_to_codes": gain},

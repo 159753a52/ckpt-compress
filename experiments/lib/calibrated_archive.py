@@ -59,7 +59,8 @@ def self_check():
         state_file = root / "state.zlib"
         weights_file = root / "weights.zlib"
         for file, data in [(state_file, {"exp_avg": {"w": moment}}),
-                           (weights_file, {"model": {"w": {"raw": torch.tensor([1., -2.])}}})]:
+                           (weights_file, {"model": {"w": {"raw": torch.tensor([1., -2.])},
+                                                     "bias": {"raw": torch.tensor([.25])}}})]:
             stream = io.BytesIO()
             torch.save(data, stream)
             file.write_bytes(zlib.compress(stream.getvalue()))
@@ -69,6 +70,7 @@ def self_check():
             "gain": 1.25, "gain_parameter_names": ["w"]}))
         decoded = load_payload(manifest)
         assert torch.equal(decoded["model"]["w"]["raw"], torch.tensor([1.25, -2.5]))
+        assert torch.equal(decoded["model"]["bias"]["raw"], torch.tensor([.25]))
         assert torch.equal(decoded["exp_avg"]["w"], moment)
     print("Gain bundle scales weights once, preserves moments and leaves its base intact")
 

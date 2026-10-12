@@ -36,6 +36,7 @@ def main():
     REGIMES["R1"]["checkpoint"] = str(args.checkpoint.resolve())
     ctx = load_regime("R1", args.checkpoint.parent, args.data_root, "cuda:0")
     s = ctx["sweep"]
+    s.model.eval()
     scoring = partition_repeated_seed_batches(ctx["pool"], 100, 1, 16, 42).scoring_batches[0][:4]
     reference = json.loads(args.reference.read_text())
     if reference["identity"]["checkpoint_sha256"] != ctx["provenance"]["checkpoint_sha256"] or reference["identity"]["scoring_sha256"] != batch_hash(scoring):
@@ -56,6 +57,8 @@ def main():
         raise RuntimeError("prior mask differs")
     masks["DACP_previous_p0.7"] = torch.load(mask, map_location="cpu", weights_only=True)
     baseline = evaluate_lm(s.model, scoring, s.device)
+    if abs(baseline["loss"] - reference["baseline"]["loss"]) > 1e-6:
+        raise RuntimeError(f"original scoring loss differs: {baseline['loss']} vs {reference['baseline']['loss']}")
     combined = {key: torch.cat([b[key] for b in scoring]) for key in scoring[0]}
     variables = [dict(s.model.named_parameters())[n] for n in s.names]
     directions = {tag: {n: (-s.delta[n]*(~keep[n])).to(s.device) for n in s.names} for tag, keep in masks.items()}
@@ -88,8 +91,14 @@ def main():
                 "first_order": t*d["linear"],
                 "true_hessian_prediction": t*d["linear"] + t*t*d["true_hessian_quadratic"],
                 "gn_prediction": t*d["linear"] + t*t*d["gn_quadratic"]})
-        if abs(points[-1]["actual_delta_loss"] - reference["masks"][tag]["actual_delta_loss"]) > 1e-6:
-            raise RuntimeError("measured endpoint differs from the fixed-mask reference")
+        s.apply(masks[tag])
+        direct = evaluate_lm(s.model, scoring, s.device)
+        direct_delta = direct["loss"] - baseline["loss"]
+        endpoint = {"arithmetic_delta_loss": points[-1]["actual_delta_loss"], "direct_mask_delta_loss": direct_delta,
+                    "reference_delta_loss": reference["masks"][tag]["actual_delta_loss"]}
+        write_json(args.out_dir / (tag + "_endpoint.json"), endpoint)
+        if abs(direct_delta - endpoint["reference_delta_loss"]) > 1e-6 or abs(endpoint["arithmetic_delta_loss"]-direct_delta) > 1e-6:
+            raise RuntimeError(f"measured endpoint differs for {tag}: {endpoint}")
         write_json(args.out_dir / (tag + ".json"), {"status": "completed", "identity": identity, "tag": tag,
                    "derivatives": derivatives[tag], "points": points, "code_commit": commit})
         print("CURVE " + tag + " Hessian_error=" + str(abs(points[-1]["true_hessian_prediction"]-points[-1]["actual_delta_loss"])), flush=True)
