@@ -32,9 +32,10 @@ def main():
     from experiments.lib.residual_runtime import batch_hash, evaluate_lm, sha256_file, write_json
     from run_system_bytes_comparison import excp_quant, excp_dequant
     chosen = json.loads(args.selected.read_text())
+    sparsity = float(chosen["identity_common"]["sparsity"])
     old = json.loads(args.legacy_archive.read_text())
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    record_path = args.out_dir / f"{args.method}_p0.7_bf16mom.json"
+    record_path = args.out_dir / f"{args.method}_p{sparsity:g}_bf16mom.json"
     if record_path.exists():
         record = json.loads(record_path.read_text())
         quant = record["quantization"]
@@ -101,7 +102,7 @@ def main():
         stream = io.BytesIO()
         torch.save({"model": payload["model"], "identity": payload["identity"], "eligible_parameter_names": s.names}, stream)
         weights.write_bytes(zlib.compress(stream.getvalue(), 6))
-        archive = args.out_dir / f"{args.method}_p0.7.manifest.json"
+        archive = args.out_dir / f"{args.method}_p{sparsity:g}.manifest.json"
         write_json(archive, {"format": "checkpoint-components-v1",
                    "state": {"file": shared.name, "sha256": sha256_file(shared)},
                    "weights": {"file": weights.name, "sha256": sha256_file(weights)}})
@@ -109,7 +110,7 @@ def main():
     else:
         stream = io.BytesIO()
         torch.save(payload, stream)
-        archive = args.out_dir / f"{args.method}_p0.7_bf16mom.zlib"
+        archive = args.out_dir / f"{args.method}_p{sparsity:g}_bf16mom.zlib"
         archive.write_bytes(zlib.compress(stream.getvalue(), 6))
         archive_bytes = archive.stat().st_size
     encode_seconds = time.perf_counter() - started
@@ -125,7 +126,7 @@ def main():
     validation = evaluate_lm(s.model, ctx["eval_batches"], "cuda:0")
     old_gate = json.loads((ROOT / "results/v100_quality_calibration_20261011/staged_K4_B4_p0.7_seed42.json").read_text())["baseline_gate"]
     delta = calibration["loss"] - old_gate["loss"]
-    record = {"status": "completed", "identity": payload["identity"], "method": args.method, "sparsity": .7, "seed": 42,
+    record = {"status": "completed", "identity": payload["identity"], "method": args.method, "sparsity": sparsity, "seed": 42,
               "selection_sha256": sha256_file(args.selected), "config": chosen["config"], "backward_budget": chosen["backward_budget"],
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "archive": {"file": archive.name, "bytes": archive_bytes, "sha256": sha256_file(archive),
