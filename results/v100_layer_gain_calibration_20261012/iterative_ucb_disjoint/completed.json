@@ -1,0 +1,551 @@
+{
+  "chosen_encoded_dir": "/root/dacp-v100-layergains-20261012/results/v100_layer_gain_calibration_20261012/iterative_ucb_disjoint/middle_high",
+  "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+  "identity": {
+    "calibration_examples": 128,
+    "cases": [
+      [
+        "base",
+        [
+          1.1,
+          1.1,
+          1.1
+        ]
+      ],
+      [
+        "early_low",
+        [
+          1.0,
+          1.1,
+          1.1
+        ]
+      ],
+      [
+        "early_high",
+        [
+          1.2,
+          1.1,
+          1.1
+        ]
+      ],
+      [
+        "middle_low",
+        [
+          1.1,
+          1.0,
+          1.1
+        ]
+      ],
+      [
+        "middle_high",
+        [
+          1.1,
+          1.2,
+          1.1
+        ]
+      ],
+      [
+        "late_low",
+        [
+          1.1,
+          1.1,
+          1.0
+        ]
+      ],
+      [
+        "late_high",
+        [
+          1.1,
+          1.1,
+          1.2
+        ]
+      ]
+    ],
+    "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338",
+    "gate_sha256": "ed6cbb469b2558fe9b3e15df212add9a6f9d140c058bae1c8f26e61e52c25fe3",
+    "ppl_gate_percent": 0.5,
+    "script_sha256": "98421f3a314081523322832fdaae9dbf3214dfd7f961cfd43999c29a58156a66",
+    "seed": 42,
+    "source_archive_sha256": "7c4e4767336d0833e850e6595870e553488f1a742e3b9eacd554a773ed6ec6fe",
+    "source_calibration_sha256": "3bfe1e5b3745e29bba9a0d70288f2c663d3cfa02296d83d5b6a7668ad2326b36"
+  },
+  "method": "iterative_ucb_disjoint",
+  "points": {
+    "base": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "191a53b65bcab23ff09f1b755180776dbe8c43d0faac8d10ed44f15a03e6edc4"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "base",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.1,
+        1.1,
+        1.1
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.7459977861336078,
+        "perplexity": 5.731617551752503,
+        "seconds": 1.5915495460030797,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.30161123628490416,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.3984375,
+        0.5,
+        0.6640625
+      ],
+      "task_mean": 0.5208333333333334,
+      "tasks_reused_from_sha256": "3bfe1e5b3745e29bba9a0d70288f2c663d3cfa02296d83d5b6a7668ad2326b36"
+    },
+    "early_high": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "4e432516fd3be4e2a51738f9a625008a099438e984ece09f52613742d585176a"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "early_high",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.2,
+        1.1,
+        1.1
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.745375199892622,
+        "perplexity": 5.728050236122232,
+        "seconds": 1.5745519690026413,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.23918426828261294,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.3984375,
+        0.5,
+        0.6640625
+      ],
+      "task_mean": 0.5208333333333334
+    },
+    "early_low": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "6bc9be2232d3ae70c46784ba5c3289fb0341f6d9490fe0db90c677924be66d78"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "early_low",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.0,
+        1.1,
+        1.1
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.7474825219145038,
+        "perplexity": 5.740133810046241,
+        "seconds": 1.5754095939992112,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.45064323656291677,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.3984375,
+        0.4921875,
+        0.6640625
+      ],
+      "task_mean": 0.5182291666666666
+    },
+    "late_high": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "e48675bba6b590def137e5cdf624e618744760010b3d82894415d6d9630a4ca3"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "late_high",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.1,
+        1.1,
+        1.2
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.7482266674600906,
+        "perplexity": 5.744406894753348,
+        "seconds": 1.5754217249996145,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.525420954580921,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": false,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed"
+    },
+    "late_low": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "f3448cbd48fb2ac546d5f44fffbe1ccdc9367cb807cb4ae967c6fa67f3a79cd0"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "late_low",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.1,
+        1.1,
+        1.0
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.7454292797498672,
+        "perplexity": 5.728360016637663,
+        "seconds": 1.5743662399981986,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.24460533564217612,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.3984375,
+        0.5,
+        0.6640625
+      ],
+      "task_mean": 0.5208333333333334
+    },
+    "middle_high": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "2d7f124f07ebb3ae558794d1560fdc136f5292075729662deafb8b3b9898899c"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "middle_high",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.1,
+        1.2,
+        1.1
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.746080296823955,
+        "perplexity": 5.7320904909845085,
+        "seconds": 1.574630602997786,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.30988753290773097,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.40625,
+        0.5,
+        0.6640625
+      ],
+      "task_mean": 0.5234375,
+      "validation": {
+        "batches": 100,
+        "loss": 1.6874063237074035,
+        "perplexity": 5.405442539606424,
+        "seconds": 2.4606170620027115,
+        "tokens": 14353
+      },
+      "validation_ppl_change_percent": 0.2572204590533866
+    },
+    "middle_low": {
+      "archive": {
+        "bytes": 1330112506,
+        "file": "layer_gains.manifest.json",
+        "original_checkpoint_bytes": 4864385886,
+        "sha256": "ca87d261648181ec742b045ed29f1df0bfb6a4082ae0e1c1f2a64c487af4a9bf"
+      },
+      "baseline_validation": {
+        "eval_s": 2.59,
+        "ppl": 5.391574307422667,
+        "tokens": 14353,
+        "val": 1.6848374215732473
+      },
+      "byte_compression": 3.6571236373293674,
+      "case": "middle_low",
+      "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+      "config": [
+        4,
+        16,
+        2.0
+      ],
+      "gain_groups": [
+        1.1,
+        1.0,
+        1.1
+      ],
+      "gate": {
+        "batches": 64,
+        "loss": 1.7472772023576868,
+        "perplexity": 5.738955369298898,
+        "seconds": 1.5745553490014572,
+        "tokens": 9824
+      },
+      "gate_ppl_change_percent": 0.4300208721714065,
+      "identity": {
+        "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+      },
+      "method": "iterative_ucb_disjoint",
+      "passed_gate": true,
+      "quantization": {
+        "all_moments_retained": true,
+        "dense_weight_bits": 8,
+        "lossless_vectors": true,
+        "moment_bits": 16,
+        "moment_dtype": "bfloat16",
+        "weight_bits": 4
+      },
+      "seed": 42,
+      "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+      "sparsity": 0.7,
+      "status": "completed",
+      "task_accuracy": [
+        0.3984375,
+        0.5,
+        0.6640625
+      ],
+      "task_mean": 0.5208333333333334
+    }
+  },
+  "selected": {
+    "archive": {
+      "bytes": 1330112506,
+      "file": "layer_gains.manifest.json",
+      "original_checkpoint_bytes": 4864385886,
+      "sha256": "2d7f124f07ebb3ae558794d1560fdc136f5292075729662deafb8b3b9898899c"
+    },
+    "baseline_validation": {
+      "eval_s": 2.59,
+      "ppl": 5.391574307422667,
+      "tokens": 14353,
+      "val": 1.6848374215732473
+    },
+    "byte_compression": 3.6571236373293674,
+    "case": "middle_high",
+    "code_commit": "77689a6f56a2418b234a8d8da774c86f5e35b760",
+    "config": [
+      4,
+      16,
+      2.0
+    ],
+    "gain_groups": [
+      1.1,
+      1.2,
+      1.1
+    ],
+    "gate": {
+      "batches": 64,
+      "loss": 1.746080296823955,
+      "perplexity": 5.7320904909845085,
+      "seconds": 1.574630602997786,
+      "tokens": 9824
+    },
+    "gate_ppl_change_percent": 0.30988753290773097,
+    "identity": {
+      "checkpoint_sha256": "149023c9605d9997c9a4e4b7375f41dbb8293888737db1f485d399f0610f0338"
+    },
+    "method": "iterative_ucb_disjoint",
+    "passed_gate": true,
+    "quantization": {
+      "all_moments_retained": true,
+      "dense_weight_bits": 8,
+      "lossless_vectors": true,
+      "moment_bits": 16,
+      "moment_dtype": "bfloat16",
+      "weight_bits": 4
+    },
+    "seed": 42,
+    "source_record_sha256": "0f29df5364d0b31a72e25cb3222ec477e4e583749ed68fdc1994e5112489d118",
+    "sparsity": 0.7,
+    "status": "completed",
+    "task_accuracy": [
+      0.40625,
+      0.5,
+      0.6640625
+    ],
+    "task_mean": 0.5234375,
+    "validation": {
+      "batches": 100,
+      "loss": 1.6874063237074035,
+      "perplexity": 5.405442539606424,
+      "seconds": 2.4606170620027115,
+      "tokens": 14353
+    },
+    "validation_ppl_change_percent": 0.2572204590533866
+  },
+  "status": "completed"
+}
