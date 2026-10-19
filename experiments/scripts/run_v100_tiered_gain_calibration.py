@@ -71,7 +71,9 @@ def main():
     del payload
     every = torch.cat([v[n].flatten() for n in s.names])
     sample = every[torch.randint(0, every.numel(), (4_000_000,), generator=torch.Generator().manual_seed(0))]
-    thresholds = {q: (float(torch.quantile(sample, q)) if q < 1 else math.inf) for q in scopes}
+    # Scope 1 is the uniform gain: a finite threshold above every stored second moment.
+    above_all = math.nextafter(float(every.max()), math.inf)
+    thresholds = {q: (float(torch.quantile(sample, q)) if q < 1 else above_all) for q in scopes}
     del every, sample
     identity["v_thresholds"] = {f"{q:g}": t for q, t in thresholds.items()}
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
