@@ -21,7 +21,7 @@ def main():
     ap.add_argument("--checkpoint", type=Path, required=True)
     ap.add_argument("--data-root", type=Path, required=True)
     ap.add_argument("--encoded-dir", type=Path, required=True)
-    ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style"), required=True)
+    ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style", "inshrinkerator_style"), required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--gains", default="0.8,1,1.2,1.4")
     ap.add_argument("--ppl-gate", type=float, default=1.)
