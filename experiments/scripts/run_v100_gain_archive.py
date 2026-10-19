@@ -42,11 +42,16 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     gain = chosen["gain"]
     method = cal["method"]
+    tiers = chosen.get("tiered_gain")
+    stem = f"{method}_{'slowgain' if tiers else 'gain'}{gain:g}"
     targets = cal["identity"].get("gain_parameter_names")
     if args.bundle:
         import os
-        archive = args.out_dir / f"{method}_gain{gain:g}.manifest.json"
+        archive = args.out_dir / f"{stem}.manifest.json"
         manifest = {"gain": gain, "calibration_sha256": sha256_file(args.calibration)}
+        if tiers:
+            del manifest["gain"]
+            manifest["tiered_gain"] = {key: tiers[key] for key in ("v_threshold", "slow", "fast")}
         if targets is not None:
             manifest["gain_parameter_names"] = targets
         component_bytes = 0
@@ -79,6 +84,8 @@ def main():
         write_json(archive, manifest)
         archive_bytes = component_bytes + archive.stat().st_size
     else:
+        if tiers:
+            raise RuntimeError("a tiered gain is written as a bundle manifest")
         from experiments.lib.calibrated_archive import load_payload
         payload = load_payload(source_archive)
         for name, encoded in payload["model"].items():
@@ -124,7 +131,7 @@ def main():
               "source_selector": {"record": str(source_record), "record_sha256": sha256_file(source_record),
                                   "archive_sha256": sha256_file(source_archive)},
               "baseline_validation": ctx["uncompressed"],
-              "gain": gain, "gain_parameter_names": targets, "gate": actual_gate,
+              "gain": gain, **({"tiered_gain": tiers} if tiers else {}), "gain_parameter_names": targets, "gate": actual_gate,
               "passed_gate": delta <= math.log1p(cal["identity"].get("ppl_gate_percent", 1.)/100),
               "gate_ppl_change_percent": 100*math.expm1(delta), "validation": validation,
               "validation_ppl_change_percent": 100*math.expm1(validation["loss"]-ctx["uncompressed"]["val"]),
@@ -132,9 +139,10 @@ def main():
                           "format": "payload components plus gain manifest; all files counted" if args.bundle else "single zlib payload",
                           "original_checkpoint_bytes": args.checkpoint.stat().st_size},
               "byte_compression": args.checkpoint.stat().st_size/archive_bytes,
-              "quantization": {**source["quantization"], "decoded_codebook_dtype": "float32", "gain_applied_to_codes": gain},
+              "quantization": {**source["quantization"], "decoded_codebook_dtype": "float32",
+                               **({"gain_applied_per_coordinate": tiers} if tiers else {"gain_applied_to_codes": gain})},
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}
-    path = args.out_dir / f"{method}_gain{gain:g}.json"
+    path = args.out_dir / f"{stem}.json"
     write_json(path, record)
     write_json(args.out_dir / "completed.json", {"status": "completed", "selected": {method: {"file": path.name, "sha256": sha256_file(path)}}})
     print("ARCHIVE " + json.dumps({k:record[k] for k in ["gain","byte_compression","validation_ppl_change_percent"]}), flush=True)
