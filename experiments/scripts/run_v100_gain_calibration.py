@@ -115,10 +115,12 @@ def main():
         point["task_mean"] = sum(values) / 3
         print(f"TASKS {args.method} gain={gain} mean={point['task_mean']:.6f}", flush=True)
     feasible = [p for p in points.values() if p["passed_gate"]]
-    best = max(feasible, key=lambda p: (p["task_mean"], -p["gate"]["loss"])) if feasible else None
+    best = max(feasible, key=lambda p: (p["task_mean"], -p["gate"]["loss"])) if feasible else min(points.values(), key=lambda p: p["gate"]["loss"])
+    selected_by = ("maximum calibration task mean under the PPL gate" if feasible
+                   else "fallback: minimum calibration loss because no gain passed the PPL gate")
     write_json(args.out_dir / "completed.json", {"status": "completed", "identity": identity,
                "source_record": str(rec_path), "source_record_sha256": sha256_file(rec_path), "method": args.method,
-               "points": points, "selected": best, "code_commit": commit,
+               "points": points, "selected": best, "selected_by": selected_by, "code_commit": commit,
                "scope": "calibration only; no main-subset or independent validation result used"})
 
 

@@ -25,6 +25,7 @@ def main():
     ap.add_argument("--lossless-vectors", action="store_true")
     ap.add_argument("--shared-state", type=Path, help="store common optimizer state once; every checkpoint counts its full size")
     ap.add_argument("--method", choices=("iterative_ucb_disjoint", "excp_style", "inshrinkerator_style"), default="iterative_ucb_disjoint")
+    ap.add_argument("--sparsity", type=float, default=0.7)
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime
@@ -34,7 +35,7 @@ def main():
     chosen = json.loads(args.selected.read_text())
     old = json.loads(args.legacy_archive.read_text())
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    record_path = args.out_dir / f"{args.method}_p0.7_bf16mom.json"
+    record_path = args.out_dir / f"{args.method}_p{args.sparsity:g}_bf16mom.json"
     if record_path.exists():
         record = json.loads(record_path.read_text())
         quant = record["quantization"]
@@ -56,6 +57,8 @@ def main():
     gate = [pool[i] for i in range(len(pool)) if i not in used][:64]
     if batch_hash(gate) != chosen["identity_common"]["gate_sha256"] or batch_hash(ctx["eval_batches"]) != chosen["identity_common"]["heldout_sha256"]:
         raise RuntimeError("selected calibration and validation inputs differ")
+    if abs(chosen["identity_common"].get("sparsity", 0.7) - args.sparsity) > 1e-12:
+        raise RuntimeError("selected mask sparsity differs")
     mask_path = Path(chosen["mask_path"])
     if not mask_path.is_absolute():
         mask_path = args.selected.parent / mask_path.name
@@ -101,7 +104,7 @@ def main():
         stream = io.BytesIO()
         torch.save({"model": payload["model"], "identity": payload["identity"], "eligible_parameter_names": s.names}, stream)
         weights.write_bytes(zlib.compress(stream.getvalue(), 6))
-        archive = args.out_dir / f"{args.method}_p0.7.manifest.json"
+        archive = args.out_dir / f"{args.method}_p{args.sparsity:g}.manifest.json"
         write_json(archive, {"format": "checkpoint-components-v1",
                    "state": {"file": shared.name, "sha256": sha256_file(shared)},
                    "weights": {"file": weights.name, "sha256": sha256_file(weights)}})
@@ -109,7 +112,7 @@ def main():
     else:
         stream = io.BytesIO()
         torch.save(payload, stream)
-        archive = args.out_dir / f"{args.method}_p0.7_bf16mom.zlib"
+        archive = args.out_dir / f"{args.method}_p{args.sparsity:g}_bf16mom.zlib"
         archive.write_bytes(zlib.compress(stream.getvalue(), 6))
         archive_bytes = archive.stat().st_size
     encode_seconds = time.perf_counter() - started
@@ -125,7 +128,7 @@ def main():
     validation = evaluate_lm(s.model, ctx["eval_batches"], "cuda:0")
     old_gate = json.loads((ROOT / "results/v100_quality_calibration_20261011/staged_K4_B4_p0.7_seed42.json").read_text())["baseline_gate"]
     delta = calibration["loss"] - old_gate["loss"]
-    record = {"status": "completed", "identity": payload["identity"], "method": args.method, "sparsity": .7, "seed": 42,
+    record = {"status": "completed", "identity": payload["identity"], "method": args.method, "sparsity": args.sparsity, "seed": 42,
               "selection_sha256": sha256_file(args.selected), "config": chosen["config"], "backward_budget": chosen["backward_budget"],
               "code_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
               "archive": {"file": archive.name, "bytes": archive_bytes, "sha256": sha256_file(archive),

@@ -36,6 +36,7 @@ def main():
     ap.add_argument("--initial-archive-record", type=Path)
     ap.add_argument("--plan-only", action="store_true")
     ap.add_argument("--no-final-state", action="store_true", help="one-cycle diagnostic; preserve measurements without a full final checkpoint")
+    ap.add_argument("--allow-failed-gate", action="store_true", help="continue from an archive whose calibration PPL exceeded its gate; recorded in the protocol")
     args = ap.parse_args()
     methods = args.methods.split(",")
     allowed = {"no_compression", "excp_style", "inshrinkerator_style", "dacp", "first_order_ucb", "iterative_ucb_disjoint"}
@@ -91,13 +92,14 @@ def main():
         if len(methods) != 1 or methods[0] not in {"iterative_ucb_disjoint", "excp_style"} or args.cycles != 1:
             ap.error("archive continuation requires one selector and one cycle")
         archive_record = json.loads(args.initial_archive_record.read_text())
-        if archive_record["identity"]["checkpoint_sha256"] != protocol["checkpoint_sha256"] or archive_record["sparsity"] != args.sparsity or not archive_record["passed_gate"]:
+        if archive_record["identity"]["checkpoint_sha256"] != protocol["checkpoint_sha256"] or archive_record["sparsity"] != args.sparsity or not (archive_record["passed_gate"] or args.allow_failed_gate):
             raise RuntimeError("archive does not match the calibrated operating point")
         archive_path = args.initial_archive_record.parent / archive_record["archive"]["file"]
         if sha256_file(archive_path) != archive_record["archive"]["sha256"]:
             raise RuntimeError("archive hash differs")
         protocol["initial_archive_record_sha256"] = sha256_file(args.initial_archive_record)
         protocol["initial_archive_sha256"] = archive_record["archive"]["sha256"]
+        protocol["initial_archive_passed_gate"] = archive_record["passed_gate"]
     todo = []
     for method in methods:
         path = args.out_dir / f"{method}_p{args.sparsity}_seed{args.seed}.json"
