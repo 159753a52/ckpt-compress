@@ -64,7 +64,8 @@ def main():
         from lm_eval.tasks._yaml_loader import load_yaml
         from lm_eval.api.task import ConfigurableTask
         local_data = json.loads(args.task_data.read_text())
-        definitions = {"hellaswag": "hellaswag/hellaswag.yaml", "arc_easy": "arc/arc_easy.yaml", "piqa": "piqa/piqa.yaml"}
+        definitions = {"hellaswag": "hellaswag/hellaswag.yaml", "arc_easy": "arc/arc_easy.yaml", "piqa": "piqa/piqa.yaml",
+                       "lambada_openai": "lambada/lambada_openai.yaml"}
         task_dict = {}
         for task in tasks:
             entry = local_data[task]
