@@ -18,9 +18,11 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-GRID = [(4, 4, k) for k in (0.0, 0.5, 1.0, 2.0)]
-GRID += [(4, b, k) for b in (8, 16) for k in (0.0, 0.5, 1.0, 2.0)]
-GRID += [(8, 4, 1.0), (8, 8, 1.0), (8, 8, 2.0), (16, 4, 1.0), (16, 4, 2.0)]
+GRID = [(4, 4, k, False) for k in (0.0, 0.5, 1.0, 2.0)]
+GRID += [(4, b, k, False) for b in (8, 16) for k in (0.0, 0.5, 1.0, 2.0)]
+GRID += [(8, 4, 1.0, False), (8, 8, 1.0, False), (8, 8, 2.0, False), (16, 4, 1.0, False), (16, 4, 2.0, False)]
+# Shared batches: every stage rescores the same B batches (the 16x16 DACP-G setting of the tolerance and 98% experiments).
+SHARED = [(k, b, kappa, True) for k, b in ((8, 16), (16, 8), (16, 16)) for kappa in (1.0, 2.0)]
 
 
 def main():
@@ -29,6 +31,7 @@ def main():
     ap.add_argument("--data-root", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--sparsity", type=float, required=True)
+    ap.add_argument("--grid", choices=("disjoint", "shared", "all"), default="all")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -57,7 +60,7 @@ def main():
     common = {"seed": 42, "checkpoint_sha256": ctx["provenance"]["checkpoint_sha256"],
               "gate_sha256": batch_hash(gate), "heldout_sha256": batch_hash(ctx["eval_batches"]),
               "sparsity": args.sparsity, "script_sha256": sha256_file(Path(__file__))}
-    write_json(args.out_dir / "run-manifest.json", {"identity": common, "dacp_grid": GRID,
+    write_json(args.out_dir / "run-manifest.json", {"identity": common, "dacp_grid": {"disjoint": GRID, "shared": SHARED, "all": GRID + SHARED}[args.grid],
                "gate_pool_indices": gate_indices, "scoring_pool_indices": used + extra[:48],
                "baseline_gate": baseline_gate, "baseline_heldout": ctx["uncompressed"],
                "code_commit": commit, "gpu": torch.cuda.get_device_name(0)})
@@ -80,15 +83,16 @@ def main():
 
     # DACP-G: staged first-order scores with the variance penalty, configuration chosen on the gate loss.
     candidates, best, best_keep = [], None, None
-    for stages, batches, penalty in GRID:
-        tag = f"K{stages}_B{batches}_k{penalty:g}"
+    grid = {"disjoint": GRID, "shared": SHARED, "all": GRID + SHARED}[args.grid]
+    for stages, batches, penalty, shared in grid:
+        tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "")
         set_seed(42)
         sweep.apply(None)
         stage = 0
 
         def scorer(current, unused, keep_prev, seed):
             nonlocal stage
-            bs = scoring[stage * batches:(stage + 1) * batches]
+            bs = scoring[:batches] if shared else scoring[stage * batches:(stage + 1) * batches]
             stage += 1
             mean, m2, losses = grad_moments(current, bs, penalty > 0)
             scores = {n: mean[i].abs() + (penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
@@ -101,8 +105,8 @@ def main():
         sweep.apply(keep)
         gate_eval = evaluate_lm(sweep.model, gate, "cuda:0")
         delta = gate_eval["loss"] - baseline_gate["loss"]
-        rec = {"tag": tag, "config": [stages, batches, penalty], "backward_budget": stages * batches,
-               "scoring_sha256": batch_hash(scoring[:stages * batches]), "gate": gate_eval,
+        rec = {"tag": tag, "config": [stages, batches, penalty] + (["shared"] if shared else []), "backward_budget": stages * batches,
+               "scoring_sha256": batch_hash(scoring[:batches] if shared else scoring[:stages * batches]), "gate": gate_eval,
                "gate_delta_loss": delta, "gate_ppl_change_percent": 100 * math.expm1(delta), "score_seconds": seconds}
         candidates.append(rec)
         write_json(args.out_dir / "dacp_candidates.json", candidates)
