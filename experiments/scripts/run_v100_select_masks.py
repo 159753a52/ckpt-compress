@@ -35,6 +35,7 @@ def main():
     ap.add_argument("--configs", help="comma-separated K:B:kappa[:shared] entries; overrides --grid")
     ap.add_argument("--score", choices=("first_order", "taylor"), default="first_order")
     ap.add_argument("--dacp-only", action="store_true", help="skip the ExCP and Inshrinkerator masks")
+    ap.add_argument("--fisher", default="0", help="comma-separated coefficients of 0.5*v*d^2, v = bias-corrected Adam second moment")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -91,6 +92,26 @@ def main():
         grid = [(int(c.split(":")[0]), int(c.split(":")[1]), float(c.split(":")[2]), c.endswith(":shared"))
                 for c in args.configs.split(",")]
     from run_residual_ablation_small import _masked_delta
+    lambdas = [float(x) for x in args.fisher.split(",")]
+    fisher = None
+    if any(lam > 0 for lam in lambdas):
+        from experiments.lib.residual_runtime import load_training_checkpoint
+        ck = load_training_checkpoint(args.checkpoint)
+        st = ck.optimizer_state
+        ids = [i for g in st["param_groups"] for i in g["params"]]
+        order = [n for n, x in ck.model_state.items() if x.dtype.is_floating_point]
+        assert len(order) == len(ids) and len(st["param_groups"]) == 1
+        beta2 = st["param_groups"][0]["betas"][1]
+        wanted = set(sweep.names)
+        fisher = {}
+        for n, i in zip(order, ids):
+            if n in wanted:
+                s = st["state"][i]
+                assert tuple(s["exp_avg_sq"].shape) == tuple(sweep.delta[n].shape)
+                fisher[n] = (s["exp_avg_sq"].float() / (1 - beta2 ** float(s["step"]))).to(sweep.device)
+        assert set(fisher) == wanted
+        del ck, st
+    grid = [(k, b, kappa, shared, lam) for k, b, kappa, shared in grid for lam in lambdas]
     from experiments.lib.residual_scoring import compute_block_taylor_scores
 
     def taylor_moments(current, bs, keep_prev):
@@ -110,8 +131,8 @@ def main():
                 m2[n].add_(diff * (c - mean[n]))
             del sc
         return mean, m2
-    for stages, batches, penalty, shared in grid:
-        tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "")
+    for stages, batches, penalty, shared, lam in grid:
+        tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "") + (f"_f{lam:g}" if lam else "")
         set_seed(42)
         sweep.apply(None)
         stage = 0
@@ -127,6 +148,11 @@ def main():
             mean, m2, losses = grad_moments(current, bs, penalty > 0)
             scores = {n: mean[i].abs() + (penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
                       for i, n in enumerate(current.names)}
+            if lam:
+                d = current.delta_for_scoring()
+                for i, n in enumerate(current.names):
+                    scores[n] = scores[n] + lam * 0.5 * fisher[n] * current.dev(d[i]).float() ** 2
+                del d
             return scores, {"score_losses": losses}
 
         began = time.perf_counter()
@@ -135,7 +161,7 @@ def main():
         sweep.apply(keep)
         gate_eval = evaluate_lm(sweep.model, gate, "cuda:0")
         delta = gate_eval["loss"] - baseline_gate["loss"]
-        rec = {"tag": tag, "config": [stages, batches, penalty] + (["shared"] if shared else []), "backward_budget": stages * batches,
+        rec = {"tag": tag, "config": [stages, batches, penalty] + (["shared"] if shared else []) + (["fisher", lam] if lam else []), "backward_budget": stages * batches,
                "scoring_sha256": batch_hash(scoring[:batches] if shared else scoring[:stages * batches]), "gate": gate_eval,
                "gate_delta_loss": delta, "gate_ppl_change_percent": 100 * math.expm1(delta), "score_seconds": seconds}
         candidates.append(rec)
@@ -147,7 +173,7 @@ def main():
         sweep.apply(None)
         sweep.model.zero_grad(set_to_none=True)
         torch.cuda.empty_cache()
-    finalize("dacp" if args.score == "first_order" else "dacp_taylor", best_keep, {"method": "iterative_ucb_disjoint", "score": args.score, "config": best["config"],
+    finalize(("dacp" if args.score == "first_order" else "dacp_taylor") + ("_fisher" if any(lambdas) else ""), best_keep, {"method": "iterative_ucb_disjoint", "score": args.score, "config": best["config"],
              "backward_budget": best["backward_budget"],
              "selection_rule": "minimum training-calibration loss over the registered grid; heldout validation not used"})
     del best_keep
