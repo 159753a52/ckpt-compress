@@ -37,6 +37,7 @@ def main():
     ap.add_argument("--plan-only", action="store_true")
     ap.add_argument("--no-final-state", action="store_true", help="one-cycle diagnostic; preserve measurements without a full final checkpoint")
     ap.add_argument("--allow-failed-gate", action="store_true", help="continue from an archive whose calibration PPL exceeded its gate; recorded in the protocol")
+    ap.add_argument("--eval-gate", action="store_true", help="evaluate on the 64 training-calibration batches instead of validation (selection probe)")
     args = ap.parse_args()
     methods = args.methods.split(",")
     allowed = {"no_compression", "excp_style", "inshrinkerator_style", "dacp", "first_order_ucb", "iterative_ucb_disjoint"}
@@ -80,6 +81,8 @@ def main():
                                 for p in sorted((args.data_root / "models/pythia-410m").glob("*")) if p.is_file()}}
     alpaca = args.data_root / "alpaca/alpaca_data.json"
     protocol["input_files"]["alpaca/alpaca_data.json"] = sha256_file(alpaca)
+    if args.eval_gate:
+        protocol["evaluation"] = "training-calibration gate (64 batches)"
     mask_record = None
     if args.initial_mask_record is not None:
         mask_record = json.loads(args.initial_mask_record.read_text())
@@ -116,6 +119,13 @@ def main():
     REGIMES["R1"]["checkpoint"] = str(args.checkpoint.resolve())
     context = load_regime("R1", args.checkpoint.parent, args.data_root, "cuda:0")
     sweep, pool = context["sweep"], context["pool"]
+    if args.eval_gate:
+        gate_plan = partition_repeated_seed_batches(pool, 100, 1, 16, 42)
+        gate_offset = len(gate_plan.training_segments[0])
+        gate_used = set(gate_plan.selected_pool_indices[gate_offset:gate_offset + 16])
+        gate = [pool[i] for i in range(len(pool)) if i not in gate_used][:64]
+        context["eval_batches"] = gate
+        sweep.eval_batches = gate
     checkpoint = load_training_checkpoint(args.checkpoint)
     state, optimizer_state, start_step = checkpoint.model_state, checkpoint.optimizer_state, checkpoint.step
     ref_cpu = {name: sweep.ref_dev[name].float().cpu() for name in sweep.names}
@@ -223,10 +233,13 @@ def main():
                 opt.load_state_dict(decoded)
                 for group in opt.param_groups:
                     group["lr"] = args.lr
-                value = archive_record["validation"]
-                rec["immediate"] = {"val": {"loss": value["loss"], "ppl": value["perplexity"],
-                                             "tokens": value["tokens"], "eval_s": value["seconds"]}}
-                rec["immediate_reused_from"] = str(args.initial_archive_record)
+                if args.eval_gate:
+                    rec["immediate"] = evaluate(sweep)
+                else:
+                    value = archive_record["validation"]
+                    rec["immediate"] = {"val": {"loss": value["loss"], "ppl": value["perplexity"],
+                                                 "tokens": value["tokens"], "eval_s": value["seconds"]}}
+                    rec["immediate_reused_from"] = str(args.initial_archive_record)
                 rec["decoded_archive"] = archive_record["archive"]
                 del payload, decoded, base, base_model
             elif method == "iterative_ucb_disjoint" and cycle == 1 and mask_record is not None:

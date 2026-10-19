@@ -36,6 +36,7 @@ def main():
     ap.add_argument("--score", choices=("first_order", "taylor"), default="first_order")
     ap.add_argument("--dacp-only", action="store_true", help="skip the ExCP and Inshrinkerator masks")
     ap.add_argument("--fisher", default="0", help="comma-separated coefficients of 0.5*v*d^2, v = bias-corrected Adam second moment")
+    ap.add_argument("--magnitude-caps", default="", help="comma-separated c; DACP-G never deletes entries with |d| above c times the ExCP deletion threshold")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -86,7 +87,6 @@ def main():
         print("SELECTED " + name + " " + json.dumps({k: rec[k] for k in ("gate_ppl_change_percent", "validation_ppl_change_percent")}), flush=True)
 
     # DACP-G: staged first-order scores with the variance penalty, configuration chosen on the gate loss.
-    candidates, best, best_keep = [], None, None
     grid = {"disjoint": GRID, "shared": SHARED, "all": GRID + SHARED}[args.grid]
     if args.configs:
         grid = [(int(c.split(":")[0]), int(c.split(":")[1]), float(c.split(":")[2]), c.endswith(":shared"))
@@ -131,52 +131,69 @@ def main():
                 m2[n].add_(diff * (c - mean[n]))
             del sc
         return mean, m2
-    for stages, batches, penalty, shared, lam in grid:
-        tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "") + (f"_f{lam:g}" if lam else "")
-        set_seed(42)
+    caps = [float(x) for x in args.magnitude_caps.split(",") if x] or [0.0]
+    t_excp, mag = None, None
+    if any(caps):
         sweep.apply(None)
-        stage = 0
+        mag = {n: sweep.delta[n].abs() for n in sweep.names}
+        (_, keep_e, _), = list(global_keep_masks(mag, sweep.names, [args.sparsity], sweep.device))
+        t_excp = max(float(mag[n][~keep_e[n].cpu()].max()) for n in sweep.names if bool((~keep_e[n]).any()))
+        del keep_e
+        print(f"EXCP_THRESHOLD {t_excp:.6e}", flush=True)
+    big = torch.finfo(torch.float32).max
+    for cap in caps:
+        protect = {n: mag[n] > cap * t_excp for n in sweep.names} if cap else None
+        candidates, best, best_keep = [], None, None
+        for stages, batches, penalty, shared, lam in grid:
+            tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "") + (f"_f{lam:g}" if lam else "")
+            set_seed(42)
+            sweep.apply(None)
+            stage = 0
 
-        def scorer(current, unused, keep_prev, seed):
-            nonlocal stage
-            bs = scoring[:batches] if shared else scoring[stage * batches:(stage + 1) * batches]
-            stage += 1
-            if args.score == "taylor":
-                mean, m2 = taylor_moments(current, bs, keep_prev)
-                return {n: mean[n].abs() + (penalty * (m2[n] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
-                        for n in current.names}, {"score": "taylor"}
-            mean, m2, losses = grad_moments(current, bs, penalty > 0)
-            scores = {n: mean[i].abs() + (penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
-                      for i, n in enumerate(current.names)}
-            if lam:
-                d = current.delta_for_scoring()
-                for i, n in enumerate(current.names):
-                    scores[n] = scores[n] + lam * 0.5 * fisher[n] * current.dev(d[i]).float() ** 2
-                del d
-            return scores, {"score_losses": losses}
+            def scorer(current, unused, keep_prev, seed):
+                nonlocal stage
+                bs = scoring[:batches] if shared else scoring[stage * batches:(stage + 1) * batches]
+                stage += 1
+                if args.score == "taylor":
+                    mean, m2 = taylor_moments(current, bs, keep_prev)
+                    return {n: mean[n].abs() + (penalty * (m2[n] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
+                            for n in current.names}, {"score": "taylor"}
+                mean, m2, losses = grad_moments(current, bs, penalty > 0)
+                scores = {n: mean[i].abs() + (penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
+                          for i, n in enumerate(current.names)}
+                if lam:
+                    d = current.delta_for_scoring()
+                    for i, n in enumerate(current.names):
+                        scores[n] = scores[n] + lam * 0.5 * fisher[n] * current.dev(d[i]).float() ** 2
+                    del d
+                if protect is not None:
+                    for n in current.names:
+                        scores[n] = torch.where(protect[n].to(scores[n].device), torch.full_like(scores[n], big), scores[n])
+                return scores, {"score_losses": losses}
 
-        began = time.perf_counter()
-        _, detail, keep = run_iterative(sweep, scoring, geometric_schedule(args.sparsity, stages), scorer, 42, eval_at=[], return_keep=True)
-        seconds = time.perf_counter() - began
-        sweep.apply(keep)
-        gate_eval = evaluate_lm(sweep.model, gate, "cuda:0")
-        delta = gate_eval["loss"] - baseline_gate["loss"]
-        rec = {"tag": tag, "config": [stages, batches, penalty] + (["shared"] if shared else []) + (["fisher", lam] if lam else []), "backward_budget": stages * batches,
-               "scoring_sha256": batch_hash(scoring[:batches] if shared else scoring[:stages * batches]), "gate": gate_eval,
-               "gate_delta_loss": delta, "gate_ppl_change_percent": 100 * math.expm1(delta), "score_seconds": seconds}
-        candidates.append(rec)
-        write_json(args.out_dir / f"dacp_candidates_{args.score}.json", candidates)
-        print(f"RESULT dacp {tag} gate_ppl={rec['gate_ppl_change_percent']:.4f} seconds={seconds:.1f}", flush=True)
-        if best is None or delta < best["gate_delta_loss"]:
-            best, best_keep = rec, {n: x.cpu() for n, x in keep.items()}
-        del keep
-        sweep.apply(None)
-        sweep.model.zero_grad(set_to_none=True)
-        torch.cuda.empty_cache()
-    finalize(("dacp" if args.score == "first_order" else "dacp_taylor") + ("_fisher" if any(lambdas) else ""), best_keep, {"method": "iterative_ucb_disjoint", "score": args.score, "config": best["config"],
-             "backward_budget": best["backward_budget"],
-             "selection_rule": "minimum training-calibration loss over the registered grid; heldout validation not used"})
-    del best_keep
+            began = time.perf_counter()
+            _, detail, keep = run_iterative(sweep, scoring, geometric_schedule(args.sparsity, stages), scorer, 42, eval_at=[], return_keep=True)
+            seconds = time.perf_counter() - began
+            sweep.apply(keep)
+            gate_eval = evaluate_lm(sweep.model, gate, "cuda:0")
+            delta = gate_eval["loss"] - baseline_gate["loss"]
+            rec = {"tag": tag, "config": [stages, batches, penalty] + (["shared"] if shared else []) + (["fisher", lam] if lam else []), "backward_budget": stages * batches,
+                   "scoring_sha256": batch_hash(scoring[:batches] if shared else scoring[:stages * batches]), "gate": gate_eval,
+                   "gate_delta_loss": delta, "gate_ppl_change_percent": 100 * math.expm1(delta), "score_seconds": seconds}
+            candidates.append(rec)
+            write_json(args.out_dir / (f"dacp_candidates_{args.score}" + (f"_cap{cap:g}" if cap else "") + ".json"), candidates)
+            print(f"RESULT dacp {tag} gate_ppl={rec['gate_ppl_change_percent']:.4f} seconds={seconds:.1f}", flush=True)
+            if best is None or delta < best["gate_delta_loss"]:
+                best, best_keep = rec, {n: x.cpu() for n, x in keep.items()}
+            del keep
+            sweep.apply(None)
+            sweep.model.zero_grad(set_to_none=True)
+            torch.cuda.empty_cache()
+        finalize(("dacp" if args.score == "first_order" else "dacp_taylor") + ("_fisher" if any(lambdas) else "") + (f"_cap{cap:g}" if cap else ""), best_keep, {"method": "iterative_ucb_disjoint", "score": args.score, "config": best["config"],
+                 "magnitude_cap": cap or None, "excp_threshold": t_excp,
+                 "backward_budget": best["backward_budget"],
+                 "selection_rule": "minimum training-calibration loss over the registered grid; heldout validation not used"})
+        del best_keep
     if args.dacp_only:
         print("DONE", flush=True)
         return
