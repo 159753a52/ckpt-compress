@@ -38,6 +38,7 @@ def main():
     ap.add_argument("--no-final-state", action="store_true", help="one-cycle diagnostic; preserve measurements without a full final checkpoint")
     ap.add_argument("--allow-failed-gate", action="store_true", help="continue from an archive whose calibration PPL exceeded its gate; recorded in the protocol")
     ap.add_argument("--eval-gate", action="store_true", help="evaluate on the 64 training-calibration batches instead of validation (selection probe)")
+    ap.add_argument("--residual-scale", type=float, help="diagnostic: start the uncompressed run from base + s * residual on eligible tensors")
     args = ap.parse_args()
     methods = args.methods.split(",")
     allowed = {"no_compression", "excp_style", "inshrinkerator_style", "dacp", "first_order_ucb", "iterative_ucb_disjoint"}
@@ -55,6 +56,10 @@ def main():
         config["staged_groups"] = "decoded archive; no scoring repeated"
     if args.no_final_state:
         config["save_final_state"] = False
+    if args.residual_scale is not None:
+        if methods != ["no_compression"]:
+            ap.error("--residual-scale applies to the uncompressed run only")
+        config["residual_scale"] = args.residual_scale
     if args.plan_only:
         print(json.dumps({"protocol": config, "methods": methods, "purpose": "new dense recovery measurements"}))
         return
@@ -248,6 +253,13 @@ def main():
                                              "tokens": value["tokens"], "eval_s": value["eval_s"]}}
                 rec["immediate_reused_from"] = str(args.initial_mask_record)
             else:
+                if args.residual_scale is not None and cycle == 1:
+                    with torch.no_grad():
+                        params = dict(sweep.model.named_parameters())
+                        for name in sweep.names:
+                            ref = sweep.ref_dev[name].float()
+                            params[name].copy_(ref + args.residual_scale * (params[name].float() - ref))
+                    refresh_current(sweep, ref_cpu)
                 rec["immediate"] = evaluate(sweep)
             rec["validation_trace"].append({"step": step, **rec["immediate"]})
             train_seconds = 0.0
