@@ -32,6 +32,9 @@ def main():
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--sparsity", type=float, required=True)
     ap.add_argument("--grid", choices=("disjoint", "shared", "all"), default="all")
+    ap.add_argument("--configs", help="comma-separated K:B:kappa[:shared] entries; overrides --grid")
+    ap.add_argument("--score", choices=("first_order", "taylor"), default="first_order")
+    ap.add_argument("--dacp-only", action="store_true", help="skip the ExCP and Inshrinkerator masks")
     args = ap.parse_args()
     import torch
     from run_residual_sweep_small import REGIMES, load_regime, global_keep_masks
@@ -84,6 +87,29 @@ def main():
     # DACP-G: staged first-order scores with the variance penalty, configuration chosen on the gate loss.
     candidates, best, best_keep = [], None, None
     grid = {"disjoint": GRID, "shared": SHARED, "all": GRID + SHARED}[args.grid]
+    if args.configs:
+        grid = [(int(c.split(":")[0]), int(c.split(":")[1]), float(c.split(":")[2]), c.endswith(":shared"))
+                for c in args.configs.split(",")]
+    from run_residual_ablation_small import _masked_delta
+    from experiments.lib.residual_scoring import compute_block_taylor_scores
+
+    def taylor_moments(current, bs, keep_prev):
+        d = _masked_delta(current, keep_prev)
+        mean = m2 = None
+        for b, batch in enumerate(bs):
+            sc, _ = compute_block_taylor_scores(current.model, [batch], current.layers, d, current.device,
+                                                aggregation="signed_mean", task_type="lm",
+                                                model_family=current.family, block_parameter_names=current.blocks)
+            if mean is None:
+                mean = {n: torch.zeros(sc[n].shape, dtype=torch.float32, device=current.device) for n in current.names}
+                m2 = {n: torch.zeros(sc[n].shape, dtype=torch.float32, device=current.device) for n in current.names}
+            for n in current.names:
+                c = sc[n].to(current.device, torch.float32)
+                diff = c - mean[n]
+                mean[n].add_(diff, alpha=1.0 / (b + 1))
+                m2[n].add_(diff * (c - mean[n]))
+            del sc
+        return mean, m2
     for stages, batches, penalty, shared in grid:
         tag = f"K{stages}_B{batches}_k{penalty:g}" + ("_shared" if shared else "")
         set_seed(42)
@@ -94,6 +120,10 @@ def main():
             nonlocal stage
             bs = scoring[:batches] if shared else scoring[stage * batches:(stage + 1) * batches]
             stage += 1
+            if args.score == "taylor":
+                mean, m2 = taylor_moments(current, bs, keep_prev)
+                return {n: mean[n].abs() + (penalty * (m2[n] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
+                        for n in current.names}, {"score": "taylor"}
             mean, m2, losses = grad_moments(current, bs, penalty > 0)
             scores = {n: mean[i].abs() + (penalty * (m2[i] / (batches - 1)).clamp_min(0).sqrt() / math.sqrt(batches) if penalty else 0)
                       for i, n in enumerate(current.names)}
@@ -109,7 +139,7 @@ def main():
                "scoring_sha256": batch_hash(scoring[:batches] if shared else scoring[:stages * batches]), "gate": gate_eval,
                "gate_delta_loss": delta, "gate_ppl_change_percent": 100 * math.expm1(delta), "score_seconds": seconds}
         candidates.append(rec)
-        write_json(args.out_dir / "dacp_candidates.json", candidates)
+        write_json(args.out_dir / f"dacp_candidates_{args.score}.json", candidates)
         print(f"RESULT dacp {tag} gate_ppl={rec['gate_ppl_change_percent']:.4f} seconds={seconds:.1f}", flush=True)
         if best is None or delta < best["gate_delta_loss"]:
             best, best_keep = rec, {n: x.cpu() for n, x in keep.items()}
@@ -117,10 +147,13 @@ def main():
         sweep.apply(None)
         sweep.model.zero_grad(set_to_none=True)
         torch.cuda.empty_cache()
-    finalize("dacp", best_keep, {"method": "iterative_ucb_disjoint", "config": best["config"],
+    finalize("dacp" if args.score == "first_order" else "dacp_taylor", best_keep, {"method": "iterative_ucb_disjoint", "score": args.score, "config": best["config"],
              "backward_budget": best["backward_budget"],
              "selection_rule": "minimum training-calibration loss over the registered grid; heldout validation not used"})
     del best_keep
+    if args.dacp_only:
+        print("DONE", flush=True)
+        return
 
     # ExCP: residual magnitude, exact global threshold.
     sweep.apply(None)
