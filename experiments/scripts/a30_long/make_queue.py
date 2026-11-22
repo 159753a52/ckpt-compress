@@ -20,7 +20,7 @@ A_COMMON = ("--mode finetune --model EleutherAI/pythia-410m --tokenizer Eleuther
             "--score-batch-size 2 --kappa 1 --amp bf16 --deterministic")
 B_COMMON = ("--mode pretrain --tokenizer EleutherAI/pythia-410m --token-dir $DATA/fineweb_edu "
             "--total-steps 7500 --warmup 75 --lr 6e-4 --min-lr-ratio 0.1 --weight-decay 0.1 --beta2 0.95 "
-            "--clip 1.0 --batch-size 8 --accum 8 --seq 2048 --eval-batches 40 --eval-batch-size 4 "
+            "--clip 1.0 --batch-size 4 --accum 16 --seq 2048 --eval-batches 40 --eval-batch-size 4 "
             "--ref-every 750 --stages 16 --score-batches 16 --score-batch-size 2 --amp bf16 --seed 42 "
             "--hidden 768 --layers 12 --heads 12 --ffn 3072")
 RUN = "$PY $CODE/long_run.py"
@@ -40,9 +40,9 @@ def a_tasks(seed, methods=(("nocomp", None), ("excp", 0.84), ("dacp", 0.84), ("e
     return out
 
 
-def b_main(method, decision=True):
+def b_main(method, decision=True, after_decision=False):
     tid = f"B_s42_{method}"
-    dep = FINEWEB + (",runs/B_pilot_decide/DONE" if decision else "")
+    dep = FINEWEB + (",runs/B_pilot_decide/DONE" if decision or after_decision else "")
     dec = " --decision $RUNS/B_pilot_decide/decision.json" if decision else ""
     return (tid, dep, f"{RUN} {B_COMMON} --method {method}{dec} --fail-steps {B_FAILS} --eval-every 250 "
                       f"--eval-after 10,25,50,100,200 --save-every 250 --out $RUNS/{tid}")
@@ -84,12 +84,48 @@ def main():
     tasks += a_tasks(43)
     tasks += a_tasks(44)
     tasks += a_tasks(42, methods=(("inshrink", 0.84),))
-    tasks.append(b_main("restart", decision=False))
+    tasks.append(b_main("restart", decision=False, after_decision=True))
+    write(tasks)
+
+
+def write(tasks):
     out = sys.stdout
     out.write("# id\tdeps\tcommand\n")
     for tid, dep, cmd in tasks:
         out.write(f"{tid}\t{dep}\t{cmd}\n")
 
 
+# ExCP protocol (2026-11-22): checkpoints compressed against the previous reconstructed checkpoint,
+# training resumed from the reconstruction every fifth checkpoint.  The ExCP rule is the official
+# per-tensor threshold at its cap, median(|d|) * 2.5 (alpha large), and DACP-G deletes as many entries.
+CHAIN_METHODS = (("nocomp", "--method nocomp"),
+                 ("excp", "--method excp_official --excp-alpha 1e9"),
+                 ("dacp", "--method dacp --match-official --excp-alpha 1e9 --kappa 1"))
+A_CHAIN = A_COMMON.replace(f" --fail-steps {A_FAILS}", "") + " --ref-mode chain --ckpt-every 200 --break-every 1000"
+B_CHAIN = (B_COMMON.replace("--ref-every 750 ", "--ref-every 0 ") +
+           " --ref-mode chain --ckpt-every 250 --break-every 1250 --eval-every 250 "
+           "--eval-after 10,25,50,100,200 --save-every 250")
+
+
+def chain_tasks():
+    tasks = []
+
+    def a(seed):
+        for name, extra in CHAIN_METHODS:
+            tid = f"AC_s{seed}_{name}"
+            tasks.append((tid, ALPACA, f"{RUN} {A_CHAIN} --seed {seed} {extra} --out $RUNS/{tid}"))
+
+    a(42)
+    for name, extra in CHAIN_METHODS:
+        tid = f"BC_s42_{name}"
+        tasks.append((tid, FINEWEB, f"{RUN} {B_CHAIN} {extra} --out $RUNS/{tid}"))
+    a(43)
+    a(44)
+    return tasks
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["chain"]:
+        write(chain_tasks())
+    else:
+        main()

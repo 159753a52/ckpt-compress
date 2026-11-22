@@ -69,7 +69,17 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=("finetune", "pretrain"), required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--method", choices=("nocomp", "excp", "inshrink", "dacp", "restart"), required=True)
+    ap.add_argument("--method", choices=("nocomp", "excp", "excp_official", "inshrink", "dacp", "restart"),
+                    required=True)
+    ap.add_argument("--ref-mode", choices=("fixed", "chain"), default="fixed",
+                    help="chain: every --ckpt-every steps the residual to the previous reconstructed checkpoint is "
+                         "compressed (training continues from the uncompressed weights), and every --break-every "
+                         "steps training resumes from the reconstructed checkpoint (the ExCP protocol)")
+    ap.add_argument("--ckpt-every", type=int, default=0)
+    ap.add_argument("--break-every", type=int, default=0)
+    ap.add_argument("--match-official", action="store_true",
+                    help="delete as many entries as the official ExCP threshold at every checkpoint")
+    ap.add_argument("--excp-alpha", type=float, default=5e-5)
     ap.add_argument("--sparsity", type=float, default=0.0, help="deletion rate P")
     ap.add_argument("--kappa", type=float, default=1.0)
     ap.add_argument("--stages", type=int, default=16)
@@ -293,16 +303,42 @@ def batch_grads(model, batches, dev, visit):
     model.zero_grad(set_to_none=True)
 
 
-def compress(model, params, names, ref, method, sparsity, kappa, stages, score_batches, dev):
-    """Prune the residual to ``ref`` in place; returns the restore record."""
+@torch.no_grad()
+def official_excp_mask(d, params, names, opt, alpha):
+    """Deletion mask of the official ExCP code (compress_pythia.py): per tensor, keep the
+    residual entries with |d| > median(|d|) * min(2.5, alpha / sqrt(mean(exp_avg_sq)))."""
+    out = {}
+    for n in names:
+        v = opt.state[params[n]].get("exp_avg_sq") if params[n] in opt.state else None
+        vm = float(v.float().mean()) if v is not None else 0.0
+        scale = min(2.5, alpha / math.sqrt(vm)) if vm > 0 else 2.5
+        a = d[n].abs()
+        out[n] = a <= a.median() * scale
+    return out
+
+
+def compress(model, params, names, ref, method, sparsity, kappa, stages, score_batches, dev,
+             opt=None, alpha=5e-5, match_official=False):
+    """Prune the residual to ``ref`` in place; returns the restore record.
+
+    ``excp_official`` deletes what the official ExCP threshold deletes; with
+    ``match_official`` the other rules delete exactly that many entries."""
     t0 = time.time()
     with torch.no_grad():
         d = {n: (params[n].detach() - ref[n]).float() for n in names}
     total = sum(d[n].numel() for n in names)
-    m = math.floor(sparsity * total) if method != "restart" else total
+    official = None
+    if method == "excp_official" or match_official:
+        official = official_excp_mask(d, params, names, opt, alpha)
+        m = sum(int(official[n].sum()) for n in names)
+    else:
+        m = math.floor(sparsity * total) if method != "restart" else total
+    sparsity = m / total
     deleted = {n: torch.zeros_like(d[n], dtype=torch.bool) for n in names}
-    info = {"eligible": total, "target_deleted": m}
-    if method == "excp":
+    info = {"eligible": total, "target_deleted": m, "deletion_rate": sparsity}
+    if method == "excp_official":
+        deleted = official
+    elif method == "excp":
         sel = select_smallest({n: nonneg(d[n].abs()) for n in names}, names, m)
         deleted = sel
     elif method == "inshrink":
@@ -425,6 +461,8 @@ def evaluate(model, batches, dev):
         n = int((b["labels"][:, 1:] != -100).sum())
         loss_sum += float(out.loss) * n
         tokens += n
+    del out, b
+    torch.cuda.empty_cache()
     return loss_sum / tokens, tokens
 
 
@@ -443,14 +481,23 @@ def main(argv=None):
     if args.decision is not None:
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
-    if args.method != "nocomp" and args.method != "restart" and not 0 < args.sparsity < 1:
+    needs_rate = args.method in ("excp", "inshrink", "dacp") and not args.match_official
+    if needs_rate and not 0 < args.sparsity < 1:
         raise SystemExit("compressing methods need 0 < sparsity < 1")
     stop = args.stop_at or args.total_steps
+    chain = args.ref_mode == "chain"
     fail_steps = sorted(set(parse_int_list(args.fail_steps)))
+    ckpt_steps, break_steps = set(), set()
+    if chain:
+        if not (args.ckpt_every > 0 and args.break_every > 0 and args.break_every % args.ckpt_every == 0):
+            raise SystemExit("--ref-mode chain needs --break-every to be a multiple of --ckpt-every")
+        ckpt_steps = set(range(args.ckpt_every, stop + 1, args.ckpt_every))
+        break_steps = set(range(args.break_every, stop, args.break_every))  # not at the final step
+        fail_steps = []
     keep_states = set(parse_int_list(args.keep_states))
     eval_after = parse_int_list(args.eval_after)
     eval_steps = set(range(0, stop + 1, args.eval_every)) | {stop}
-    for f in fail_steps:
+    for f in list(fail_steps) + sorted(break_steps):
         eval_steps |= {f + a for a in eval_after if f + a <= stop}
 
     if args.deterministic:
@@ -523,7 +570,8 @@ def main(argv=None):
         cfg.update({"host": socket.gethostname(), "gpu": torch.cuda.get_device_name(0),
                     "torch": torch.__version__, "eligible_entries": sum(params[n].numel() for n in names),
                     "eligible_tensors": len(names), "parameters": sum(p.numel() for p in model.parameters()),
-                    "eval_tokens": None, "fail_steps_list": fail_steps})
+                    "eval_tokens": None, "fail_steps_list": fail_steps,
+                    "checkpoint_steps": sorted(ckpt_steps), "break_steps": sorted(break_steps)})
         atomic_json(args.out / "config.json", cfg)
 
     def write_metric(rec):
@@ -533,7 +581,7 @@ def main(argv=None):
     def save_state(path):
         n_lines = len(metrics_path.read_text().splitlines()) if metrics_path.exists() else 0
         blob = {"model": model.state_dict(), "opt": opt.state_dict(), "step": step, "ref_step": ref_step,
-                "ref": {n: ref[n].cpu() for n in names} if args.mode == "pretrain" else None,
+                "ref": {n: ref[n].cpu() for n in names} if args.mode == "pretrain" or chain else None,
                 "failures": failures_done, "metrics_lines": n_lines,
                 "rng": torch.get_rng_state(), "cuda_rng": torch.cuda.get_rng_state()}
         tmp = path.with_suffix(f".tmp{os.getpid()}")
@@ -546,7 +594,41 @@ def main(argv=None):
     last_eval_step = step if start_source == state_path else None
     while True:
         # failures and evaluations happen at the current step, after its update
-        if step in fail_steps and step not in done_fail:
+        if chain and step in ckpt_steps and step not in done_fail:
+            # ExCP protocol: compress against the previous reconstructed checkpoint; resume from the
+            # reconstruction only at break steps, otherwise keep training the uncompressed weights
+            pre, ntok = evaluate(model, eval_b, dev)
+            is_break = step in break_steps
+            rec = {"kind": "checkpoint", "step": step, "break": is_break, "ref_step": ref_step,
+                   "pre_loss": pre, "eval_tokens": ntok}
+            if args.method != "nocomp":
+                with torch.no_grad():
+                    backup = {n: params[n].detach().clone() for n in names}
+                rec.update(compress(model, params, names, ref, args.method, args.sparsity, args.kappa,
+                                    args.stages, score_b, dev, opt=opt, alpha=args.excp_alpha,
+                                    match_official=args.match_official))
+                rec["post_loss"], _ = evaluate(model, eval_b, dev)
+                with torch.no_grad():
+                    for n in names:
+                        ref[n].copy_(params[n].detach())
+                        if not is_break:
+                            params[n].copy_(backup[n])
+                del backup
+                torch.cuda.empty_cache()
+            else:
+                rec["post_loss"] = pre
+            ref_step = step
+            rec["immediate_damage"] = rec["post_loss"] - pre
+            write_metric(rec)
+            failures_done.append(rec)
+            done_fail.add(step)
+            log(f"checkpoint {step}{' (resume)' if is_break else ''}: pre {pre:.5f} recon {rec['post_loss']:.5f} "
+                f"damage {1e3 * rec['immediate_damage']:.1f} mnats, deleted {rec.get('deletion_rate', 0):.3f} "
+                f"({rec.get('compress_s', 0)} s)")
+            if is_break:
+                save_state(state_path)
+            last_eval_step = step
+        elif step in fail_steps and step not in done_fail:
             pre, ntok = evaluate(model, eval_b, dev)
             rec = {"kind": "failure", "step": step, "ref_step": ref_step, "pre_loss": pre, "eval_tokens": ntok}
             if args.method != "nocomp":
@@ -576,7 +658,8 @@ def main(argv=None):
         if step >= stop:
             break
         # saved states always follow the evaluation/failure work of their step
-        if args.save_every and step > 0 and step % args.save_every == 0 and step not in fail_steps:
+        if (args.save_every and step > 0 and step % args.save_every == 0 and step not in fail_steps
+                and step not in break_steps):
             save_state(state_path)
         # one optimizer update: step -> step + 1
         model.train()
@@ -602,7 +685,8 @@ def main(argv=None):
             raise RuntimeError(f"non-finite training loss at step {step}")
         train_acc.append(loss_val)
         step += 1
-        if args.mode == "pretrain" and args.ref_every and step % args.ref_every == 0 and step not in fail_steps:
+        if (not chain and args.mode == "pretrain" and args.ref_every and step % args.ref_every == 0
+                and step not in fail_steps):
             with torch.no_grad():
                 for n in names:
                     ref[n].copy_(params[n].detach())

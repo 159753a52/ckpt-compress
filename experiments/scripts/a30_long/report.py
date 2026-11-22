@@ -20,13 +20,19 @@ from collections import defaultdict
 from pathlib import Path
 
 TOL = math.log(1.01)
-NAME = re.compile(r"^(?P<study>[AB])_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
+NAME = re.compile(r"^(?P<study>AC|BC|A|B)_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
 LABEL = {"excp": "ExCP rule", "dacp": "DACP-G", "inshrink": "Inshrinkerator rule", "restart": "Restart from reference",
          "nocomp": "No compression"}
+STUDIES = {"AC": "研究 A（ExCP 协议：链式参考，每 200 步存档、每 1000 步恢复）",
+           "BC": "研究 B（ExCP 协议：链式参考，每 250 步存档、每 1250 步恢复）",
+           "A": "研究 A（固定参考，旧协议）", "B": "研究 B（固定参考，旧协议）"}
 
 
 def load(run: Path):
-    evals, fails = {}, []
+    """evals: step -> loss of the training model; fails: records whose restoration changed training
+    (failures of the fixed-reference protocol, resume checkpoints of the chain protocol); ckpts: every
+    chain checkpoint (reconstruction quality even where training was not resumed)."""
+    evals, fails, ckpts = {}, [], []
     mp = run / "metrics.jsonl"
     if not mp.exists():
         return None
@@ -37,11 +43,18 @@ def load(run: Path):
             continue
         if r["kind"] == "eval":
             evals[r["step"]] = r["loss"]
+        elif r["kind"] == "checkpoint":
+            ckpts.append(r)
+            if r.get("break"):
+                fails.append(r)
+            else:
+                evals[r["step"]] = r["pre_loss"]
         else:
             fails.append(r)
     summary = json.loads((run / "summary.json").read_text()) if (run / "summary.json").exists() else None
     cfg = json.loads((run / "config.json").read_text()) if (run / "config.json").exists() else {}
-    return {"evals": evals, "fails": fails, "summary": summary, "cfg": cfg, "done": (run / "DONE").exists()}
+    return {"evals": evals, "fails": fails, "ckpts": ckpts, "summary": summary, "cfg": cfg,
+            "done": (run / "DONE").exists()}
 
 
 def curve(r):
@@ -108,11 +121,11 @@ def main():
              "损失差距 = 该轨迹验证损失 − 同种子不压缩轨迹在同一步的验证损失，单位毫奈特（10 毫奈特约等于 1% PPL）。",
              "恢复步数 = 故障后第一次差距回到 1% PPL 以内的评测点（故障后 0/10/25/50/100/200 步及常规评测点）。", ""]
     rows_csv = []
-    for study in ("A", "B"):
+    for study in ("AC", "BC", "A", "B"):
         keys = sorted(k for k in runs if k[0] == study and k[2] != "nocomp")
         if not keys:
             continue
-        lines += [f"## 研究 {study}", ""]
+        lines += [f"## {STUDIES[study]}", ""]
         if study == "B":
             dec = args.runs / "B_pilot_decide" / "decision.json"
             if dec.exists():
@@ -124,8 +137,20 @@ def main():
                     cells = [f"{fmt(g[t]['excp'])}/{fmt(g[t]['dacp'])}/{fmt(g[t]['restart'])}" for t in sorted(g, key=int)]
                     lines.append(f"| {r['sparsity']} | {r['kappa']:g} | {r['cond_a']} | {r['cond_b']} | {r['adv']:.2f} | " + " | ".join(cells) + " |")
                 lines.append("")
-        lines += ["| 种子 | 方法 | P | 进度 | 平均立即损伤 | 平均恢复步数 | 下次故障前差距(均值) | 故障后平均差距 | 最终差距 | 最终 PPL |",
-                  "|---|---|---|---|---|---|---|---|---|---|"]
+            # run-to-run noise without compression: same initialization and data order, nondeterministic kernels
+            pre = load(args.runs / "B_pilot_pre") if (args.runs / "B_pilot_pre").exists() else None
+            main_nc = runs.get(("B", 42, "nocomp", None))
+            noise = []
+            if pre and main_nc:
+                noise += [(s, main_nc["evals"][s] - pre["evals"][s]) for s in sorted(set(pre["evals"]) & set(main_nc["evals"])) if s > 0]
+            c375 = load(args.runs / "B_pilot" / "t375_nocomp") if (args.runs / "B_pilot" / "t375_nocomp").exists() else None
+            if pre and c375 and 500 in pre["evals"] and 500 in c375["evals"]:
+                noise.append(("500（从第 375 步状态续跑）", c375["evals"][500] - pre["evals"][500]))
+            if noise:
+                lines += ["随机波动估计（两条独立运行、都不压缩的轨迹在同一步的验证损失差，毫奈特）："
+                          + "，".join(f"第 {s} 步 {1e3 * v:+.2f}" for s, v in noise), ""]
+        lines += ["| 种子 | 方法 | P | 进度 | 平均立即损伤 | 平均恢复步数 | 下次故障前差距(均值) | 故障后平均差距 | 最终差距 | 最终 PPL | 全部存档点重建损伤 | 平均删除率 |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         agg = defaultdict(list)
         for k in keys:
             base = runs.get((study, k[1], "nocomp", None))
@@ -142,9 +167,12 @@ def main():
             prog = "完成" if r["done"] else f"至第 {a['last_step']} 步"
             rec_txt = (f"{st.mean(recs):.0f}" if recs else "—") + (f"（{unrec} 次未在窗口内恢复）" if unrec else "")
             ppl_txt = f"{ppl:.3f}（基线 {base_ppl:.3f}）" if ppl and base_ppl else "—"
+            ck = [c for c in r.get("ckpts", []) if "deletion_rate" in c]
+            ck_dmg = fmt(st.mean(c["immediate_damage"] for c in ck)) if ck else "—"
+            ck_rate = f"{st.mean(c['deletion_rate'] for c in ck):.3f}" if ck else "—"
             lines.append(f"| {k[1]} | {LABEL.get(k[2], k[2])} | {k[3] if k[3] else '—'} | {prog} | "
                          f"{fmt(st.mean(imm) if imm else None)} | {rec_txt} | {fmt(st.mean(bnext) if bnext else None)} | "
-                         f"{fmt(a['mean_gap_after_first_failure'])} | {fmt(a['final_gap'])} | {ppl_txt} |")
+                         f"{fmt(a['mean_gap_after_first_failure'])} | {fmt(a['final_gap'])} | {ppl_txt} | {ck_dmg} | {ck_rate} |")
             if r["done"] and base["done"]:
                 agg[(k[2], k[3])].append(a["final_gap"])
             for p in a["per"]:
