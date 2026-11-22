@@ -46,7 +46,8 @@ def main():
             continue
         b = rec.get(args.break_step, {})
         rows.append({"name": run.name, "method": cfg["method"], "kappa": cfg.get("kappa"),
-                     "protect_top": cfg.get("protect_top", 0.0), "mean_gap": st.mean(gaps.values()),
+                     "protect_top": cfg.get("protect_top", 0.0), "rho": cfg.get("rho", 0.0),
+                     "mean_gap": st.mean(gaps.values()),
                      "gaps": gaps, "immediate_damage": b.get("immediate_damage"),
                      "kept_residual_l2_fraction": b.get("kept_residual_l2_fraction")})
     dacp = [r for r in rows if r["method"] == "dacp"]
@@ -57,7 +58,7 @@ def main():
     reason = (f"{best['name']} has the smallest mean gap after the break among the DACP-G variants "
               f"({1e3 * best['mean_gap']:.1f} mnats"
               + (f"; ExCP rule {1e3 * excp['mean_gap']:.1f}" if excp else "") + ")")
-    dec = {"sparsity": args.sparsity, "kappa": best["kappa"], "protect_top": best["protect_top"],
+    dec = {"sparsity": args.sparsity, "kappa": best["kappa"], "protect_top": best["protect_top"], "rho": best["rho"],
            "variant": best["name"], "reason": reason, "rows": rows}
     args.out.write_text(json.dumps(dec, indent=1))
     for r in sorted(rows, key=lambda r: r["mean_gap"]):

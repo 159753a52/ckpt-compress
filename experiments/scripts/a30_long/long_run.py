@@ -26,7 +26,9 @@ Selection rules (``--method``):
   dacp      DACP-G: K stages of the geometric schedule, every stage rescoring the
             same B batches at the partially restored model, score
             |mean_j(-g_j d)| + kappa * std_j(-g_j d) / sqrt(B), exact global
-            threshold with ties broken by global index
+            threshold with ties broken by global index; with --rho the isotropic
+            curvature term rho * gamma * d^2 of DACP-G_rho is added (gamma rescales d^2
+            to the mean of the other score terms over the surviving entries)
   restart   delete the whole residual (resume from the reference itself)
 
 The run is resumable: the full state is written atomically after every failure
@@ -85,6 +87,9 @@ def parse_args(argv=None):
     ap.add_argument("--count-wait", type=float, default=4 * 3600, help="seconds to wait for the leader per checkpoint")
     ap.add_argument("--protect-top", type=float, default=0.0,
                     help="DACP-G never deletes this fraction of the largest residual entries (|d| / tensor median)")
+    ap.add_argument("--rho", type=float, default=0.0,
+                    help="DACP-G_rho: add rho * gamma * d^2 to the score, gamma = mean(other score) / mean(d^2) "
+                         "over the entries that survive the stage")
     ap.add_argument("--excp-alpha", type=float, default=5e-5)
     ap.add_argument("--sparsity", type=float, default=0.0, help="deletion rate P")
     ap.add_argument("--kappa", type=float, default=1.0)
@@ -346,7 +351,7 @@ def leader_count(path, step, wait_s):
 
 
 def compress(model, params, names, ref, method, sparsity, kappa, stages, score_batches, dev,
-             opt=None, alpha=5e-5, match_official=False, count=None, protect_top=0.0):
+             opt=None, alpha=5e-5, match_official=False, count=None, protect_top=0.0, rho=0.0):
     """Prune the residual to ``ref`` in place; returns the restore record.
 
     ``excp_official`` deletes what the official ExCP threshold deletes; with
@@ -430,12 +435,23 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
                     s = mean[n].abs()
                     if kappa > 0 and b > 1:
                         s = s + kappa * torch.sqrt(torch.clamp(m2[n] / (b - 1), min=0)) / math.sqrt(b)
-                    s = nonneg(s)
+                    sc[n] = nonneg(s)
+                del mean, m2
+                gamma = None
+                if rho > 0:
+                    # DACP-G_rho: isotropic own-curvature term rho * gamma * d^2 outside the absolute value,
+                    # gamma = mean of the other score terms / mean of d^2 over the surviving entries
+                    s_sum = sum(float(sc[n][~deleted[n]].double().sum()) for n in names)
+                    d2_sum = sum(float(d[n][~deleted[n]].double().square().sum()) for n in names)
+                    gamma = s_sum / d2_sum if d2_sum > 0 else 0.0
+                for n in names:
+                    s = sc[n]
+                    if gamma:
+                        s = nonneg(s + (rho * gamma) * d[n].square())
                     s[deleted[n]] = float("inf")
                     if protected is not None:
                         s[protected[n]] = float("inf")
                     sc[n] = s
-                del mean, m2
                 sel = select_smallest(sc, names, target - done)
                 for n in names:
                     deleted[n] |= sel[n]
@@ -444,6 +460,8 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
         info["stages"] = stages
         info["score_batches"] = b
         info["kappa"] = kappa
+        if rho > 0:
+            info["rho"] = rho
     elif method == "random":
         # uniformly random deletions (noise control: with a tiny rate the restoration barely changes the
         # model, so the later divergence from the uncompressed run measures the sensitivity of training)
@@ -542,6 +560,7 @@ def main(argv=None):
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
         args.protect_top = float(dec.get("protect_top", args.protect_top))
+        args.rho = float(dec.get("rho", args.rho))
     needs_rate = (args.method in ("excp", "inshrink", "dacp", "random") and not args.match_official
                   and args.count_from is None)
     if args.count_from is not None and not (args.ref_mode == "chain" and args.method != "nocomp"):
@@ -677,7 +696,7 @@ def main(argv=None):
                 rec.update(compress(model, params, names, ref, args.method, args.sparsity, args.kappa,
                                     args.stages, score_b, dev, opt=opt, alpha=args.excp_alpha,
                                     match_official=args.match_official, count=count,
-                                    protect_top=args.protect_top))
+                                    protect_top=args.protect_top, rho=args.rho))
                 rec["post_loss"], _ = evaluate(model, eval_b, dev)
                 with torch.no_grad():
                     for n in names:
@@ -765,7 +784,7 @@ def main(argv=None):
 
     final_loss, ntok = evaluate(model, eval_b, dev)
     summary = {"method": args.method, "sparsity": args.sparsity, "kappa": args.kappa,
-               "protect_top": args.protect_top, "seed": args.seed,
+               "protect_top": args.protect_top, "rho": args.rho, "seed": args.seed,
                "mode": args.mode, "steps": step, "final_loss": final_loss, "final_ppl": math.exp(final_loss),
                "eval_tokens": ntok, "failures": failures_done, "wall_s": round(time.time() - t_start, 1),
                "gpu": torch.cuda.get_device_name(0), "host": socket.gethostname()}

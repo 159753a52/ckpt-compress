@@ -143,7 +143,11 @@ def chain_tasks():
                 ("dacp_k1", f"--method dacp --sparsity {pb} --kappa 1"),
                 ("dacp_k4", f"--method dacp --sparsity {pb} --kappa 4"),
                 ("dacp_k16", f"--method dacp --sparsity {pb} --kappa 16"),
-                ("dacp_k1_q0.06", f"--method dacp --sparsity {pb} --kappa 1 --protect-top 0.06")]
+                ("dacp_k1_q0.06", f"--method dacp --sparsity {pb} --kappa 1 --protect-top 0.06"),
+                # DACP-G_rho of the paper's dense sweep (isotropic own-curvature term rho * gamma * d^2), added
+                # before the pilot ran: it keeps large residual entries through the score instead of a fixed quota
+                ("dacp_k1_r4", f"--method dacp --sparsity {pb} --kappa 1 --rho 4"),
+                ("dacp_k1_r16", f"--method dacp --sparsity {pb} --kappa 1 --rho 16")]
     for name, extra in variants:
         tasks.append((f"BK/{name}", "runs/BK_states/state_3500.pt", f"{pilot} {extra} --out $RUNS/BK/{name}"))
     tasks.append(("BK_decide", ",".join(f"runs/BK/{n}/DONE" for n, _ in variants),
