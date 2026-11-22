@@ -69,7 +69,7 @@ def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=("finetune", "pretrain"), required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--method", choices=("nocomp", "excp", "excp_official", "inshrink", "dacp", "restart"),
+    ap.add_argument("--method", choices=("nocomp", "excp", "excp_official", "inshrink", "dacp", "restart", "random"),
                     required=True)
     ap.add_argument("--ref-mode", choices=("fixed", "chain"), default="fixed",
                     help="chain: every --ckpt-every steps the residual to the previous reconstructed checkpoint is "
@@ -400,6 +400,14 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
         info["stages"] = stages
         info["score_batches"] = b
         info["kappa"] = kappa
+    elif method == "random":
+        # uniformly random deletions (noise control: with a tiny rate the restoration barely changes the
+        # model, so the later divergence from the uncompressed run measures the sensitivity of training)
+        seed = int(float(d[names[0]].double().abs().sum()) * 1e6) % (2 ** 31 - 1)  # reproducible per state
+        g = torch.Generator(device=d[names[0]].device).manual_seed(seed)
+        sc = {n: torch.rand(d[n].shape, generator=g, device=d[n].device) for n in names}
+        deleted = select_smallest(sc, names, m)
+        del sc
     elif method == "restart":
         deleted = {n: torch.ones_like(d[n], dtype=torch.bool) for n in names}
     else:
@@ -489,7 +497,7 @@ def main(argv=None):
     if args.decision is not None:
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
-    needs_rate = args.method in ("excp", "inshrink", "dacp") and not args.match_official
+    needs_rate = args.method in ("excp", "inshrink", "dacp", "random") and not args.match_official
     if args.method == "excp_official" and args.sparsity:
         needs_rate = True
     if needs_rate and not 0 < args.sparsity < 1:

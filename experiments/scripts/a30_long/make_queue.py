@@ -125,6 +125,9 @@ def chain_tasks():
             tasks.append((tid, ALPACA, f"{RUN} {A_CHAIN} --seed {seed} {extra} --out $RUNS/{tid}"))
 
     a(42)
+    # noise control: 0.1% random deletions, so later divergence from no compression measures training sensitivity
+    tasks.append(("AC_s42_noise", ALPACA, f"{RUN} {A_CHAIN} --seed 42 --method random --sparsity 0.001 "
+                                          "--out $RUNS/AC_s42_noise"))
     for name, extra in chain_methods("B"):
         tid = f"BC_s42_{name}"
         tasks.append((tid, FINEWEB, f"{RUN} {B_CHAIN} {extra} --out $RUNS/{tid}"))
