@@ -18,7 +18,7 @@ while :; do
   done
   timeout 60 $SSH a30-2 "[ -e $ROOT/runs/prep_data/DONE ] || bash $ROOT/code/ensure_worker.sh cpu-a30-2 $ROOT/code/queue_cpu.tsv cpu" 2>&1 | quiet | sed "s/^/[$now a30-2] /"
   timeout 300 $SSH a30-1 "source $ROOT/code/env.sh && \$PY $ROOT/code/report.py --runs $ROOT/runs --out $ROOT/reports > /dev/null 2> $ROOT/reports/report.err; cd $ROOT && tar czf - --exclude='*.pt' --exclude='*.tmp*' --exclude='.claim' runs logs reports status code/queue.tsv data/fineweb_edu/info.json 2>/dev/null" 2>/dev/null | tar xzf - -C "$DEST" 2>/dev/null
-  st=$(timeout 60 $SSH a30-1 "cd $ROOT/runs; echo done=\$(ls -d AC_*/DONE BC_*/DONE BO_*/DONE 2>/dev/null | wc -l) failed=\$(ls -d */FAILED B_pilot/*/FAILED 2>/dev/null | tr '\n' ' '); cat $ROOT/status/*.txt | tr '\n' ';'; total=\$(grep -vc '^#' $ROOT/code/queue_chain.tsv); echo total=\$total" 2>&1 | quiet | tr '\n' ' ')
+  st=$(timeout 60 $SSH a30-1 "cd $ROOT/runs; echo done=\$(ls -d AC_*/DONE BC_*/DONE BO_*/DONE BK/*/DONE BK_decide/DONE 2>/dev/null | wc -l) failed=\$(ls -d */FAILED B_pilot/*/FAILED 2>/dev/null | tr '\n' ' '); cat $ROOT/status/*.txt | tr '\n' ';'; total=\$(grep -vc '^#' $ROOT/code/queue_chain.tsv); echo total=\$total" 2>&1 | quiet | tr '\n' ' ')
   echo "[$now] $st"
   # a failed task is reported but the watch goes on (the other tasks keep running and need syncing)
   if [[ "$st" =~ failed=[A-Za-z] ]]; then echo "[$now] a task FAILED"; fi

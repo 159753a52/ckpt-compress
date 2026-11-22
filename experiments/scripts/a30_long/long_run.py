@@ -83,6 +83,8 @@ def parse_args(argv=None):
                     help="metrics.jsonl of a leader run: at every checkpoint delete exactly as many entries as the "
                          "leader did at that step (waits for the leader to get there)")
     ap.add_argument("--count-wait", type=float, default=4 * 3600, help="seconds to wait for the leader per checkpoint")
+    ap.add_argument("--protect-top", type=float, default=0.0,
+                    help="DACP-G never deletes this fraction of the largest residual entries (|d| / tensor median)")
     ap.add_argument("--excp-alpha", type=float, default=5e-5)
     ap.add_argument("--sparsity", type=float, default=0.0, help="deletion rate P")
     ap.add_argument("--kappa", type=float, default=1.0)
@@ -344,7 +346,7 @@ def leader_count(path, step, wait_s):
 
 
 def compress(model, params, names, ref, method, sparsity, kappa, stages, score_batches, dev,
-             opt=None, alpha=5e-5, match_official=False, count=None):
+             opt=None, alpha=5e-5, match_official=False, count=None, protect_top=0.0):
     """Prune the residual to ``ref`` in place; returns the restore record.
 
     ``excp_official`` deletes what the official ExCP threshold deletes; with
@@ -393,6 +395,17 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
     elif method == "dacp":
         b = len(score_batches)
         stage_log = []
+        protected = None
+        if protect_top > 0:
+            # never delete the largest residual entries (|d| relative to the median of its tensor, the ExCP
+            # ranking): they carry the consistent progress of training that takes many steps to rebuild
+            n_prot = min(math.floor(protect_top * total), total - m)
+            with torch.no_grad():
+                norm = {n: nonneg(d[n].abs() / d[n].abs().median().clamp_min(1e-30)) for n in names}
+            low = select_smallest(norm, names, total - n_prot)
+            protected = {n: ~low[n] for n in names}
+            del norm, low
+            info["protect_top"] = protect_top
         for k in range(1, stages + 1):
             target = math.floor((1 - (1 - sparsity) ** (k / stages)) * total) if k < stages else m
             done = sum(int(deleted[n].sum()) for n in names)
@@ -419,6 +432,8 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
                         s = s + kappa * torch.sqrt(torch.clamp(m2[n] / (b - 1), min=0)) / math.sqrt(b)
                     s = nonneg(s)
                     s[deleted[n]] = float("inf")
+                    if protected is not None:
+                        s[protected[n]] = float("inf")
                     sc[n] = s
                 del mean, m2
                 sel = select_smallest(sc, names, target - done)
@@ -526,6 +541,7 @@ def main(argv=None):
     if args.decision is not None:
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
+        args.protect_top = float(dec.get("protect_top", args.protect_top))
     needs_rate = (args.method in ("excp", "inshrink", "dacp", "random") and not args.match_official
                   and args.count_from is None)
     if args.count_from is not None and not (args.ref_mode == "chain" and args.method != "nocomp"):
@@ -660,7 +676,8 @@ def main(argv=None):
                     rec["count_from"] = str(args.count_from)
                 rec.update(compress(model, params, names, ref, args.method, args.sparsity, args.kappa,
                                     args.stages, score_b, dev, opt=opt, alpha=args.excp_alpha,
-                                    match_official=args.match_official, count=count))
+                                    match_official=args.match_official, count=count,
+                                    protect_top=args.protect_top))
                 rec["post_loss"], _ = evaluate(model, eval_b, dev)
                 with torch.no_grad():
                     for n in names:
@@ -747,7 +764,8 @@ def main(argv=None):
             ref_step = step
 
     final_loss, ntok = evaluate(model, eval_b, dev)
-    summary = {"method": args.method, "sparsity": args.sparsity, "kappa": args.kappa, "seed": args.seed,
+    summary = {"method": args.method, "sparsity": args.sparsity, "kappa": args.kappa,
+               "protect_top": args.protect_top, "seed": args.seed,
                "mode": args.mode, "steps": step, "final_loss": final_loss, "final_ppl": math.exp(final_loss),
                "eval_tokens": ntok, "failures": failures_done, "wall_s": round(time.time() - t_start, 1),
                "gpu": torch.cuda.get_device_name(0), "host": socket.gethostname()}

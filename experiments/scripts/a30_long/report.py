@@ -23,7 +23,8 @@ TOL = math.log(1.01)
 BASE_STUDY = {"BO": "BC"}  # studies whose no-compression run is another study's
 NAME = re.compile(r"^(?P<study>AC|BC|BO|A|B)_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
 LABEL = {"excp": "ExCP rule", "dacp": "DACP-G", "inshrink": "Inshrinkerator rule", "restart": "Restart from reference",
-         "nocomp": "No compression", "noise": "Noise control (0.1% random)"}
+         "nocomp": "No compression", "noise": "Noise control (0.1% random)",
+         "dacpt": "DACP-G (pilot-chosen setting)"}
 STUDIES = {"AC": "研究 A（ExCP 协议：链式参考，每 200 步存档、每 1000 步恢复）",
            "BC": "研究 B（ExCP 协议：链式参考，每 250 步存档、每 1250 步恢复）",
            "BO": "研究 B，ExCP 官方默认阈值 α=5e-5（删除数逐存档点由 ExCP 决定，DACP-G 删同样多；基线为研究 B 的不压缩轨迹）",
@@ -208,7 +209,7 @@ def plot(out, study, key, a):
         import matplotlib.pyplot as plt
     except Exception:
         return
-    colors = {"excp": "#E69F00", "dacp": "#0072B2", "inshrink": "#009E73", "restart": "#999999", "noise": "#CC79A7"}
+    colors = {"excp": "#E69F00", "dacp": "#0072B2", "dacpt": "#56B4E9", "inshrink": "#009E73", "restart": "#999999", "noise": "#CC79A7"}
     fig_path = out / f"gap_{study}_s{key[1]}_p{key[3]}.png"
     cache = out / f".plotdata_{study}_s{key[1]}_p{key[3]}.json"
     data = json.loads(cache.read_text()) if cache.exists() else {}

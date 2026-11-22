@@ -131,13 +131,36 @@ def chain_tasks():
     for name, extra in chain_methods("B"):
         tid = f"BC_s42_{name}"
         tasks.append((tid, FINEWEB, f"{RUN} {B_CHAIN} {extra} --out $RUNS/{tid}"))
+    # resume pilot of study B (2026-11-22): at the first resumption DACP-G (kappa 1) had a quarter of the ExCP
+    # damage but trailed it from ten steps later on.  From the no-compression state at step 3500 every variant
+    # compresses the residual of the next interval, resumes at the break step 3750 and trains 200 steps
+    # (deterministic kernels); pilot_decide_chain.py picks the DACP-G variant with the smallest mean gap after it
+    pilot = (f"{RUN} {B_CHAIN} --init-state $RUNS/BK_states/state_3500.pt --ref-state $RUNS/BK_states/state_3500.pt "
+             "--stop-at 3950 --deterministic")
+    pb = CHAIN_RATE["B"]
+    variants = [("nocomp", "--method nocomp"), ("excp", f"--method excp_official --sparsity {pb}"),
+                ("noise", "--method random --sparsity 0.001"),
+                ("dacp_k1", f"--method dacp --sparsity {pb} --kappa 1"),
+                ("dacp_k4", f"--method dacp --sparsity {pb} --kappa 4"),
+                ("dacp_k16", f"--method dacp --sparsity {pb} --kappa 16"),
+                ("dacp_k1_q0.06", f"--method dacp --sparsity {pb} --kappa 1 --protect-top 0.06")]
+    for name, extra in variants:
+        tasks.append((f"BK/{name}", "runs/BK_states/state_3500.pt", f"{pilot} {extra} --out $RUNS/BK/{name}"))
+    tasks.append(("BK_decide", ",".join(f"runs/BK/{n}/DONE" for n, _ in variants),
+                  f"mkdir -p $RUNS/BK_decide && $PY $CODE/pilot_decide_chain.py --pilot $RUNS/BK --sparsity {pb} "
+                  "--out $RUNS/BK_decide/decision.json > $RUNS/BK_decide/decide.log && date > $RUNS/BK_decide/DONE"))
+    dec = "runs/BK_decide/DONE"
     # study B at the official ExCP default (alpha = 5e-5): the official threshold sets the deletion count at
     # every checkpoint (fewer deletions while the learning rate is large), and DACP-G deletes exactly as many
     # entries as the ExCP run did at the same step; the no-compression run is BC_s42_nocomp
     tasks.append(("BO_s42_excp", FINEWEB, f"{RUN} {B_CHAIN} --method excp_official --excp-alpha 5e-5 "
                                           "--out $RUNS/BO_s42_excp"))
-    tasks.append(("BO_s42_dacp", FINEWEB, f"{RUN} {B_CHAIN} --method dacp --kappa 1 "
-                                          "--count-from $RUNS/BO_s42_excp/metrics.jsonl --out $RUNS/BO_s42_dacp"))
+    # the pilot-chosen DACP-G on both rate settings of study B
+    tasks.append(("BC_s42_dacpt", f"{FINEWEB},{dec}", f"{RUN} {B_CHAIN} --method dacp "
+                  "--decision $RUNS/BK_decide/decision.json --out $RUNS/BC_s42_dacpt"))
+    tasks.append(("BO_s42_dacpt", f"{FINEWEB},{dec}", f"{RUN} {B_CHAIN} --method dacp "
+                  "--decision $RUNS/BK_decide/decision.json --count-from $RUNS/BO_s42_excp/metrics.jsonl "
+                  "--out $RUNS/BO_s42_dacpt"))
     a(43)
     a(44)
     return tasks
