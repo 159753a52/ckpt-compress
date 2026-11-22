@@ -98,9 +98,18 @@ def write(tasks):
 # ExCP protocol (2026-11-22): checkpoints compressed against the previous reconstructed checkpoint,
 # training resumed from the reconstruction every fifth checkpoint.  The ExCP rule is the official
 # per-tensor threshold at its cap, median(|d|) * 2.5 (alpha large), and DACP-G deletes as many entries.
-CHAIN_METHODS = (("nocomp", "--method nocomp"),
-                 ("excp", "--method excp_official --excp-alpha 1e9"),
-                 ("dacp", "--method dacp --match-official --excp-alpha 1e9 --kappa 1"))
+#
+# Both rules delete the same fraction at every checkpoint: the rate the official threshold reaches at its
+# cap (median(|d|) * 2.5), measured as 0.905-0.917 on study A (mean 0.91) and 0.88 on study B.  The ExCP
+# rule keeps the shape of the official threshold (per-tensor c * median(|d|), c set by the rate).
+CHAIN_RATE = {"A": 0.91, "B": 0.88}
+
+
+def chain_methods(study):
+    p = CHAIN_RATE[study]
+    return (("nocomp", "--method nocomp"),
+            ("excp", f"--method excp_official --sparsity {p}"),
+            ("dacp", f"--method dacp --sparsity {p} --kappa 1"))
 A_CHAIN = A_COMMON.replace(f" --fail-steps {A_FAILS}", "") + " --ref-mode chain --ckpt-every 200 --break-every 1000"
 B_CHAIN = (B_COMMON.replace("--ref-every 750 ", "--ref-every 0 ") +
            " --ref-mode chain --ckpt-every 250 --break-every 1250 --eval-every 250 "
@@ -111,12 +120,12 @@ def chain_tasks():
     tasks = []
 
     def a(seed):
-        for name, extra in CHAIN_METHODS:
+        for name, extra in chain_methods("A"):
             tid = f"AC_s{seed}_{name}"
             tasks.append((tid, ALPACA, f"{RUN} {A_CHAIN} --seed {seed} {extra} --out $RUNS/{tid}"))
 
     a(42)
-    for name, extra in CHAIN_METHODS:
+    for name, extra in chain_methods("B"):
         tid = f"BC_s42_{name}"
         tasks.append((tid, FINEWEB, f"{RUN} {B_CHAIN} {extra} --out $RUNS/{tid}"))
     a(43)

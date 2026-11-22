@@ -328,7 +328,8 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
         d = {n: (params[n].detach() - ref[n]).float() for n in names}
     total = sum(d[n].numel() for n in names)
     official = None
-    if method == "excp_official" or match_official:
+    at_rate = method == "excp_official" and 0 < sparsity < 1 and not match_official
+    if (method == "excp_official" and not at_rate) or match_official:
         official = official_excp_mask(d, params, names, opt, alpha)
         m = sum(int(official[n].sum()) for n in names)
     else:
@@ -336,7 +337,14 @@ def compress(model, params, names, ref, method, sparsity, kappa, stages, score_b
     sparsity = m / total
     deleted = {n: torch.zeros_like(d[n], dtype=torch.bool) for n in names}
     info = {"eligible": total, "target_deleted": m, "deletion_rate": sparsity}
-    if method == "excp_official":
+    if method == "excp_official" and at_rate:
+        # the official per-tensor threshold c * median(|d|), with c set so that exactly m entries go:
+        # rank |d| / median(|d|) of its tensor under one global threshold
+        with torch.no_grad():
+            norm = {n: nonneg(d[n].abs() / d[n].abs().median().clamp_min(1e-30)) for n in names}
+        deleted = select_smallest(norm, names, m)
+        del norm
+    elif method == "excp_official":
         deleted = official
     elif method == "excp":
         sel = select_smallest({n: nonneg(d[n].abs()) for n in names}, names, m)
@@ -482,6 +490,8 @@ def main(argv=None):
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
     needs_rate = args.method in ("excp", "inshrink", "dacp") and not args.match_official
+    if args.method == "excp_official" and args.sparsity:
+        needs_rate = True
     if needs_rate and not 0 < args.sparsity < 1:
         raise SystemExit("compressing methods need 0 < sparsity < 1")
     stop = args.stop_at or args.total_steps
