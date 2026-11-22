@@ -20,11 +20,13 @@ from collections import defaultdict
 from pathlib import Path
 
 TOL = math.log(1.01)
-NAME = re.compile(r"^(?P<study>AC|BC|A|B)_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
+BASE_STUDY = {"BO": "BC"}  # studies whose no-compression run is another study's
+NAME = re.compile(r"^(?P<study>AC|BC|BO|A|B)_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
 LABEL = {"excp": "ExCP rule", "dacp": "DACP-G", "inshrink": "Inshrinkerator rule", "restart": "Restart from reference",
          "nocomp": "No compression", "noise": "Noise control (0.1% random)"}
 STUDIES = {"AC": "研究 A（ExCP 协议：链式参考，每 200 步存档、每 1000 步恢复）",
            "BC": "研究 B（ExCP 协议：链式参考，每 250 步存档、每 1250 步恢复）",
+           "BO": "研究 B，ExCP 官方默认阈值 α=5e-5（删除数逐存档点由 ExCP 决定，DACP-G 删同样多；基线为研究 B 的不压缩轨迹）",
            "A": "研究 A（固定参考，旧协议）", "B": "研究 B（固定参考，旧协议）"}
 
 
@@ -96,7 +98,8 @@ def analyse(run, base):
     last = max(common) if common else None
     post = [g for s, g in gaps.items() if fsteps and s >= fsteps[0]]
     return {"gaps": gaps, "per": per, "last_step": last, "final_gap": gaps.get(last) if last is not None else None,
-            "mean_gap_after_first_failure": st.mean(post) if post else None}
+            "mean_gap_after_first_failure": st.mean(post) if post else None,
+            "mean_abs_gap_after_first_failure": st.mean(abs(g) for g in post) if post else None}
 
 
 def fmt(x, scale=1e3, nd=1):
@@ -121,7 +124,7 @@ def main():
              "损失差距 = 该轨迹验证损失 − 同种子不压缩轨迹在同一步的验证损失，单位毫奈特（10 毫奈特约等于 1% PPL）。",
              "恢复步数 = 故障后第一次差距回到 1% PPL 以内的评测点（故障后 0/10/25/50/100/200 步及常规评测点）。", ""]
     rows_csv = []
-    for study in ("AC", "BC", "A", "B"):
+    for study in ("AC", "BC", "BO", "A", "B"):
         keys = sorted(k for k in runs if k[0] == study and k[2] != "nocomp")
         if not keys:
             continue
@@ -149,11 +152,11 @@ def main():
             if noise:
                 lines += ["随机波动估计（两条独立运行、都不压缩的轨迹在同一步的验证损失差，毫奈特）："
                           + "，".join(f"第 {s} 步 {1e3 * v:+.2f}" for s, v in noise), ""]
-        lines += ["| 种子 | 方法 | P | 进度 | 平均立即损伤 | 平均恢复步数 | 下次故障前差距(均值) | 故障后平均差距 | 最终差距 | 最终 PPL | 全部存档点重建损伤 | 平均删除率 |",
-                  "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        lines += ["| 种子 | 方法 | P | 进度 | 平均立即损伤 | 平均恢复步数 | 下次故障前差距(均值) | 故障后平均差距 | 故障后平均偏离(绝对值) | 最终差距 | 最终 PPL | 全部存档点重建损伤 | 平均删除率 |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         agg = defaultdict(list)
         for k in keys:
-            base = runs.get((study, k[1], "nocomp", None))
+            base = runs.get((BASE_STUDY.get(study, study), k[1], "nocomp", None))
             if base is None:
                 continue
             r = runs[k]
@@ -172,7 +175,7 @@ def main():
             ck_rate = f"{st.mean(c['deletion_rate'] for c in ck):.3f}" if ck else "—"
             lines.append(f"| {k[1]} | {LABEL.get(k[2], k[2])} | {k[3] if k[3] else '—'} | {prog} | "
                          f"{fmt(st.mean(imm) if imm else None)} | {rec_txt} | {fmt(st.mean(bnext) if bnext else None)} | "
-                         f"{fmt(a['mean_gap_after_first_failure'])} | {fmt(a['final_gap'])} | {ppl_txt} | {ck_dmg} | {ck_rate} |")
+                         f"{fmt(a['mean_gap_after_first_failure'])} | {fmt(a['mean_abs_gap_after_first_failure'])} | {fmt(a['final_gap'])} | {ppl_txt} | {ck_dmg} | {ck_rate} |")
             if r["done"] and base["done"]:
                 agg[(k[2], k[3])].append(a["final_gap"])
             for p in a["per"]:
@@ -205,7 +208,7 @@ def plot(out, study, key, a):
         import matplotlib.pyplot as plt
     except Exception:
         return
-    colors = {"excp": "#E69F00", "dacp": "#0072B2", "inshrink": "#009E73", "restart": "#999999"}
+    colors = {"excp": "#E69F00", "dacp": "#0072B2", "inshrink": "#009E73", "restart": "#999999", "noise": "#CC79A7"}
     fig_path = out / f"gap_{study}_s{key[1]}_p{key[3]}.png"
     cache = out / f".plotdata_{study}_s{key[1]}_p{key[3]}.json"
     data = json.loads(cache.read_text()) if cache.exists() else {}

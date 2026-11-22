@@ -131,6 +131,13 @@ def chain_tasks():
     for name, extra in chain_methods("B"):
         tid = f"BC_s42_{name}"
         tasks.append((tid, FINEWEB, f"{RUN} {B_CHAIN} {extra} --out $RUNS/{tid}"))
+    # study B at the official ExCP default (alpha = 5e-5): the official threshold sets the deletion count at
+    # every checkpoint (fewer deletions while the learning rate is large), and DACP-G deletes exactly as many
+    # entries as the ExCP run did at the same step; the no-compression run is BC_s42_nocomp
+    tasks.append(("BO_s42_excp", FINEWEB, f"{RUN} {B_CHAIN} --method excp_official --excp-alpha 5e-5 "
+                                          "--out $RUNS/BO_s42_excp"))
+    tasks.append(("BO_s42_dacp", FINEWEB, f"{RUN} {B_CHAIN} --method dacp --kappa 1 "
+                                          "--count-from $RUNS/BO_s42_excp/metrics.jsonl --out $RUNS/BO_s42_dacp"))
     a(43)
     a(44)
     return tasks

@@ -79,6 +79,10 @@ def parse_args(argv=None):
     ap.add_argument("--break-every", type=int, default=0)
     ap.add_argument("--match-official", action="store_true",
                     help="delete as many entries as the official ExCP threshold at every checkpoint")
+    ap.add_argument("--count-from", type=Path, default=None,
+                    help="metrics.jsonl of a leader run: at every checkpoint delete exactly as many entries as the "
+                         "leader did at that step (waits for the leader to get there)")
+    ap.add_argument("--count-wait", type=float, default=4 * 3600, help="seconds to wait for the leader per checkpoint")
     ap.add_argument("--excp-alpha", type=float, default=5e-5)
     ap.add_argument("--sparsity", type=float, default=0.0, help="deletion rate P")
     ap.add_argument("--kappa", type=float, default=1.0)
@@ -317,19 +321,44 @@ def official_excp_mask(d, params, names, opt, alpha):
     return out
 
 
+def leader_count(path, step, wait_s):
+    """Number of entries the leader run deleted at checkpoint ``step`` (its latest record of that step)."""
+    t0 = time.time()
+    while True:
+        found = None
+        if path.exists():
+            for line in path.read_text().splitlines():
+                try:
+                    x = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if x.get("kind") == "checkpoint" and x.get("step") == step and "target_deleted" in x:
+                    found = int(x["target_deleted"])
+        if found is not None:
+            return found
+        if (path.parent / "FAILED").exists():
+            raise RuntimeError(f"leader {path.parent} failed before step {step}")
+        if time.time() - t0 > wait_s:
+            raise RuntimeError(f"leader {path.parent} did not reach step {step} within {wait_s} s")
+        time.sleep(30)
+
+
 def compress(model, params, names, ref, method, sparsity, kappa, stages, score_batches, dev,
-             opt=None, alpha=5e-5, match_official=False):
+             opt=None, alpha=5e-5, match_official=False, count=None):
     """Prune the residual to ``ref`` in place; returns the restore record.
 
     ``excp_official`` deletes what the official ExCP threshold deletes; with
-    ``match_official`` the other rules delete exactly that many entries."""
+    ``match_official`` the other rules delete exactly that many entries, and with ``count``
+    exactly ``count`` entries."""
     t0 = time.time()
     with torch.no_grad():
         d = {n: (params[n].detach() - ref[n]).float() for n in names}
     total = sum(d[n].numel() for n in names)
     official = None
-    at_rate = method == "excp_official" and 0 < sparsity < 1 and not match_official
-    if (method == "excp_official" and not at_rate) or match_official:
+    at_rate = method == "excp_official" and (0 < sparsity < 1 or count is not None) and not match_official
+    if count is not None:
+        m = min(int(count), total)
+    elif (method == "excp_official" and not at_rate) or match_official:
         official = official_excp_mask(d, params, names, opt, alpha)
         m = sum(int(official[n].sum()) for n in names)
     else:
@@ -497,7 +526,10 @@ def main(argv=None):
     if args.decision is not None:
         dec = json.loads(args.decision.read_text())
         args.sparsity, args.kappa = float(dec["sparsity"]), float(dec.get("kappa", args.kappa))
-    needs_rate = args.method in ("excp", "inshrink", "dacp", "random") and not args.match_official
+    needs_rate = (args.method in ("excp", "inshrink", "dacp", "random") and not args.match_official
+                  and args.count_from is None)
+    if args.count_from is not None and not (args.ref_mode == "chain" and args.method != "nocomp"):
+        raise SystemExit("--count-from needs --ref-mode chain and a compressing method")
     if args.method == "excp_official" and args.sparsity:
         needs_rate = True
     if needs_rate and not 0 < args.sparsity < 1:
@@ -622,9 +654,13 @@ def main(argv=None):
             if args.method != "nocomp":
                 with torch.no_grad():
                     backup = {n: params[n].detach().clone() for n in names}
+                count = None
+                if args.count_from is not None:
+                    count = leader_count(args.count_from, step, args.count_wait)
+                    rec["count_from"] = str(args.count_from)
                 rec.update(compress(model, params, names, ref, args.method, args.sparsity, args.kappa,
                                     args.stages, score_b, dev, opt=opt, alpha=args.excp_alpha,
-                                    match_official=args.match_official))
+                                    match_official=args.match_official, count=count))
                 rec["post_loss"], _ = evaluate(model, eval_b, dev)
                 with torch.no_grad():
                     for n in names:
