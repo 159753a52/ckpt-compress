@@ -101,7 +101,7 @@ def main():
         ax.set_yscale("symlog", linthresh=10, linscale=0.6)
         ax.yaxis.set_major_locator(FixedLocator([-10, 0, 10, 100, 1000]))
         ax.yaxis.set_minor_locator(FixedLocator([v * m for m in (10, 100) for v in range(2, 10)]))
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}".replace("-", "2212")))
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}".replace("-", "\N{MINUS SIGN}")))
         ax.yaxis.set_minor_formatter(NullFormatter())
         ax.set_ylim(-25, 800)
         ax.set_xlim(0, 7500)
