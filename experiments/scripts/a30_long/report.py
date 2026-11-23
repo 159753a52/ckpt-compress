@@ -24,7 +24,7 @@ BASE_STUDY = {"BO": "BC"}  # studies whose no-compression run is another study's
 NAME = re.compile(r"^(?P<study>AC|BC|BO|A|B)_s(?P<seed>\d+)_(?P<method>[a-z]+)(?:_p(?P<p>[0-9.]+))?$")
 LABEL = {"excp": "ExCP rule", "dacp": "DACP-G", "inshrink": "Inshrinkerator rule", "restart": "Restart from reference",
          "nocomp": "No compression", "noise": "Noise control (0.1% random)",
-         "dacpt": "DACP-G (pilot-chosen setting)"}
+         "dacpt": "DACP-G (pilot-chosen setting)", "dacpf": "DACP-G (pilot-chosen, 4 x 4 scoring)"}
 STUDIES = {"AC": "研究 A（ExCP 协议：链式参考，每 200 步存档、每 1000 步恢复）",
            "BC": "研究 B（ExCP 协议：链式参考，每 250 步存档、每 1250 步恢复）",
            "BO": "研究 B，ExCP 官方默认阈值 α=5e-5（删除数逐存档点由 ExCP 决定，DACP-G 删同样多；基线为研究 B 的不压缩轨迹）",

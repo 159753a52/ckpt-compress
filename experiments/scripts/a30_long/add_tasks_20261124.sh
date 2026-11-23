@@ -1,9 +1,12 @@
 #!/bin/bash
-# Append to the chain queue of the A30 long runs (run on any container: bash add_seeds_44_45.sh):
+# Append to the chain queue of the A30 long runs (run on any container: bash add_tasks_20261124.sh):
 #   - study B at the official ExCP threshold (alpha 5e-5) for seeds 44 and 45, to 7500 steps: the ExCP run,
 #     the pilot-chosen DACP-G_rho deleting as many entries as that ExCP run at every checkpoint, and the
 #     no-compression baseline.  Seed 42 ran to 7500 steps; seed 43 stopped at step 2750 and kept no state.
-#   - the Inshrinkerator rule on seed 42 with the deletion counts of BO_s42_excp.
+#   - the Inshrinkerator rule on seed 42 with the deletion counts of BO_s42_excp;
+#   - the pilot-chosen DACP-G_rho on seed 42 with 4 stages of 4 scoring batches (16 backward passes per
+#     checkpoint instead of 256, about 1.4% instead of 17% of the training time between checkpoints), with
+#     the deletion counts of BO_s42_excp.
 # Existing task ids are left unchanged, so the script can be run again.
 set -eu
 source /lihongliang/fangzl/dacp-a30/code/env.sh
@@ -26,4 +29,6 @@ done
 b=${B//SEED/42}
 add BO_s42_inshrink data/fineweb_edu/DONE,runs/BO_s42_excp/DONE \
   "$b --method inshrink --count-from \$RUNS/BO_s42_excp/metrics.jsonl --out \$RUNS/BO_s42_inshrink"
+add BO_s42_dacpf data/fineweb_edu/DONE,runs/BK_decide/DONE,runs/BO_s42_excp/DONE \
+  "${b/--stages 16 --score-batches 16/--stages 4 --score-batches 4} --method dacp --decision \$RUNS/BK_decide/decision.json --count-from \$RUNS/BO_s42_excp/metrics.jsonl --out \$RUNS/BO_s42_dacpf"
 echo "tasks in queue: $(grep -vc '^#' "$Q")"

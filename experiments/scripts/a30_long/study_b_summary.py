@@ -18,8 +18,8 @@ import math
 import statistics as st
 from pathlib import Path
 
-METHODS = ("excp", "dacpt", "dacp", "inshrink", "noise")
-LABEL = {"excp": "ExCP", "dacpt": "DACP-G_rho", "dacp": "DACP-G", "inshrink": "Inshrinkerator", "noise": "noise"}
+METHODS = ("excp", "dacpt", "dacpf", "dacp", "inshrink", "noise")
+LABEL = {"excp": "ExCP", "dacpt": "DACP-G_rho", "dacp": "DACP-G", "dacpf": "DACP-G_rho 4x4", "inshrink": "Inshrinkerator", "noise": "noise"}
 
 
 def load(run: Path):
