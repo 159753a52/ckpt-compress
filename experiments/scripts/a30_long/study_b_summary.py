@@ -52,8 +52,9 @@ def summarize(runs: Path, setting: str, seed: int, ours: str):
         ck = [(s, 1e3 * (r["ckpt"][s]["pre_loss"] - base["ckpt"][s]["pre_loss"]))
               for s in sorted(r["ckpt"]) if first < s <= stop and s in base["ckpt"]]
         dmg = [1e3 * r["ckpt"][b]["immediate_damage"] for b in breaks]
+        dmg_all = [1e3 * r["ckpt"][s]["immediate_damage"] for s in sorted(r["ckpt"]) if s <= stop]
         rates = [r["ckpt"][s].get("deletion_rate", 0.0) for s in sorted(r["ckpt"]) if s <= stop]
-        out["methods"][m] = {"post": post, "ckpt": ck, "damage": dmg, "stop": stop,
+        out["methods"][m] = {"post": post, "ckpt": ck, "damage": dmg, "damage_all": mean(dmg_all), "stop": stop,
                              "final_gap": ck[-1][1] if ck else math.nan,
                              "final_ppl": math.exp(r["ckpt"][stop]["pre_loss"]) if stop in r["ckpt"] else math.nan,
                              "base_ppl": math.exp(base["ckpt"][stop]["pre_loss"]) if stop in base["ckpt"] else math.nan,
@@ -99,7 +100,7 @@ def main():
         lines.append(f"## {setting}\n")
         lines.append("| seed | steps | method | mean deletion rate | after resumption: mean gap | lower than ExCP | "
                      "checkpoints: mean gap | lower than ExCP | final gap | final PPL (no comp.) | restore damage at breaks |")
-        lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
         for r in res:
             pr = r.get("paired", {})
             for m, v in r["methods"].items():
@@ -107,7 +108,7 @@ def main():
                 lo_c = f"{pr['ckpt_lower']}/{pr['ckpt_n']}" if m == args.ours and pr else ""
                 lines.append(f"| {r['seed']} | {v['stop']} | {LABEL[m]} | {v['rate']:.3f} | {mean(v['post']):.1f} | {lo_p} | "
                              f"{mean(v['ckpt']):.1f} | {lo_c} | {v['final_gap']:.1f} | "
-                             f"{v['final_ppl']:.2f} ({v['base_ppl']:.2f}) | {'/'.join(f'{x:.0f}' for x in v['damage'])} |")
+                             f"{v['final_ppl']:.2f} ({v['base_ppl']:.2f}) | {'/'.join(f'{x:.0f}' for x in v['damage'])} | {v['damage_all']:.1f} |")
         full = [r for r in res if all(v["stop"] == r["methods"][next(iter(r["methods"]))]["stop"] for v in r["methods"].values())]
         stops = {next(iter(r["methods"].values()))["stop"] for r in full}
         for stop in sorted(stops, reverse=True):
@@ -118,7 +119,8 @@ def main():
                 if not vs:
                     continue
                 lines.append(f"- {LABEL[m]} ({len(vs)} seeds): after resumption {fmt_ms([mean(v['post']) for v in vs])}, "
-                             f"checkpoints {fmt_ms([mean(v['ckpt']) for v in vs])}, final {fmt_ms([v['final_gap'] for v in vs])}")
+                             f"checkpoints {fmt_ms([mean(v['ckpt']) for v in vs])}, final {fmt_ms([v['final_gap'] for v in vs])}, "
+                             f"restore damage over all checkpoints {fmt_ms([v['damage_all'] for v in vs])}")
             pl = [r["paired"] for r in grp if "paired" in r]
             if pl:
                 lines.append(f"- {LABEL[args.ours]} lower than ExCP: {sum(p['post_lower'] for p in pl)}/{sum(p['post_n'] for p in pl)} "
