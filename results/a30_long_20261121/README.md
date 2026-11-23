@@ -36,6 +36,27 @@
 
 曲线见 `reports/gap_BO_s42_pNone.png`、`reports/gap_BC_s42_pNone.png`、`reports/gap_BO_s43_pNone.png`。
 
+### 补充任务（2026-11-24 排定）
+
+种子 43 的三条在第 2750 步结束时按设计删掉了 `state.pt`，无法续跑，因此改为新开种子，让主设置（官方阈值、同删除数）有三个跑满 7500 步的种子。任务由 `experiments/scripts/a30_long/add_tasks_20261124.sh` 追加到实验室的 `code/queue_chain.tsv`（脚本可重复执行，已有的任务名不动，改动前备份为 `queue_chain.tsv.bak_preS44`），按队列顺序：
+
+1. 种子 44：`BO_s44_excp`、`BO_s44_dacpt`（删除数取自 `BO_s44_excp`）、`BC_s44_nocomp`。
+2. 种子 45：同上三条。
+3. `BO_s42_inshrink`：Inshrinkerator 规则，删除数取自 `BO_s42_excp`。
+4. `BO_s42_dacpf`：彩排选中的 DACP-G_ρ，但只用 4 阶段 × 4 个评分批次（每个存档点 16 次反传，主配置为 256 次），删除数取自 `BO_s42_excp`。主配置每个存档点评分约 2 分钟，相当于两个存档点之间训练时间的 17%；这一条检验约 1.4% 开销的配置是否仍优于 ExCP。
+
+单条耗时：ExCP 与不压缩约 5.5 小时，DACP-G_ρ 约 6.4 小时；三张卡上全部跑完约 18 小时。
+
+汇总：`python experiments/scripts/a30_long/study_b_summary.py --runs results/a30_long_20261121/runs`（逐种子和跨种子的对齐差距、更低点数、恢复损伤），配图：`python experiments/scripts/paper_figures/study_b_fig.py`（输出到 `reports/paper/study_b_gap.*`，跑满 7500 步的种子取均值，阴影为种子间范围）。
+
+启动状态：排定时实验室戴尔跳板机已离线（阿里云日志显示其反向隧道于北京时间 11 月 23 日 08:03 无响应断开，此后未重连；tailcat 也不通），V100 的 22 端口从阿里云探测超时，因此任务尚未写入实验室队列。恢复连接后依次执行：
+
+```bash
+ssh a30-1 'bash -s' < experiments/scripts/a30_long/add_tasks_20261124.sh
+scp experiments/scripts/a30_long/report.py a30-1:/lihongliang/fangzl/dacp-a30/code/
+bash experiments/scripts/a30_long/watch_local.sh 1500 600   # 同时负责拉起三张卡上的 worker
+```
+
 ## 主线：ExCP 协议（2026-11-22 起，任务名 `AC_*`、`BC_*`）
 
 按 ExCP 原文（Li et al., ICML 2024）的做法：每 N 步写一个检查点，其残差相对**上一个重建检查点**计算（链式参考，前一次删掉的误差会进入下一次残差），训练在未压缩权重上继续；每 5N 步才从重建检查点恢复一次训练。AdamW 状态无损保留。
