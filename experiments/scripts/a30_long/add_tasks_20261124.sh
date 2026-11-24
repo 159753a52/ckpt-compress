@@ -6,7 +6,8 @@
 #   - the Inshrinkerator rule on seed 42 with the deletion counts of BO_s42_excp;
 #   - the pilot-chosen DACP-G_rho on seed 42 with 4 stages of 4 scoring batches (16 backward passes per
 #     checkpoint instead of 256, about 1.4% instead of 17% of the training time between checkpoints), with
-#     the deletion counts of BO_s42_excp.
+#     the deletion counts of BO_s42_excp;
+#   - study B at deletion rate 0.88 for seeds 44 and 45: the ExCP run and the pilot-chosen DACP-G_rho.
 # Existing task ids are left unchanged, so the script can be run again.
 set -eu
 source /lihongliang/fangzl/dacp-a30/code/env.sh
@@ -31,4 +32,11 @@ add BO_s42_inshrink data/fineweb_edu/DONE,runs/BO_s42_excp/DONE \
   "$b --method inshrink --count-from \$RUNS/BO_s42_excp/metrics.jsonl --out \$RUNS/BO_s42_inshrink"
 add BO_s42_dacpf data/fineweb_edu/DONE,runs/BK_decide/DONE,runs/BO_s42_excp/DONE \
   "${b/--stages 16 --score-batches 16/--stages 4 --score-batches 4} --method dacp --decision \$RUNS/BK_decide/decision.json --count-from \$RUNS/BO_s42_excp/metrics.jsonl --out \$RUNS/BO_s42_dacpf"
+# study B at deletion rate 0.88 for seeds 44 and 45 (the no-compression baselines are queued above)
+for s in 44 45; do
+  b=${B//SEED/$s}
+  add "BC_s${s}_excp" data/fineweb_edu/DONE "$b --method excp_official --sparsity 0.88 --out \$RUNS/BC_s${s}_excp"
+  add "BC_s${s}_dacpt" data/fineweb_edu/DONE,runs/BK_decide/DONE \
+    "$b --method dacp --decision \$RUNS/BK_decide/decision.json --out \$RUNS/BC_s${s}_dacpt"
+done
 echo "tasks in queue: $(grep -vc '^#' "$Q")"
