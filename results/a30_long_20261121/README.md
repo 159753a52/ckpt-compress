@@ -49,12 +49,11 @@
 
 汇总：`python experiments/scripts/a30_long/study_b_summary.py --runs results/a30_long_20261121/runs`（逐种子和跨种子的对齐差距、更低点数、恢复损伤），配图：`python experiments/scripts/paper_figures/study_b_fig.py`（输出到 `reports/paper/study_b_gap.*`，跑满 7500 步的种子取均值，阴影为种子间范围）。
 
-启动状态：排定时实验室戴尔跳板机已离线（阿里云日志显示其反向隧道于北京时间 11 月 23 日 08:03 无响应断开，此后未重连；tailcat 也不通），V100 的 22 端口从阿里云探测超时，因此任务尚未写入实验室队列。恢复连接后依次执行：
+启动：戴尔跳板机于北京时间 11 月 23 日 08:03 断线，11 月 24 日 09:46 才重新连上阿里云（之后仍有几分钟的掉线）。恢复后写入队列（共 33 条，新增 8 条），11 月 24 日 10:01 起种子 44 的三条分别在 a30-1/2/3 上开跑。worker 在实验室上自行领取后续任务，跳板断线不影响训练；笔记本端用下面的命令每 10 分钟拉起三张卡上的 worker，并把结果、日志和报告同步回本目录（日志 `watch_20261123.log`，时间戳为笔记本时钟，比北京时间晚 16 小时）：
 
 ```bash
-ssh a30-1 'bash -s' < experiments/scripts/a30_long/add_tasks_20261124.sh
-scp experiments/scripts/a30_long/report.py a30-1:/lihongliang/fangzl/dacp-a30/code/
-bash experiments/scripts/a30_long/watch_local.sh 1500 600   # 同时负责拉起三张卡上的 worker
+tr -d '\r' < experiments/scripts/a30_long/add_tasks_20261124.sh | ssh a30-1 'bash -s'
+bash experiments/scripts/a30_long/watch_local.sh 1500 600
 ```
 
 ## 主线：ExCP 协议（2026-11-22 起，任务名 `AC_*`、`BC_*`）
