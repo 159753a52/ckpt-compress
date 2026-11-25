@@ -109,6 +109,7 @@ def main():
     S.setup()
     fig, axes = plt.subplots(1, 3, figsize=(S.DOUBLE_W, 2.15), gridspec_kw={"width_ratios": [1.0, 1.0, 1.15]})
     ax_full, ax_zoom, ax_gap = axes
+    clipped = []
 
     for m, label, color, ls, z in METHODS:
         name = (lambda s: f"BC_s{s}_nocomp") if m == "nocomp" else (lambda s, m=m: f"{args.setting}_s{s}_{m}")
@@ -121,9 +122,14 @@ def main():
         if len(seeds) > 1:
             ax_gap.fill_between(gx, lo, hi, color=color, alpha=0.18, lw=0)
         ax_gap.plot(gx, gy, color=color, ls=ls, lw=0.9, label=label, zorder=z)
-        for x, y in zip(gx, gy):  # values clipped by the axis limit
-            if y > 125:
-                ax_gap.annotate(f"{y:.0f}", (x, 125), xytext=(2, -6), textcoords="offset points",
+        for x, y in zip(gx, gy):  # restore spikes clipped by the axis limit: one label per method and
+            if y > 125:           # resumption, labels of different methods at one resumption stacked
+                near = [c for c, col in clipped if abs(c - x) < 100]
+                if any(abs(c - x) < 100 and col == color for c, col in clipped):
+                    continue
+                k = len(near)
+                clipped.append((x, color))
+                ax_gap.annotate(f"{y:.0f}", (x, 125), xytext=(2, -6 - 8 * k), textcoords="offset points",
                                 fontsize=5.5, color=color, ha="left", va="top")
 
     noise, base = runs / "BC_s42_noise", runs / "BC_s42_nocomp"

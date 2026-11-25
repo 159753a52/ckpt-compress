@@ -109,19 +109,22 @@ def main():
                 lines.append(f"| {r['seed']} | {v['stop']} | {LABEL[m]} | {v['rate']:.3f} | {mean(v['post']):.1f} | {lo_p} | "
                              f"{mean(v['ckpt']):.1f} | {lo_c} | {v['final_gap']:.1f} | "
                              f"{v['final_ppl']:.2f} ({v['base_ppl']:.2f}) | {'/'.join(f'{x:.0f}' for x in v['damage'])} | {v['damage_all']:.1f} |")
-        full = [r for r in res if all(v["stop"] == r["methods"][next(iter(r["methods"]))]["stop"] for v in r["methods"].values())]
-        stops = {next(iter(r["methods"].values()))["stop"] for r in full}
+        # group every method of every seed by the step that run reached, so a short extra run of a
+        # seed (e.g. the noise control) does not drop that seed's full-length runs from the averages
+        stops = {v["stop"] for r in res for v in r["methods"].values()}
         for stop in sorted(stops, reverse=True):
-            grp = [r for r in full if next(iter(r["methods"].values()))["stop"] == stop]
-            lines.append(f"\nAcross {len(grp)} seed(s) run to step {stop} (mean ± std over seeds):\n")
+            grp = [r for r in res if any(v["stop"] == stop for v in r["methods"].values())]
+            lines.append(f"\nAcross seeds run to step {stop} (mean ± std over seeds):\n")
             for m in METHODS:
-                vs = [r["methods"][m] for r in grp if m in r["methods"]]
+                vs = [r["methods"][m] for r in grp if m in r["methods"] and r["methods"][m]["stop"] == stop]
                 if not vs:
                     continue
-                lines.append(f"- {LABEL[m]} ({len(vs)} seeds): after resumption {fmt_ms([mean(v['post']) for v in vs])}, "
+                seeds_m = ",".join(str(r["seed"]) for r in grp if m in r["methods"] and r["methods"][m]["stop"] == stop)
+                lines.append(f"- {LABEL[m]} ({len(vs)} seeds: {seeds_m}): after resumption {fmt_ms([mean(v['post']) for v in vs])}, "
                              f"checkpoints {fmt_ms([mean(v['ckpt']) for v in vs])}, final {fmt_ms([v['final_gap'] for v in vs])}, "
                              f"restore damage over all checkpoints {fmt_ms([v['damage_all'] for v in vs])}")
-            pl = [r["paired"] for r in grp if "paired" in r]
+            pl = [r["paired"] for r in grp if "paired" in r
+                  and r["methods"]["excp"]["stop"] == stop and r["methods"][args.ours]["stop"] == stop]
             if pl:
                 lines.append(f"- {LABEL[args.ours]} lower than ExCP: {sum(p['post_lower'] for p in pl)}/{sum(p['post_n'] for p in pl)} "
                              f"points after resumption, {sum(p['ckpt_lower'] for p in pl)}/{sum(p['ckpt_n'] for p in pl)} checkpoints")
