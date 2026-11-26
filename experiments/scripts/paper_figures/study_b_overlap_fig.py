@@ -88,6 +88,7 @@ def main():
     ap.add_argument("--root", type=Path, default=ROOT)
     ap.add_argument("--setting", default="BO", choices=sorted(TITLES))
     ap.add_argument("--out", type=Path, default=ROOT / "reports" / "overlap")
+    ap.add_argument("--no-noise", action="store_true", help="leave out the 0.1%% random-deletion control")
     args = ap.parse_args()
     runs = args.root / "runs"
 
@@ -133,7 +134,7 @@ def main():
                                 fontsize=5.5, color=color, ha="left", va="top")
 
     noise, base = runs / "BC_s42_noise", runs / "BC_s42_nocomp"
-    if (noise / "metrics.jsonl").exists() and (base / "metrics.jsonl").exists():
+    if not args.no_noise and (noise / "metrics.jsonl").exists() and (base / "metrics.jsonl").exists():
         nx, ny = zip(*gap_series(noise, base))
         ax_gap.plot(nx, ny, color="0.45", lw=0.8, ls="--", label="0.1% random (seed 42)", zorder=1)
         inputs.append(noise / "metrics.jsonl")
