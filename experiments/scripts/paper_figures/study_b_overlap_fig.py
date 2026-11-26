@@ -31,10 +31,10 @@ import style as S  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
 ROOT = HERE.parents[2] / "results" / "a30_long_20261121"
-METHODS = [  # run suffix, label, colour, line style, z-order
+METHODS = [  # run suffix, label, colour, line style, z-order (colours as in the other paper figures)
     ("nocomp", "No compression", S.C["black"], "-", 3),
-    ("excp", "ExCP", S.C["orange"], "-", 2),
-    ("dacpt", r"DACP-G$_\rho$", S.C["blue"], "-", 4),
+    ("excp", "ExCP", S.C["orange"], "--", 2),
+    ("dacpt", r"DACP-G$_\rho$", S.C["vermillion"], "-", 4),
 ]
 TITLES = {"BO": "ExCP threshold, equal deletion counts", "BC": r"$P=88\%$"}
 
