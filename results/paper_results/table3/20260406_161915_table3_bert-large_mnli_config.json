@@ -1,0 +1,17 @@
+{
+  "model": "bert-large",
+  "dataset": "mnli",
+  "checkpoint": "/root/checkpoints/bert_large_mnli_1000steps/checkpoint_step_1000.pt",
+  "prune_ratios": "0.2,0.3,0.4",
+  "alpha": 0.5,
+  "num_steps": 50,
+  "hvp_batches": 2,
+  "hvp_mode": "block",
+  "chunk_size": 10,
+  "eval_batches": 100,
+  "batch_size": 8,
+  "seq_length": 128,
+  "device": "cuda",
+  "normalize": false,
+  "output_dir": "results/paper_results/table3"
+}

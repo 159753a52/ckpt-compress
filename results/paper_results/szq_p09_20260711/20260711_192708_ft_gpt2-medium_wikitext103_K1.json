@@ -1,0 +1,140 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 3.066537256240845,
+      "perplexity": 21.467437587120102,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 3.031778106689453,
+      "perplexity": 20.734067215352383,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 3.0422731256484985,
+      "perplexity": 20.95281753036885,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 3.066537256240845,
+      "perplexity": 21.467437587120102,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 3.0329135036468506,
+      "perplexity": 20.75762198165775,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 3.042403120994568,
+      "perplexity": 20.955541476181143,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform+kmeans16",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform+kmeans16",
+      "step": 11,
+      "loss": 3.066537256240845,
+      "perplexity": 21.467437587120102,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform+kmeans16",
+      "step": 21,
+      "loss": 8.25283492088318,
+      "perplexity": 3838.492233245404,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform+kmeans16",
+      "step": 31,
+      "loss": 7.823056764602661,
+      "perplexity": 2497.528107222842,
+      "accuracy": 0,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "gpt2-medium",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.9,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform,ours-3d-residual+uniform+kmeans16",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/szq_p09_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 42,
+    "baseline": {
+      "loss": 3.0141236066818236,
+      "perplexity": 20.37122990527441
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 3.042985258102417,
+        "perplexity": 20.967744025923405
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 3.0432164430618287,
+        "perplexity": 20.972592013344286
+      },
+      "ours-3d-residual+uniform+kmeans16": {
+        "loss": 7.7634718704223635,
+        "perplexity": 2353.059959192265
+      }
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 0.6324242782592774,
+      "perplexity": 0,
+      "accuracy": 0.7435,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 0.6356062180399895,
+      "perplexity": 0,
+      "accuracy": 0.7425,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 0.8129750943183899,
+      "perplexity": 0,
+      "accuracy": 0.6,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 0.6527339714169502,
+      "perplexity": 0,
+      "accuracy": 0.745,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 0.6324242782592774,
+      "perplexity": 0,
+      "accuracy": 0.7435,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 0.6356062180399895,
+      "perplexity": 0,
+      "accuracy": 0.7425,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 0.7630984326004981,
+      "perplexity": 0,
+      "accuracy": 0.6325,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 0.645714854478836,
+      "perplexity": 0,
+      "accuracy": 0.749,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "bert-large",
+    "dataset": "mnli",
+    "checkpoint": "checkpoints/bert_large_mnli_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 8,
+    "seq_length": 128,
+    "lr": 2e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/b2_mnli_seed43_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 43,
+    "baseline": {
+      "loss": 0.6384937544465065,
+      "accuracy": 0.7395
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 0.6554786473512649,
+        "accuracy": 0.7435
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 0.652262887775898,
+        "accuracy": 0.7435
+      }
+    }
+  }
+}

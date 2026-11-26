@@ -1,0 +1,36 @@
+{
+  "model": "bert-large",
+  "dataset": "mnli",
+  "checkpoint": "checkpoints/bert_large_mnli_1000steps/checkpoint_step_1000.pt",
+  "total_steps": 40,
+  "num_recoveries": 1,
+  "prune_ratio": 0.5,
+  "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+  "num_importance_steps": 8,
+  "eval_interval": 10,
+  "batch_size": 8,
+  "seq_length": 128,
+  "lr": 2e-05,
+  "alpha": 0.7,
+  "protection_ratio": 0.001,
+  "device": "cuda",
+  "data_dir": null,
+  "output_dir": "results/paper_results/b2_mnli_seed43_20260711",
+  "random_init": false,
+  "lr_schedule": "cosine",
+  "seed": 43,
+  "baseline": {
+    "loss": 0.6384937544465065,
+    "accuracy": 0.7395
+  },
+  "final": {
+    "excp-residual+uniform": {
+      "loss": 0.6554786473512649,
+      "accuracy": 0.7435
+    },
+    "ours-3d-residual+uniform": {
+      "loss": 0.652262887775898,
+      "accuracy": 0.7435
+    }
+  }
+}

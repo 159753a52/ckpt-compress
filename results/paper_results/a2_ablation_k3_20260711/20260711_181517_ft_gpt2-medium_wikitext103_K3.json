@@ -1,0 +1,168 @@
+{
+  "results": [
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 11,
+      "loss": 3.070166296958923,
+      "perplexity": 21.5454853257904,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 16,
+      "loss": 3.0828606367111204,
+      "perplexity": 21.820734392959597,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 26,
+      "loss": 3.104513339996338,
+      "perplexity": 22.298364612094066,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 31,
+      "loss": 3.088134346008301,
+      "perplexity": 21.9361145761587,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 41,
+      "loss": 3.0803504943847657,
+      "perplexity": 21.766029930684336,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 46,
+      "loss": 3.072226357460022,
+      "perplexity": 21.589916078393184,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-fo-residual+uniform",
+      "step": 56,
+      "loss": 3.0697769594192503,
+      "perplexity": 21.537098492303098,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 11,
+      "loss": 3.070166296958923,
+      "perplexity": 21.5454853257904,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 16,
+      "loss": 3.080956392288208,
+      "perplexity": 21.77922191868096,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 26,
+      "loss": 3.1044732618331907,
+      "perplexity": 22.29747095250746,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 31,
+      "loss": 3.087171530723572,
+      "perplexity": 21.915004314029524,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 41,
+      "loss": 3.079945101737976,
+      "perplexity": 21.757207930508457,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 46,
+      "loss": 3.071741213798523,
+      "perplexity": 21.579444407793154,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-so-residual+uniform",
+      "step": 56,
+      "loss": 3.069302034378052,
+      "perplexity": 21.526872413417024,
+      "accuracy": 0,
+      "segment": 3
+    }
+  ],
+  "config": {
+    "model": "gpt2-medium",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 60,
+    "num_recoveries": 3,
+    "prune_ratio": 0.5,
+    "methods": "ours-fo-residual+uniform,ours-so-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/a2_ablation_k3_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 42,
+    "baseline": {
+      "loss": 3.0141236066818236,
+      "perplexity": 20.37122990527441
+    },
+    "final": {
+      "ours-fo-residual+uniform": {
+        "loss": 3.0696779346466063,
+        "perplexity": 21.53496589161338
+      },
+      "ours-so-residual+uniform": {
+        "loss": 3.069202837944031,
+        "perplexity": 21.524737130345972
+      }
+    }
+  }
+}

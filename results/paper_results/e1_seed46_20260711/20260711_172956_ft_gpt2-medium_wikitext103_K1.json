@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 3.0141103219985963,
+      "perplexity": 20.370959281735747,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 3.0529028177261353,
+      "perplexity": 21.176727467416274,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 3.079744830131531,
+      "perplexity": 21.752851015822163,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 3.071481966972351,
+      "perplexity": 21.573850730422755,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 3.0141103219985963,
+      "perplexity": 20.370959281735747,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 3.0529028177261353,
+      "perplexity": 21.176727467416274,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 3.070690894126892,
+      "perplexity": 21.55679099157567,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 3.063866891860962,
+      "perplexity": 21.410188178870097,
+      "accuracy": 0,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "gpt2-medium",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/e1_seed46_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 46,
+    "baseline": {
+      "loss": 3.0141236066818236,
+      "perplexity": 20.37122990527441
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 3.0683788728713988,
+        "perplexity": 21.50700880351704
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 3.0612976026535033,
+        "perplexity": 21.355249819940607
+      }
+    }
+  }
+}

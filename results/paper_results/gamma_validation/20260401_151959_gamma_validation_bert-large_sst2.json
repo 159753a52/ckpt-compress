@@ -1,0 +1,150 @@
+{
+  "results": [
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.1,
+      "actual_ratio": 0.09999974568684895,
+      "loss": 0.2247310192324221,
+      "accuracy": 0.91875,
+      "loss_increase_pct": -5.748546127033686
+    },
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.19999980926513672,
+      "loss": 0.2279610212892294,
+      "accuracy": 0.90625,
+      "loss_increase_pct": -4.39389383690231
+    },
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.2999997205204434,
+      "loss": 0.2537787680514157,
+      "accuracy": 0.8875,
+      "loss_increase_pct": 6.433984648103304
+    },
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.3999997940328386,
+      "loss": 0.2878088168799877,
+      "accuracy": 0.86875,
+      "loss_increase_pct": 20.70607573911463
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.1,
+      "actual_ratio": 0.09999614622857836,
+      "loss": 0.22731939451768995,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -4.6629900047031025
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.20000451140933567,
+      "loss": 0.2153373220935464,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -9.688231959480746
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.29999558130900067,
+      "loss": 0.2260261233896017,
+      "accuracy": 0.90625,
+      "loss_increase_pct": -5.205383682667889
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.40000021788809037,
+      "loss": 0.27258092649281024,
+      "accuracy": 0.86875,
+      "loss_increase_pct": 14.319548354903045
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.1,
+      "actual_ratio": 0.10260550181070964,
+      "loss": 0.22415487440302967,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -5.9901793826345475
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.2064837614695231,
+      "loss": 0.21478378595784306,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -9.920383202951525
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.31076394187079537,
+      "loss": 0.23106679338961839,
+      "accuracy": 0.8875,
+      "loss_increase_pct": -3.091343183861325
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.41510552830166286,
+      "loss": 0.2841335542500019,
+      "accuracy": 0.86875,
+      "loss_increase_pct": 19.164682622026113
+    },
+    {
+      "allocation": "weibull-adaptive",
+      "target_ratio": 0.1,
+      "actual_ratio": 0.0854872465133667,
+      "loss": 0.22901005689054726,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -3.9539317394294526
+    },
+    {
+      "allocation": "weibull-adaptive",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.18803349468443128,
+      "loss": 0.21456650951877237,
+      "accuracy": 0.91875,
+      "loss_increase_pct": -10.011508230305106
+    },
+    {
+      "allocation": "weibull-adaptive",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.29399407241079545,
+      "loss": 0.22196363769471644,
+      "accuracy": 0.9125,
+      "loss_increase_pct": -6.909176885710611
+    },
+    {
+      "allocation": "weibull-adaptive",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.4005174934864044,
+      "loss": 0.2734309364110231,
+      "accuracy": 0.86875,
+      "loss_increase_pct": 14.676039732335674
+    }
+  ],
+  "config": {
+    "model": "bert-large",
+    "dataset": "sst2",
+    "checkpoint": "/root/checkpoints/bert_large_sst2_1000steps/checkpoint_step_1000.pt",
+    "importance": "second-order-hvp",
+    "prune_ratios": "0.1,0.2,0.3,0.4",
+    "alpha": 0.5,
+    "num_steps": 50,
+    "hvp_batches": 1,
+    "hvp_mode": "block",
+    "chunk_size": 10,
+    "eval_batches": 20,
+    "batch_size": 8,
+    "seq_length": 128,
+    "device": "cuda",
+    "data_dir": "/root/data",
+    "output_dir": "results/paper_results/gamma_validation"
+  }
+}

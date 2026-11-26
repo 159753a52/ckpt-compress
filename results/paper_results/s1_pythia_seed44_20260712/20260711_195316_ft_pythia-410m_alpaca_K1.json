@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 1.0607115298509597,
+      "perplexity": 2.888425459209435,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 1.4945419108867646,
+      "perplexity": 4.457294247135434,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 1.4471668326854705,
+      "perplexity": 4.2510534919823355,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 1.4302689635753632,
+      "perplexity": 4.17982326095831,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 1.0607115298509597,
+      "perplexity": 2.888425459209435,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 1.4945419108867646,
+      "perplexity": 4.457294247135434,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 1.4146817743778228,
+      "perplexity": 4.115176702917576,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 1.4004889822006226,
+      "perplexity": 4.057183372333897,
+      "accuracy": 0,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "pythia-410m",
+    "dataset": "alpaca",
+    "checkpoint": "checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/s1_pythia_seed44_20260712",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 44,
+    "baseline": {
+      "loss": 1.0440628457069396,
+      "perplexity": 2.8407350687474797
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 1.4136735832691192,
+        "perplexity": 4.111029909086536
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 1.3866870379447938,
+        "perplexity": 4.00157101573016
+      }
+    }
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 3.013772373199463,
+      "perplexity": 20.36407610365568,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 3.0858470153808595,
+      "perplexity": 21.885996769289775,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 16,
+      "loss": 3.10565242767334,
+      "perplexity": 22.323778876230584,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 26,
+      "loss": 3.1207666397094727,
+      "perplexity": 22.66374791383797,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 3.1111745405197144,
+      "perplexity": 22.447394297370735,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 41,
+      "loss": 3.1002558708190917,
+      "perplexity": 22.203631816128713,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 46,
+      "loss": 3.0905354404449463,
+      "perplexity": 21.98884854311108,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 56,
+      "loss": 3.086316246986389,
+      "perplexity": 21.896268780480124,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 3.013772373199463,
+      "perplexity": 20.36407610365568,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 3.0858470153808595,
+      "perplexity": 21.885996769289775,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 16,
+      "loss": 3.0937835454940794,
+      "perplexity": 22.060386752002223,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 26,
+      "loss": 3.1133616876602175,
+      "perplexity": 22.496543780603155,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 3.0987562942504883,
+      "perplexity": 22.170360722630267,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 41,
+      "loss": 3.091820249557495,
+      "perplexity": 22.017118172743793,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 46,
+      "loss": 3.082699065208435,
+      "perplexity": 21.81720906891765,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 56,
+      "loss": 3.0788998985290528,
+      "perplexity": 21.734479107151003,
+      "accuracy": 0,
+      "segment": 3
+    }
+  ],
+  "config": {
+    "model": "gpt2-medium",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 60,
+    "num_recoveries": 3,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/c1_k3_seed44_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 44,
+    "baseline": {
+      "loss": 3.0141236066818236,
+      "perplexity": 20.37122990527441
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 3.086227149963379,
+        "perplexity": 21.894317975023526
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 3.0788235569000246,
+        "perplexity": 21.73281992494303
+      }
+    }
+  }
+}

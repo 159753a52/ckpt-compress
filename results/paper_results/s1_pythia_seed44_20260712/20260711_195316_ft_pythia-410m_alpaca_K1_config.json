@@ -1,0 +1,36 @@
+{
+  "model": "pythia-410m",
+  "dataset": "alpaca",
+  "checkpoint": "checkpoints/pythia_410m_alpaca_1000steps/checkpoint_step_1000.pt",
+  "total_steps": 40,
+  "num_recoveries": 1,
+  "prune_ratio": 0.5,
+  "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+  "num_importance_steps": 8,
+  "eval_interval": 10,
+  "batch_size": 2,
+  "seq_length": 128,
+  "lr": 5e-05,
+  "alpha": 0.7,
+  "protection_ratio": 0.001,
+  "device": "cuda",
+  "data_dir": null,
+  "output_dir": "results/paper_results/s1_pythia_seed44_20260712",
+  "random_init": false,
+  "lr_schedule": "cosine",
+  "seed": 44,
+  "baseline": {
+    "loss": 1.0440628457069396,
+    "perplexity": 2.8407350687474797
+  },
+  "final": {
+    "excp-residual+uniform": {
+      "loss": 1.4136735832691192,
+      "perplexity": 4.111029909086536
+    },
+    "ours-3d-residual+uniform": {
+      "loss": 1.3866870379447938,
+      "perplexity": 4.00157101573016
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 0.20942061785779414,
+      "perplexity": 0,
+      "accuracy": 0.9220183486238532,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 0.20936384442510134,
+      "perplexity": 0,
+      "accuracy": 0.9174311926605505,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 0.23434706863203864,
+      "perplexity": 0,
+      "accuracy": 0.9162844036697247,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 0.23261639524097427,
+      "perplexity": 0,
+      "accuracy": 0.9243119266055045,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 0.20942061785779414,
+      "perplexity": 0,
+      "accuracy": 0.9220183486238532,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 0.20936384442510134,
+      "perplexity": 0,
+      "accuracy": 0.9174311926605505,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 0.23060787238026842,
+      "perplexity": 0,
+      "accuracy": 0.9151376146788991,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 0.23093952221471234,
+      "perplexity": 0,
+      "accuracy": 0.9254587155963303,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "bert-large",
+    "dataset": "sst2",
+    "checkpoint": "checkpoints/bert_large_sst2_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 8,
+    "seq_length": 128,
+    "lr": 2e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/e3_bert_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 42,
+    "baseline": {
+      "loss": 0.21116602871088533,
+      "accuracy": 0.9185779816513762
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 0.23295865890168405,
+        "accuracy": 0.9243119266055045
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 0.2312481480761679,
+        "accuracy": 0.9254587155963303
+      }
+    }
+  }
+}

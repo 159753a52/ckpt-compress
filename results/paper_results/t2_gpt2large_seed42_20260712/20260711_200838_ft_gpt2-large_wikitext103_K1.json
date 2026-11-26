@@ -1,0 +1,104 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 2.8854288244247437,
+      "perplexity": 17.9112467289774,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 2.961083092689514,
+      "perplexity": 19.31888457084792,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 21,
+      "loss": 2.943541579246521,
+      "perplexity": 18.98295704983635,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 2.9352904558181763,
+      "perplexity": 18.82697074428808,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 2.8854288244247437,
+      "perplexity": 17.9112467289774,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 2.961083092689514,
+      "perplexity": 19.31888457084792,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 21,
+      "loss": 2.932082734107971,
+      "perplexity": 18.766675817866748,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 2.927170352935791,
+      "perplexity": 18.674712816506467,
+      "accuracy": 0,
+      "segment": 1
+    }
+  ],
+  "config": {
+    "model": "gpt2-large",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_large_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 40,
+    "num_recoveries": 1,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/t2_gpt2large_seed42_20260712",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 42,
+    "baseline": {
+      "loss": 2.8823143339157102,
+      "perplexity": 17.855549100924495
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 2.9326980686187745,
+        "perplexity": 18.778227154754177
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 2.925149064064026,
+        "perplexity": 18.637003950401404
+      }
+    }
+  }
+}

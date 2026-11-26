@@ -1,0 +1,17 @@
+{
+  "model": "gpt2-small",
+  "dataset": "wikitext2",
+  "checkpoint": "../../checkpoints/gpt2_small_wikitext103_1000steps/checkpoint_step_1000.pt",
+  "importance": "second-order-hvp",
+  "prune_ratios": "0.2,0.3,0.4",
+  "alpha": 0.5,
+  "num_steps": 50,
+  "hvp_batches": 2,
+  "hvp_mode": "block",
+  "chunk_size": 10,
+  "eval_batches": 10,
+  "batch_size": 4,
+  "seq_length": 128,
+  "device": "cuda",
+  "output_dir": "results/paper_results/gamma_validation"
+}

@@ -1,0 +1,25 @@
+{
+  "model": "vit-l-32",
+  "dataset": "imagenet",
+  "checkpoint": "/root/checkpoints/vit_l32_imagenet/checkpoint_step_1000.pt",
+  "reference_checkpoint": null,
+  "prune_ratios": "0.2,0.3,0.4,0.5,0.6",
+  "methods": null,
+  "alpha": "0.1,0.5,1.0",
+  "num_steps": 50,
+  "hvp_batches": 4,
+  "hvp_mode": "block",
+  "chunk_size": 10,
+  "grad_batches_first_order": null,
+  "eval_batches": 50,
+  "batch_size": 16,
+  "seq_length": 512,
+  "device": "cuda",
+  "normalize": true,
+  "per_type_json": null,
+  "output_dir": "results/paper_results/table1_optimized",
+  "baseline_metrics": {
+    "loss": 0.3009395402192604,
+    "accuracy": 0.9225
+  }
+}

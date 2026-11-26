@@ -1,0 +1,18 @@
+{
+  "model": "bert-large",
+  "dataset": "sst2",
+  "checkpoint": "/root/checkpoints/bert_large_sst2_1000steps/checkpoint_step_1000.pt",
+  "importance": "second-order-hvp",
+  "prune_ratios": "0.1,0.2,0.3,0.4,0.5,0.6",
+  "alpha": 0.5,
+  "num_steps": 50,
+  "hvp_batches": 2,
+  "hvp_mode": "block",
+  "chunk_size": 10,
+  "eval_batches": 100,
+  "batch_size": 8,
+  "seq_length": 128,
+  "device": "cuda",
+  "data_dir": "/root/data",
+  "output_dir": "results/paper_results/gamma_validation"
+}

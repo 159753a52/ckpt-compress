@@ -1,0 +1,168 @@
+{
+  "results": [
+    {
+      "method": "excp-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 11,
+      "loss": 3.070166296958923,
+      "perplexity": 21.5454853257904,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 16,
+      "loss": 3.0934062576293946,
+      "perplexity": 22.05206520569837,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 26,
+      "loss": 3.1103990364074705,
+      "perplexity": 22.42999299904527,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 31,
+      "loss": 3.0986490774154665,
+      "perplexity": 22.167983814146876,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 41,
+      "loss": 3.0881689548492433,
+      "perplexity": 21.936873772796346,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 46,
+      "loss": 3.079332070350647,
+      "perplexity": 21.74387416657189,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "excp-residual+uniform",
+      "step": 56,
+      "loss": 3.076703877449036,
+      "perplexity": 21.686802101883043,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 1,
+      "loss": 3.0129923534393313,
+      "perplexity": 20.34819791535339,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 11,
+      "loss": 3.070166296958923,
+      "perplexity": 21.5454853257904,
+      "accuracy": 0,
+      "segment": 0
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 16,
+      "loss": 3.0823191165924073,
+      "perplexity": 21.808921225103422,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 26,
+      "loss": 3.104567494392395,
+      "perplexity": 22.29957219926047,
+      "accuracy": 0,
+      "segment": 1
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 31,
+      "loss": 3.08778395652771,
+      "perplexity": 21.92842973878789,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 41,
+      "loss": 3.0801881980895995,
+      "perplexity": 21.762497671310168,
+      "accuracy": 0,
+      "segment": 2
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 46,
+      "loss": 3.071925764083862,
+      "perplexity": 21.583427267923753,
+      "accuracy": 0,
+      "segment": 3
+    },
+    {
+      "method": "ours-3d-residual+uniform",
+      "step": 56,
+      "loss": 3.0694867944717408,
+      "perplexity": 21.53085008782739,
+      "accuracy": 0,
+      "segment": 3
+    }
+  ],
+  "config": {
+    "model": "gpt2-medium",
+    "dataset": "wikitext103",
+    "checkpoint": "checkpoints/gpt2_medium_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "total_steps": 60,
+    "num_recoveries": 3,
+    "prune_ratio": 0.5,
+    "methods": "excp-residual+uniform,ours-3d-residual+uniform",
+    "num_importance_steps": 8,
+    "eval_interval": 10,
+    "batch_size": 2,
+    "seq_length": 128,
+    "lr": 5e-05,
+    "alpha": 0.7,
+    "protection_ratio": 0.001,
+    "device": "cuda",
+    "data_dir": null,
+    "output_dir": "results/paper_results/e2_k3_20260711",
+    "random_init": false,
+    "lr_schedule": "cosine",
+    "seed": 42,
+    "baseline": {
+      "loss": 3.0141236066818236,
+      "perplexity": 20.37122990527441
+    },
+    "final": {
+      "excp-residual+uniform": {
+        "loss": 3.0765952348709105,
+        "perplexity": 21.684446119773703
+      },
+      "ours-3d-residual+uniform": {
+        "loss": 3.069387683868408,
+        "perplexity": 21.52871625802924
+      }
+    }
+  }
+}

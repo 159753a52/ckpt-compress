@@ -1,0 +1,93 @@
+{
+  "results": [
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.19999978571762272,
+      "loss": 3.6679187536239626,
+      "perplexity": 39.170297926046544,
+      "loss_increase_pct": 6.611055098058907
+    },
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.2999996844633126,
+      "loss": 3.994988441467285,
+      "perplexity": 54.32521270043571,
+      "loss_increase_pct": 16.11760277638957
+    },
+    {
+      "allocation": "uniform",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.3999996891728154,
+      "loss": 4.82024040222168,
+      "perplexity": 123.99489584551661,
+      "loss_increase_pct": 40.10422520929961
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.02166231178943022,
+      "loss": 3.4527650833129884,
+      "perplexity": 31.587614049991565,
+      "loss_increase_pct": 0.35743789963814104
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.32012129418643903,
+      "loss": 4.1082395076751705,
+      "perplexity": 60.839515732810646,
+      "loss_increase_pct": 19.409337536728433
+    },
+    {
+      "allocation": "gamma-adaptive",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.837586932712131,
+      "loss": 7.983490657806397,
+      "perplexity": 2932.1483477059533,
+      "loss_increase_pct": 132.04667812047578
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.2,
+      "actual_ratio": 0.20218268735909167,
+      "loss": 3.7052526235580445,
+      "perplexity": 40.66031777369169,
+      "loss_increase_pct": 7.6961945277787365
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.3,
+      "actual_ratio": 0.3033275604248047,
+      "loss": 4.017207503318787,
+      "perplexity": 55.545777651279586,
+      "loss_increase_pct": 16.763417961073582
+    },
+    {
+      "allocation": "global-topk",
+      "target_ratio": 0.4,
+      "actual_ratio": 0.404314535635489,
+      "loss": 4.613798475265503,
+      "perplexity": 100.86656202555872,
+      "loss_increase_pct": 34.103821948586905
+    }
+  ],
+  "config": {
+    "model": "gpt2-small",
+    "dataset": "wikitext2",
+    "checkpoint": "../../checkpoints/gpt2_small_wikitext103_1000steps/checkpoint_step_1000.pt",
+    "importance": "second-order-hvp",
+    "prune_ratios": "0.2,0.3,0.4",
+    "alpha": 0.5,
+    "num_steps": 50,
+    "hvp_batches": 2,
+    "hvp_mode": "block",
+    "chunk_size": 10,
+    "eval_batches": 10,
+    "batch_size": 4,
+    "seq_length": 128,
+    "device": "cuda",
+    "output_dir": "results/paper_results/gamma_validation"
+  }
+}
